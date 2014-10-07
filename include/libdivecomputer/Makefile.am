@@ -54,4 +54,6 @@ libdivecomputer_HEADERS = 	\
 	citizen_aqualand.h \
 	divesystem.h \
 	divesystem_idive.h \
+	cochran.h \
+	cochran_commander.h \
 	custom_serial.h

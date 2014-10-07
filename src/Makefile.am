@@ -3,7 +3,7 @@ AM_CFLAGS = $(LIBUSB_CFLAGS) $(HIDAPI_CFLAGS) -DENABLE_DEPRECATED
 
 lib_LTLIBRARIES = libdivecomputer.la
 
-libdivecomputer_la_LIBADD = $(LIBUSB_LIBS) $(HIDAPI_LIBS)
+libdivecomputer_la_LIBADD = $(LIBUSB_LIBS) $(HIDAPI_LIBS) -lm
 libdivecomputer_la_LDFLAGS = \
 	-version-info $(DC_VERSION_LIBTOOL) \
 	-no-undefined \
@@ -65,6 +65,8 @@ libdivecomputer_la_SOURCES = \
 	checksum.h checksum.c \
 	array.h array.c \
 	buffer.c \
+	cochran_commander.h cochran_commander.c \
+	cochran_commander_parser.c \
 	custom_serial.c
 
 if OS_WIN32

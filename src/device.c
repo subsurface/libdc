@@ -37,6 +37,7 @@
 #include <libdivecomputer/diverite.h>
 #include <libdivecomputer/citizen.h>
 #include <libdivecomputer/divesystem.h>
+#include <libdivecomputer/cochran.h>
 
 #include "device-private.h"
 #include "context-private.h"
@@ -184,6 +185,9 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 		break;
 	case DC_FAMILY_DIVESYSTEM_IDIVE:
 		rc = divesystem_idive_device_open2 (&device, context, name, dc_descriptor_get_model (descriptor));
+		break;
+	case DC_FAMILY_COCHRAN_COMMANDER:
+		rc = cochran_commander_device_open (&device, context, name);
 		break;
 	default:
 		return DC_STATUS_INVALIDARGS;
