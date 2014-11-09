@@ -20,6 +20,12 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#ifdef _MSC_VER
+#define snprintf _snprintf
+#endif
 
 #include <libdivecomputer/units.h>
 
@@ -129,6 +135,9 @@ atomics_cobalt_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *dateti
 }
 
 
+#define BUFLEN 16
+
+
 static dc_status_t
 atomics_cobalt_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
 {
@@ -143,6 +152,9 @@ atomics_cobalt_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, un
 	dc_tank_t *tank = (dc_tank_t *) value;
 
 	double atmospheric = 0.0;
+	char buf[BUFLEN];
+	dc_field_string_t *string = (dc_field_string_t *) value;
+
 	if (parser->atmospheric)
 		atmospheric = parser->atmospheric;
 	else
@@ -207,6 +219,29 @@ atomics_cobalt_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, un
 			default:
 				return DC_STATUS_DATAFORMAT;
 			}
+			break;
+		case DC_FIELD_STRING:
+			switch(flags) {
+			case 0: // Serialnr
+				string->desc = "Serial";
+				snprintf(buf, BUFLEN, "%c%c%c%c-%c%c%c%c", p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11]);
+				break;
+			case 1: // Program Version
+				string->desc = "Program Version";
+				snprintf(buf, BUFLEN, "%.2f", array_uint16_le(p + 30) / 100.0);
+				break;
+			case 2: // Boot Version
+				string->desc = "Boot Version";
+				snprintf(buf, BUFLEN, "%.2f", array_uint16_le(p + 32) / 100.0);
+				break;
+			case 3: // Nofly
+				string->desc = "NoFly Time";
+				snprintf(buf, BUFLEN, "%0u:%02u", p[0x52], p[0x53]);
+				break;
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
