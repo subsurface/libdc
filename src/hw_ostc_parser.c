@@ -20,6 +20,12 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#ifdef _MSC_VER
+#define snprintf _snprintf
+#endif
 
 #include "libdivecomputer/units.h"
 
@@ -61,7 +67,13 @@
 #define OSTC3_APNEA 3
 #define OSTC3_PSCR  4
 
+#define OSTC3_ZHL16    0
+#define OSTC3_ZHL16_GF 1
+#define OSTC4_VPM      2
+
 #define OSTC4      0x3B
+
+#define UNSUPPORTED 0xFFFFFFFF
 
 typedef struct hw_ostc_sample_info_t {
 	unsigned int type;
@@ -78,7 +90,13 @@ typedef struct hw_ostc_layout_t {
 	unsigned int salinity;
 	unsigned int duration;
 	unsigned int temperature;
+	unsigned int battery;
+	unsigned int desat;
 	unsigned int firmware;
+	unsigned int deco_info1;
+	unsigned int deco_info2;
+	unsigned int decomode;
+        unsigned int battery_percentage;
 } hw_ostc_layout_t;
 
 typedef struct hw_ostc_gasmix_t {
@@ -90,6 +108,7 @@ typedef struct hw_ostc_parser_t {
 	dc_parser_t base;
 	unsigned int hwos;
 	unsigned int model;
+	unsigned int serial;
 	// Cached fields.
 	unsigned int cached;
 	unsigned int version;
@@ -127,7 +146,13 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	43, /* salinity */
 	47, /* duration */
 	13, /* temperature */
+	34, /* battery volt after dive */
+	17, /* desat */
 	32, /* firmware */
+	49, /* deco_info1 */
+	50, /* deco_info1 */
+	51, /* decomode */
+        0,  /* battery percentage TBD */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_frog = {
@@ -139,7 +164,13 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	43, /* salinity */
 	47, /* duration */
 	19, /* temperature */
+	34, /* battery volt after dive */
+	23, /* desat */
 	32, /* firmware */
+	49, /* deco_info1 */
+	50, /* deco_info2 */
+	51, /* decomode */
+        0,  /* battery percentage TBD */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
@@ -151,7 +182,13 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	70, /* salinity */
 	75, /* duration */
 	22, /* temperature */
+	50, /* battery volt after dive */
+	26, /* desat */
 	48, /* firmware */
+	77, /* deco_info1 */
+	78, /* deco_info2 */
+	79, /* decomode */
+        59,  /* battery percentage */
 };
 
 static unsigned int
@@ -251,7 +288,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 			}
 		}
 		// The first fixed setpoint is the initial setpoint in CCR mode.
-		if (data[82] == OSTC3_CC) {
+                if (data[82] == OSTC3_CC) {
 			initial_setpoint = data[60];
 		}
 		// Initial CNS
@@ -294,7 +331,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 }
 
 static dc_status_t
-hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsigned int hwos, unsigned int model)
+hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int hwos, unsigned int model)
 {
 	hw_ostc_parser_t *parser = NULL;
 
@@ -324,6 +361,7 @@ hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsign
 		parser->gasmix[i].oxygen = 0;
 		parser->gasmix[i].helium = 0;
 	}
+	parser->serial = serial;
 
 	*out = (dc_parser_t *) parser;
 
@@ -332,15 +370,15 @@ hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsign
 
 
 dc_status_t
-hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int hwos)
+hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int hwos)
 {
-	return hw_ostc_parser_create_internal (out, context, hwos, 0);
+	return hw_ostc_parser_create_internal (out, context, serial, hwos, 0);
 }
 
 dc_status_t
-hw_ostc3_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+hw_ostc3_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int model)
 {
-	return hw_ostc_parser_create_internal (out, context, 1, model);
+	return hw_ostc_parser_create_internal (out, context, serial, 1, model);
 }
 
 static dc_status_t
@@ -428,6 +466,8 @@ hw_ostc_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 	return DC_STATUS_SUCCESS;
 }
 
+#define BUFLEN 32
+
 static dc_status_t
 hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
 {
@@ -452,9 +492,12 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
+
 	unsigned int salinity = data[layout->salinity];
 	if (version == 0x23 || version == 0x24)
 		salinity += 100;
+	char buf[BUFLEN];
 
 	if (value) {
 		switch (type) {
@@ -549,6 +592,79 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			} else {
 				return DC_STATUS_UNSUPPORTED;
 			}
+			break;
+		case DC_FIELD_STRING:
+			switch(flags) {
+                        case 0: /* serial */
+                                string->desc = "Serial";
+                                snprintf(buf, BUFLEN, "%u", parser->serial);
+                                break;
+                        case 1: /* battery */
+				string->desc = "Battery at end";
+                                unsigned int percentage = (unsigned int) data[layout->battery_percentage];
+                                if (percentage != 0xFF && (version == 0x23 || version == 0x24)) {
+                                    percentage = percentage>100? 100: percentage;
+                                    snprintf(buf, BUFLEN, "%.2fV, %u%% remaining",
+                                             array_uint16_le (data + layout->battery) / 1000.0,
+                                             percentage);
+                                } else {
+                                    snprintf(buf, BUFLEN, "%.2fV", array_uint16_le (data + layout->battery) / 1000.0);
+                                }
+                                break;
+                        case 2: /* desat */
+                                string->desc = "Desat time";
+				snprintf(buf, BUFLEN, "%0u:%02u", array_uint16_le (data + layout->desat) / 60,
+						 array_uint16_le (data + layout->desat) % 60);
+				break;
+                        case 3: /* firmware */
+				string->desc = "FW Version";
+				/* OSTC4 stores firmware as XXXX XYYY YYZZ ZZZB, -> X.Y.Z beta? */
+				if (parser->model == OSTC4) {
+					int firmwareOnDevice = array_uint16_le (data + layout->firmware);
+					unsigned char X = 0, Y = 0, Z = 0, beta = 0;
+					X = (firmwareOnDevice & 0xF800) >> 11;
+					Y = (firmwareOnDevice & 0x07C0) >> 6;
+					Z = (firmwareOnDevice & 0x003E) >> 1;
+					beta = firmwareOnDevice & 0x0001;
+
+					snprintf(buf, BUFLEN, "%u.%u.%u%s\n", X, Y, Z, beta? "beta": "");
+				} else {
+					snprintf(buf, BUFLEN, "%0u.%02u", data[layout->firmware], data[layout->firmware + 1]);
+				}
+				break;
+
+                        case 4: /* Deco model */
+				string->desc = "Deco model";
+				if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
+					strncpy(buf, "ZH-L16", BUFLEN);
+				else if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16_GF) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
+					strncpy(buf, "ZH-L16-GF", BUFLEN);
+				else if (((version == 0x24) && data[layout->decomode] == OSTC4_VPM))
+					strncpy(buf, "VPM", BUFLEN);
+				else
+					return DC_STATUS_DATAFORMAT;
+				break;
+                        case 5: /* Deco model info */
+				string->desc = "Deco model info";
+				if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
+					snprintf(buf, BUFLEN, "Saturation %u, Desaturation %u", layout->deco_info1, layout->deco_info2);
+				else if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16_GF) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
+					snprintf(buf, BUFLEN, "GF %u/%u", data[layout->deco_info1], data[layout->deco_info2]);
+				else
+					return DC_STATUS_DATAFORMAT;
+				break;
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
