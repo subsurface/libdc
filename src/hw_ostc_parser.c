@@ -20,6 +20,12 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#ifdef _MSC_VER
+#define snprintf _snprintf
+#endif
 
 #include <libdivecomputer/hw_ostc.h>
 #include "libdivecomputer/units.h"
@@ -57,6 +63,10 @@
 #define OSTC3_GAUGE 2
 #define OSTC3_APNEA 3
 
+#define UNSUPPORTED 0xFFFFFFFF
+
+typedef struct hw_ostc_parser_t hw_ostc_parser_t;
+
 typedef struct hw_ostc_sample_info_t {
 	unsigned int type;
 	unsigned int divisor;
@@ -72,6 +82,8 @@ typedef struct hw_ostc_layout_t {
 	unsigned int salinity;
 	unsigned int duration;
 	unsigned int temperature;
+	unsigned int battery;
+	unsigned int desat;
 } hw_ostc_layout_t;
 
 typedef struct hw_ostc_gasmix_t {
@@ -117,6 +129,8 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	43, /* salinity */
 	47, /* duration */
 	13, /* temperature */
+	34, /* battery volt after dive */
+	17, /* desat */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_frog = {
@@ -128,6 +142,8 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	43, /* salinity */
 	47, /* duration */
 	19, /* temperature */
+	UNSUPPORTED, /* battery volt after dive */
+	UNSUPPORTED, /* desat */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
@@ -139,6 +155,8 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	70, /* salinity */
 	75, /* duration */
 	22, /* temperature */
+	50, /* battery volt after dive */
+	26, /* desat */
 };
 
 static unsigned int
@@ -380,6 +398,8 @@ hw_ostc_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 	return DC_STATUS_SUCCESS;
 }
 
+#define BUFLEN 16
+
 static dc_status_t
 hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
 {
@@ -404,9 +424,12 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
+
 	unsigned int salinity = data[layout->salinity];
 	if (version == 0x23)
 		salinity += 100;
+	char buf[BUFLEN];
 
 	if (value) {
 		switch (type) {
@@ -496,6 +519,22 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			} else {
 				return DC_STATUS_UNSUPPORTED;
 			}
+			break;
+		case DC_FIELD_STRING:
+			switch(flags) {
+			case 0: /* battery */
+				string->desc = "Battery at end";
+				snprintf(buf, BUFLEN, "%.2f", array_uint16_le (data + layout->battery) / 1000.0);
+				break;
+			case 1: /* desat */
+				string->desc = "Desat time";
+				snprintf(buf, BUFLEN, "%0u:%02u", array_uint16_le (data + layout->desat) / 60,
+						 array_uint16_le (data + layout->desat) % 60);
+				break;
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
