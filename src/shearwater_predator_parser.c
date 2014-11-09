@@ -20,6 +20,12 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#ifdef _MSC_VER
+#define snprintf _snprintf
+#endif
 
 #include <libdivecomputer/shearwater_predator.h>
 #include <libdivecomputer/shearwater_petrel.h>
@@ -188,6 +194,8 @@ shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *d
 }
 
 
+#define BUFLEN 16
+
 static dc_status_t
 shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 {
@@ -291,7 +299,9 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
 	unsigned int density = 0;
+	char buf[BUFLEN];
 
 	if (value) {
 		switch (type) {
@@ -325,6 +335,16 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			break;
 		case DC_FIELD_DIVEMODE:
 			*((dc_divemode_t *) value) = shearwater_predator_parser_get_divemode (parser);
+			break;
+		case DC_FIELD_STRING:
+			switch(flags) {
+			case 0: // Battery
+				string->desc = "Battery at end";
+				snprintf(buf, BUFLEN, "%.1f", data[9] / 10.0);
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
