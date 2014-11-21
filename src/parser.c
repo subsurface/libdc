@@ -111,11 +111,11 @@ dc_parser_new (dc_parser_t **out, dc_device_t *device)
 		rc = mares_iconhd_parser_create (&parser, context, device->devinfo.model);
 		break;
 	case DC_FAMILY_HW_OSTC:
-		rc = hw_ostc_parser_create (&parser, context, 0);
+		rc = hw_ostc_parser_create (&parser, context, device->devinfo.serial, 0);
 		break;
 	case DC_FAMILY_HW_FROG:
 	case DC_FAMILY_HW_OSTC3:
-		rc = hw_ostc_parser_create (&parser, context, 1);
+		rc = hw_ostc_parser_create (&parser, context, device->devinfo.serial, 1);
 		break;
 	case DC_FAMILY_CRESSI_EDY:
 	case DC_FAMILY_ZEAGLE_N2ITION3:
