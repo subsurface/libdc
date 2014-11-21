@@ -66,7 +66,7 @@ dc_parser_new (dc_parser_t **out, dc_device_t *device)
 		break;
 	case DC_FAMILY_SUUNTO_VYPER2:
 	case DC_FAMILY_SUUNTO_D9:
-		rc = suunto_d9_parser_create (&parser, context, device->devinfo.model);
+		rc = suunto_d9_parser_create (&parser, context, device->devinfo.model, device->devinfo.serial);
 		break;
 	case DC_FAMILY_SUUNTO_EONSTEEL:
 		rc = suunto_eonsteel_parser_create(&parser, context, device->devinfo.model);
