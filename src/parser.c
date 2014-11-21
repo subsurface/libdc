@@ -98,7 +98,7 @@ dc_parser_new (dc_parser_t **out, dc_device_t *device)
 		if (device->devinfo.model == REACTPROWHITE)
 			rc = oceanic_veo250_parser_create (&parser, context, device->devinfo.model);
 		else
-			rc = oceanic_atom2_parser_create (&parser, context, device->devinfo.model);
+			rc = oceanic_atom2_parser_create (&parser, context, device->devinfo.model, device->devinfo.serial);
 		break;
 	case DC_FAMILY_MARES_NEMO:
 	case DC_FAMILY_MARES_PUCK:

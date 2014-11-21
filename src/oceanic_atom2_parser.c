@@ -20,6 +20,8 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <libdivecomputer/oceanic_atom2.h>
 #include <libdivecomputer/units.h>
@@ -86,6 +88,7 @@ struct oceanic_atom2_parser_t {
 	unsigned int model;
 	unsigned int headersize;
 	unsigned int footersize;
+	unsigned int serial;
 	// Cached fields.
 	unsigned int cached;
 	unsigned int divetime;
@@ -109,7 +112,7 @@ static const dc_parser_vtable_t oceanic_atom2_parser_vtable = {
 
 
 dc_status_t
-oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
 {
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
@@ -151,6 +154,7 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		parser->headersize = 5 * PAGESIZE;
 	}
 
+	parser->serial = serial;
 	parser->cached = 0;
 	parser->divetime = 0;
 	parser->maxdepth = 0.0;
@@ -318,6 +322,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 	return DC_STATUS_SUCCESS;
 }
 
+#define BUF_LEN 16
 
 static dc_status_t
 oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
@@ -366,9 +371,11 @@ oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
 
 	unsigned int oxygen = 0;
 	unsigned int helium = 0;
+	char buf[BUF_LEN];
 
 	if (value) {
 		switch (type) {
@@ -451,6 +458,17 @@ oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 			default:
 				return DC_STATUS_DATAFORMAT;
 			}
+			break;
+		case DC_FIELD_STRING:
+			switch(flags) {
+			case 0: /* Serial */
+				string->desc = "Serial";
+				snprintf(buf, BUF_LEN, "%06u", parser->serial);
+				break;
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;

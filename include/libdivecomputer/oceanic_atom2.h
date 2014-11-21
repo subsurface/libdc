@@ -43,7 +43,7 @@ dc_status_t
 oceanic_atom2_device_keepalive (dc_device_t *device);
 
 dc_status_t
-oceanic_atom2_parser_create (dc_parser_t **parser, dc_context_t *context, unsigned int model);
+oceanic_atom2_parser_create (dc_parser_t **parser, dc_context_t *context, unsigned int model, unsigned int serial);
 
 #ifdef __cplusplus
 }
