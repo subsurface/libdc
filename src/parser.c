@@ -120,7 +120,7 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		if (model == REACTPROWHITE)
 			rc = oceanic_veo250_parser_create (&parser, context, model);
 		else
-			rc = oceanic_atom2_parser_create (&parser, context, model);
+			rc = oceanic_atom2_parser_create (&parser, context, model, serial);
 		break;
 	case DC_FAMILY_MARES_NEMO:
 	case DC_FAMILY_MARES_PUCK:
