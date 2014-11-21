@@ -20,7 +20,8 @@
  */
 
 #include <stdlib.h>
-#include <string.h>	// memcmp
+#include <string.h>	// memcmp, strdup
+#include <stdio.h>	// snprintf
 
 #include "suunto_d9.h"
 #include "context-private.h"
@@ -72,6 +73,7 @@ typedef struct suunto_d9_parser_t suunto_d9_parser_t;
 struct suunto_d9_parser_t {
 	dc_parser_t base;
 	unsigned int model;
+	unsigned int serial;
 	// Cached fields.
 	unsigned int cached;
 	unsigned int id;
@@ -260,6 +262,7 @@ suunto_d9_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int 
 
 	// Set the default values.
 	parser->model = model;
+	parser->serial = serial;
 	parser->cached = 0;
 	parser->id = 0;
 	parser->mode = AIR;
@@ -343,6 +346,7 @@ suunto_d9_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 	return DC_STATUS_SUCCESS;
 }
 
+#define BUFLEN 16
 
 static dc_status_t
 suunto_d9_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
@@ -358,6 +362,9 @@ suunto_d9_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigne
 		return rc;
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
+
+	char buf[BUFLEN];
 
 	if (value) {
 		switch (type) {
@@ -404,6 +411,17 @@ suunto_d9_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigne
 			default:
 				return DC_STATUS_DATAFORMAT;
 			}
+			break;
+		case DC_FIELD_STRING:
+			switch (flags) {
+			case 0: /* serial */
+				string->desc = "Serial";
+				snprintf(buf, BUFLEN, "%08u", parser->serial);
+				break;
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
