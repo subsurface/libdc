@@ -84,6 +84,7 @@ typedef struct hw_ostc_layout_t {
 	unsigned int temperature;
 	unsigned int battery;
 	unsigned int desat;
+	unsigned int fw_version;
 } hw_ostc_layout_t;
 
 typedef struct hw_ostc_gasmix_t {
@@ -131,6 +132,7 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	13, /* temperature */
 	34, /* battery volt after dive */
 	17, /* desat */
+	32, /* fw_version */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_frog = {
@@ -142,8 +144,9 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	43, /* salinity */
 	47, /* duration */
 	19, /* temperature */
-	UNSUPPORTED, /* battery volt after dive */
-	UNSUPPORTED, /* desat */
+	34, /* battery volt after dive */
+	23, /* desat */
+	32, /* fw_version */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
@@ -157,6 +160,7 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	22, /* temperature */
 	50, /* battery volt after dive */
 	26, /* desat */
+	48, /* fw_version */
 };
 
 static unsigned int
@@ -530,6 +534,10 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				string->desc = "Desat time";
 				snprintf(buf, BUFLEN, "%0u:%02u", array_uint16_le (data + layout->desat) / 60,
 						 array_uint16_le (data + layout->desat) % 60);
+				break;
+			case 2: /* fw_version */
+				string->desc = "FW Version";
+				snprintf(buf, BUFLEN, "%0u.%0u", data[layout->fw_version], data[layout->fw_version + 1]);
 				break;
 			default:
 				return DC_STATUS_UNSUPPORTED;
