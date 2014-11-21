@@ -541,6 +541,10 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				string->desc = "FW Version";
 				snprintf(buf, BUFLEN, "%0u.%0u", data[layout->fw_version], data[layout->fw_version + 1]);
 				break;
+			case 3: /* serial */
+				string->desc = "Serial";
+				snprintf(buf, BUFLEN, "%u", parser->serial);
+				break;
 			default:
 				return DC_STATUS_UNSUPPORTED;
 			}
