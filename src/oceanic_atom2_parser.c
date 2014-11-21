@@ -20,6 +20,8 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <libdivecomputer/units.h>
 
@@ -113,6 +115,7 @@ struct oceanic_atom2_parser_t {
 	unsigned int model;
 	unsigned int headersize;
 	unsigned int footersize;
+	unsigned int serial;
 	// Cached fields.
 	unsigned int cached;
 	unsigned int header;
@@ -195,6 +198,7 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		parser->headersize = 5 * PAGESIZE / 2;
 	}
 
+	parser->serial = serial;
 	parser->cached = 0;
 	parser->header = 0;
 	parser->footer = 0;
@@ -396,6 +400,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 	return DC_STATUS_SUCCESS;
 }
 
+#define BUF_LEN 16
 
 static dc_status_t
 oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
@@ -543,6 +548,9 @@ oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
+
+	char buf[BUF_LEN];
 
 	if (value) {
 		switch (type) {
@@ -597,6 +605,17 @@ oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 			default:
 				return DC_STATUS_DATAFORMAT;
 			}
+			break;
+		case DC_FIELD_STRING:
+			switch(flags) {
+			case 0: /* Serial */
+				string->desc = "Serial";
+				snprintf(buf, BUF_LEN, "%06u", parser->serial);
+				break;
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
