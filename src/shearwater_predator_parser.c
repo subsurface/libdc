@@ -58,6 +58,7 @@ struct shearwater_predator_parser_t {
 	unsigned int ngasmixes;
 	unsigned int oxygen[NGASMIXES];
 	unsigned int helium[NGASMIXES];
+	unsigned int serial;
 };
 
 static dc_status_t shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -86,7 +87,7 @@ static const dc_parser_vtable_t shearwater_petrel_parser_vtable = {
 
 
 dc_status_t
-shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int petrel)
+shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int petrel)
 {
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
@@ -100,6 +101,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 
 	// Initialize the base class.
 	parser->petrel = petrel;
+	parser->serial = serial;
 	if (petrel) {
 		parser_init (&parser->base, context, &shearwater_petrel_parser_vtable);
 	} else {
@@ -121,16 +123,16 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 
 
 dc_status_t
-shearwater_predator_parser_create (dc_parser_t **out, dc_context_t *context)
+shearwater_predator_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
 {
-	return shearwater_common_parser_create (out, context, 0);
+	return shearwater_common_parser_create (out, context, serial, 0);
 }
 
 
 dc_status_t
-shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context)
+shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
 {
-	return shearwater_common_parser_create (out, context, 1);
+	return shearwater_common_parser_create (out, context, serial, 1);
 }
 
 
@@ -286,6 +288,15 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			case 0: // Battery
 				string->desc = "Battery at end";
 				snprintf(buf, BUFLEN, "%.1f", data[9] / 10.0);
+				break;
+			case 1: // Serial
+				string->desc = "Serial";
+				snprintf(buf, BUFLEN, "%08x", parser->serial);
+				break;
+			case 2: // FW Version
+				string->desc = "FW Version";
+				snprintf(buf, BUFLEN, "%2x", data[19]);
+				break;
 			default:
 				return DC_STATUS_UNSUPPORTED;
 			}
