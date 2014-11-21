@@ -87,7 +87,7 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		break;
 	case DC_FAMILY_SUUNTO_VYPER2:
 	case DC_FAMILY_SUUNTO_D9:
-		rc = suunto_d9_parser_create (&parser, context, model);
+		rc = suunto_d9_parser_create (&parser, context, model, serial);
 		break;
 	case DC_FAMILY_SUUNTO_EONSTEEL:
 		rc = suunto_eonsteel_parser_create(&parser, context, model);
