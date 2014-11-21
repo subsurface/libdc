@@ -95,6 +95,7 @@ typedef struct hw_ostc_gasmix_t {
 typedef struct hw_ostc_parser_t {
 	dc_parser_t base;
 	unsigned int frog;
+	unsigned int serial;
 	// Cached fields.
 	unsigned int cached;
 	unsigned int version;
@@ -282,7 +283,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 }
 
 dc_status_t
-hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int frog)
+hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int frog)
 {
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
@@ -310,6 +311,7 @@ hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int fr
 		parser->gasmix[i].oxygen = 0;
 		parser->gasmix[i].helium = 0;
 	}
+	parser->serial = serial;
 
 	*out = (dc_parser_t *) parser;
 
