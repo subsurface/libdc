@@ -360,9 +360,7 @@ suunto_d9_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigne
 			switch (flags) {
 			case 0: /* serial */
 				string->desc = "Serial";
-				snprintf(buf, BUFLEN, "%02d%02d%02d%02d", (parser->serial >> 24) & 0xff,
-					 (parser->serial >> 16) & 0xff, (parser->serial >> 8) & 0xff,
-					 parser->serial & 0xff);
+				snprintf(buf, BUFLEN, "%08u", parser->serial);
 				break;
 			default:
 				return DC_STATUS_UNSUPPORTED;
