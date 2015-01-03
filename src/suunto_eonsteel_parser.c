@@ -1105,6 +1105,9 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 	if (!strcmp(name, "Gases.Gas.Helium"))
 		return add_gas_he(eon, data[0]);
 
+	if (!strcmp(name, "Gases.Gas.TransmitterID"))
+		return add_string(eon, "Transmitter ID", data);
+
 	if (!strcmp(name, "SurfacePressure")) {
 		unsigned int pressure = array_uint32_le(data); // in SI units - Pascal
 		eon->cache.surface_pressure = pressure / 100000.0; // bar
@@ -1114,6 +1117,9 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 
 	if (!strcmp(name, "Algorithm"))
 		return add_string(eon, "Deco algorithm", data);
+
+	if (!strcmp(name, "DiveMode"))
+		return add_string(eon, "Dive Mode", data);
 
 	return 0;
 }
