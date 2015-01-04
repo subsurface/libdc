@@ -21,7 +21,13 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <ctype.h>
+
+/* Wow. MSC is truly crap */
+#ifdef _MSC_VER
+#define snprintf _snprintf
+#endif
 
 #include <libdivecomputer/suunto_eonsteel.h>
 
@@ -1120,6 +1126,15 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 
 	if (!strcmp(name, "DiveMode"))
 		return add_string(eon, "Dive Mode", data);
+
+	/* Signed byte of conservatism (-2 .. +2) */
+	if (!strcmp(name, "Conservatism")) {
+		char buffer[10];
+		int val = *(signed char *)data;
+
+		snprintf(buffer, sizeof(buffer), "P%d", val);
+		return add_string(eon, "Personal Adjustment", buffer);
+	}
 
 	return 0;
 }
