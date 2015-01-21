@@ -63,6 +63,9 @@
 #define OSTC3_GAUGE 2
 #define OSTC3_APNEA 3
 
+#define OSTC3_ZHL16    0
+#define OSTC3_ZHL16_GF 1
+
 #define UNSUPPORTED 0xFFFFFFFF
 
 typedef struct hw_ostc_parser_t hw_ostc_parser_t;
@@ -85,6 +88,9 @@ typedef struct hw_ostc_layout_t {
 	unsigned int battery;
 	unsigned int desat;
 	unsigned int fw_version;
+	unsigned int deco_info1;
+	unsigned int deco_info2;
+	unsigned int decomode;
 } hw_ostc_layout_t;
 
 typedef struct hw_ostc_gasmix_t {
@@ -134,6 +140,9 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	34, /* battery volt after dive */
 	17, /* desat */
 	32, /* fw_version */
+	49, /* deco_info1 */
+	50, /* deco_info1 */
+	51, /* decomode */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_frog = {
@@ -148,6 +157,9 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	34, /* battery volt after dive */
 	23, /* desat */
 	32, /* fw_version */
+	49, /* deco_info1 */
+	50, /* deco_info2 */
+	51, /* decomode */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
@@ -162,6 +174,9 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	50, /* battery volt after dive */
 	26, /* desat */
 	48, /* fw_version */
+	77, /* deco_info1 */
+	78, /* deco_info2 */
+	79, /* decomode */
 };
 
 static unsigned int
@@ -544,6 +559,32 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			case 3: /* serial */
 				string->desc = "Serial";
 				snprintf(buf, BUFLEN, "%u", parser->serial);
+				break;
+			case 4: /* Deco model */
+				string->desc = "Deco model";
+				if ((version == 0x23 && data[layout->decomode] == OSTC3_ZHL16) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
+					strncpy(buf, "ZH-L16", BUFLEN);
+				if ((version == 0x23 && data[layout->decomode] == OSTC3_ZHL16_GF) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
+					strncpy(buf, "ZH-L16-GF", BUFLEN);
+				else
+					return DC_STATUS_DATAFORMAT;
+				break;
+			case 5: /* Deco model info */
+				string->desc = "Deco model info";
+				if ((version == 0x23 && data[layout->decomode] == OSTC3_ZHL16) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
+					snprintf(buf, BUFLEN, "Saturation %u, Desaturation %u", layout->deco_info1, layout->deco_info2);
+				if ((version == 0x23 && data[layout->decomode] == OSTC3_ZHL16_GF) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
+					snprintf(buf, BUFLEN, "GF %u/%u", data[layout->deco_info1], data[layout->deco_info2]);
+				else
+					return DC_STATUS_DATAFORMAT;
 				break;
 			default:
 				return DC_STATUS_UNSUPPORTED;
