@@ -421,9 +421,11 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		// Status flags.
 		unsigned int status = data[offset + 11];
 
-		// PPO2
-		sample.ppo2 = data[offset + 6] / 100.0;
-		if (callback) callback (DC_SAMPLE_PPO2, sample, userdata);
+		// PPO2 -- only return PPO2 if we are in closed circuit mode
+		if (data[offset + 11] & 0x10 == 0) {
+			sample.ppo2 = data[offset + 6] / 100.0;
+			if (callback) callback (DC_SAMPLE_PPO2, sample, userdata);
+		}
 
 		if ((status & OC) == 0) {
 			// Setpoint
