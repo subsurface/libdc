@@ -554,7 +554,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				break;
 			case 2: /* fw_version */
 				string->desc = "FW Version";
-				snprintf(buf, BUFLEN, "%0u.%0u", data[layout->fw_version], data[layout->fw_version + 1]);
+				snprintf(buf, BUFLEN, "%0u.%02u", data[layout->fw_version], data[layout->fw_version + 1]);
 				break;
 			case 3: /* serial */
 				string->desc = "Serial";
