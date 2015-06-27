@@ -2,6 +2,7 @@
  * libdivecomputer
  *
  * Copyright (C) 2013 Jef Driesen
+ * Copyright (C) 2015 Claudiu Olteanu
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -26,6 +27,7 @@
 #include "device.h"
 #include "parser.h"
 #include "buffer.h"
+#include "custom_serial.h"
 
 #ifdef __cplusplus
 extern "C" {
