@@ -53,4 +53,5 @@ libdivecomputer_HEADERS = 	\
 	citizen.h \
 	citizen_aqualand.h \
 	divesystem.h \
-	divesystem_idive.h
+	divesystem_idive.h \
+	custom_serial.h
