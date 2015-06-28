@@ -188,6 +188,12 @@ dc_device_custom_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t
 	case DC_FAMILY_HW_OSTC3:
 		rc = hw_ostc3_device_custom_open (&device, context, serial);
 		break;
+	case DC_FAMILY_SHEARWATER_PREDATOR:
+		rc = shearwater_predator_device_custom_open (&device, context, serial);
+		break;
+	case DC_FAMILY_SHEARWATER_PETREL:
+		rc = shearwater_petrel_device_custom_open (&device, context, serial);
+		break;
 	default:
 		return DC_STATUS_INVALIDARGS;
 	}
