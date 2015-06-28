@@ -2,6 +2,7 @@
  * libdivecomputer
  *
  * Copyright (C) 2013 Jef Driesen
+ * Copyright (C) 2015 Claudiu Olteanu
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -24,6 +25,7 @@
 
 #include "device-private.h"
 #include "serial.h"
+#include "libdivecomputer/custom_serial.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,7 +36,7 @@ extern "C" {
 
 typedef struct shearwater_common_device_t {
 	dc_device_t base;
-	serial_t *port;
+	dc_serial_t *serial;
 } shearwater_common_device_t;
 
 dc_status_t
