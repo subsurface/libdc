@@ -2,6 +2,7 @@
  * libdivecomputer
  *
  * Copyright (C) 2012 Jef Driesen
+ * Copyright (C) 2015 Claudiu Olteanu
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -85,6 +86,40 @@ shearwater_predator_device_open (dc_device_t **out, dc_context_t *context, const
 
 	// Open the device.
 	rc = shearwater_common_open (&device->base, context, name);
+	if (rc != DC_STATUS_SUCCESS) {
+		free (device);
+		return rc;
+	}
+
+	*out = (dc_device_t *) device;
+
+	return DC_STATUS_SUCCESS;
+}
+
+
+dc_status_t
+shearwater_predator_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial_t *serial)
+{
+	dc_status_t rc = DC_STATUS_SUCCESS;
+
+	if (out == NULL || serial == NULL || serial->port == NULL)
+		return DC_STATUS_INVALIDARGS;
+
+	// Allocate memory.
+	shearwater_predator_device_t *device = (shearwater_predator_device_t *) malloc (sizeof (shearwater_predator_device_t));
+	if (device == NULL) {
+		ERROR (context, "Failed to allocate memory.");
+		return DC_STATUS_NOMEMORY;
+	}
+
+	// Initialize the base class.
+	device_init (&device->base.base, context, &shearwater_predator_device_vtable);
+
+	// Set the default values.
+	memset (device->fingerprint, 0, sizeof (device->fingerprint));
+
+	// Open the device.
+	rc = shearwater_common_custom_open (&device->base, context, serial);
 	if (rc != DC_STATUS_SUCCESS) {
 		free (device);
 		return rc;

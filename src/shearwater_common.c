@@ -45,7 +45,7 @@ shearwater_common_open (shearwater_common_device_t *device, dc_context_t *contex
 	int rc = dc_serial_native_open (&device->serial, context, name);
 	if (rc == -1) {
 		ERROR (context, "Failed to open the serial port.");
-		return rc;
+		return DC_STATUS_IO;
 	}
 
 	// Set the serial communication protocol (115200 8N1).
@@ -54,6 +54,37 @@ shearwater_common_open (shearwater_common_device_t *device, dc_context_t *contex
 		ERROR (context, "Failed to set the terminal attributes.");
 		device->serial->ops->close (device->serial->port);
 		return DC_STATUS_IO;
+	}
+
+	// Set the timeout for receiving data (3000ms).
+	if (serial_set_timeout (device->serial->port, 3000) == -1) {
+		ERROR (context, "Failed to set the timeout.");
+		device->serial->ops->close (device->serial->port);
+		return DC_STATUS_IO;
+	}
+
+	// Make sure everything is in a sane state.
+	serial_sleep (device->serial->port, 300);
+	device->serial->ops->flush (device->serial->port, SERIAL_QUEUE_BOTH);
+
+	return DC_STATUS_SUCCESS;
+}
+
+
+dc_status_t
+shearwater_common_custom_open (shearwater_common_device_t *device, dc_context_t *context, dc_serial_t *serial)
+{
+	// Set the serial reference
+	device->serial = serial;
+
+	if (serial->type == DC_TRANSPORT_SERIAL) {
+		// Set the serial communication protocol (115200 8N1).
+		int rc = serial_configure (device->serial->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
+		if (rc == -1) {
+			ERROR (context, "Failed to set the terminal attributes.");
+			device->serial->ops->close (device->serial->port);
+			return DC_STATUS_IO;
+		}
 	}
 
 	// Set the timeout for receiving data (3000ms).
