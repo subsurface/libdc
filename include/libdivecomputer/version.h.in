@@ -26,6 +26,10 @@
 extern "C" {
 #endif /* __cplusplus */
 
+/* use these defines to detect Subsurface specific features */
+#define SSRF_LIBDC_VERSION 1
+#define SSRF_CUSTOM_SERIAL 1
+
 #define DC_VERSION "@DC_VERSION@"
 #define DC_VERSION_MAJOR @DC_VERSION_MAJOR@
 #define DC_VERSION_MINOR @DC_VERSION_MINOR@
