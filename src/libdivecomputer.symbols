@@ -82,6 +82,9 @@ dc_device_set_events
 dc_device_set_fingerprint
 dc_device_write
 
+dc_serial_init
+dc_device_custom_open
+
 cressi_edy_device_open
 cressi_leonardo_device_open
 mares_nemo_device_open
