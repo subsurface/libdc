@@ -44,6 +44,7 @@ typedef struct dc_serial_operations_t
 	int (*flush) (serial_t *device, int queue);
 	int (*get_received) (serial_t *device);
 	int (*get_transmitted) (serial_t *device);
+	int (*set_timeout) (serial_t *device, long timeout);
 } dc_serial_operations_t;
 
 typedef struct dc_serial_t {

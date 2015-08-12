@@ -32,7 +32,8 @@ const dc_serial_operations_t native_serial_ops = {
 	.write = serial_write,
 	.flush = serial_flush,
 	.get_received = serial_get_received,
-	.get_transmitted = serial_get_transmitted
+	.get_transmitted = serial_get_transmitted,
+	.set_timeout = serial_set_timeout
 };
 
 
