@@ -88,7 +88,7 @@ shearwater_common_custom_open (shearwater_common_device_t *device, dc_context_t 
 	}
 
 	// Set the timeout for receiving data (3000ms).
-	if (serial_set_timeout (device->serial->port, 3000) == -1) {
+	if (device->serial->ops->set_timeout (device->serial->port, 3000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
 		device->serial->ops->close (device->serial->port);
 		return DC_STATUS_IO;
