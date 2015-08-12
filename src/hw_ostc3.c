@@ -341,7 +341,7 @@ hw_ostc3_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial
 	}
 
 	// Set the timeout for receiving data (3000ms).
-	if (serial_set_timeout (device->serial->port, 3000) == -1) {
+	if (device->serial->ops->set_timeout (device->serial->port, 3000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
 		device->serial->ops->close (device->serial->port);
 		free (device);
