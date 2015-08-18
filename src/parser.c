@@ -66,7 +66,7 @@ dc_parser_new (dc_parser_t **out, dc_device_t *device)
 		break;
 	case DC_FAMILY_SUUNTO_VYPER2:
 	case DC_FAMILY_SUUNTO_D9:
-		rc = suunto_d9_parser_create (&parser, context, device->devinfo.model);
+		rc = suunto_d9_parser_create (&parser, context, device->devinfo.model, device->devinfo.serial);
 		break;
 	case DC_FAMILY_SUUNTO_EONSTEEL:
 		rc = suunto_eonsteel_parser_create(&parser, context, device->devinfo.model);
@@ -98,7 +98,7 @@ dc_parser_new (dc_parser_t **out, dc_device_t *device)
 		if (device->devinfo.model == REACTPROWHITE)
 			rc = oceanic_veo250_parser_create (&parser, context, device->devinfo.model);
 		else
-			rc = oceanic_atom2_parser_create (&parser, context, device->devinfo.model);
+			rc = oceanic_atom2_parser_create (&parser, context, device->devinfo.model, device->devinfo.serial);
 		break;
 	case DC_FAMILY_MARES_NEMO:
 	case DC_FAMILY_MARES_PUCK:
@@ -111,11 +111,11 @@ dc_parser_new (dc_parser_t **out, dc_device_t *device)
 		rc = mares_iconhd_parser_create (&parser, context, device->devinfo.model);
 		break;
 	case DC_FAMILY_HW_OSTC:
-		rc = hw_ostc_parser_create (&parser, context, 0);
+		rc = hw_ostc_parser_create (&parser, context, device->devinfo.serial, 0);
 		break;
 	case DC_FAMILY_HW_FROG:
 	case DC_FAMILY_HW_OSTC3:
-		rc = hw_ostc_parser_create (&parser, context, 1);
+		rc = hw_ostc_parser_create (&parser, context, device->devinfo.serial, 1);
 		break;
 	case DC_FAMILY_CRESSI_EDY:
 	case DC_FAMILY_ZEAGLE_N2ITION3:
@@ -128,10 +128,10 @@ dc_parser_new (dc_parser_t **out, dc_device_t *device)
 		rc = atomics_cobalt_parser_create (&parser, context);
 		break;
 	case DC_FAMILY_SHEARWATER_PREDATOR:
-		rc = shearwater_predator_parser_create (&parser, context);
+		rc = shearwater_predator_parser_create (&parser, context, device->devinfo.serial);
 		break;
 	case DC_FAMILY_SHEARWATER_PETREL:
-		rc = shearwater_petrel_parser_create (&parser, context);
+		rc = shearwater_petrel_parser_create (&parser, context, device->devinfo.serial);
 		break;
 	case DC_FAMILY_DIVERITE_NITEKQ:
 		rc = diverite_nitekq_parser_create (&parser, context);

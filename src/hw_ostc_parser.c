@@ -20,6 +20,12 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#ifdef _MSC_VER
+#define snprintf _snprintf
+#endif
 
 #include <libdivecomputer/hw_ostc.h>
 #include "libdivecomputer/units.h"
@@ -57,6 +63,13 @@
 #define OSTC3_GAUGE 2
 #define OSTC3_APNEA 3
 
+#define OSTC3_ZHL16    0
+#define OSTC3_ZHL16_GF 1
+
+#define UNSUPPORTED 0xFFFFFFFF
+
+typedef struct hw_ostc_parser_t hw_ostc_parser_t;
+
 typedef struct hw_ostc_sample_info_t {
 	unsigned int type;
 	unsigned int divisor;
@@ -72,6 +85,12 @@ typedef struct hw_ostc_layout_t {
 	unsigned int salinity;
 	unsigned int duration;
 	unsigned int temperature;
+	unsigned int battery;
+	unsigned int desat;
+	unsigned int fw_version;
+	unsigned int deco_info1;
+	unsigned int deco_info2;
+	unsigned int decomode;
 } hw_ostc_layout_t;
 
 typedef struct hw_ostc_gasmix_t {
@@ -82,6 +101,7 @@ typedef struct hw_ostc_gasmix_t {
 typedef struct hw_ostc_parser_t {
 	dc_parser_t base;
 	unsigned int frog;
+	unsigned int serial;
 	// Cached fields.
 	unsigned int cached;
 	unsigned int version;
@@ -117,6 +137,12 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	43, /* salinity */
 	47, /* duration */
 	13, /* temperature */
+	34, /* battery volt after dive */
+	17, /* desat */
+	32, /* fw_version */
+	49, /* deco_info1 */
+	50, /* deco_info1 */
+	51, /* decomode */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_frog = {
@@ -128,6 +154,12 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	43, /* salinity */
 	47, /* duration */
 	19, /* temperature */
+	34, /* battery volt after dive */
+	23, /* desat */
+	32, /* fw_version */
+	49, /* deco_info1 */
+	50, /* deco_info2 */
+	51, /* decomode */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
@@ -139,6 +171,12 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	70, /* salinity */
 	75, /* duration */
 	22, /* temperature */
+	50, /* battery volt after dive */
+	26, /* desat */
+	48, /* fw_version */
+	77, /* deco_info1 */
+	78, /* deco_info2 */
+	79, /* decomode */
 };
 
 static unsigned int
@@ -260,7 +298,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 }
 
 dc_status_t
-hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int frog)
+hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int frog)
 {
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
@@ -288,6 +326,7 @@ hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int fr
 		parser->gasmix[i].oxygen = 0;
 		parser->gasmix[i].helium = 0;
 	}
+	parser->serial = serial;
 
 	*out = (dc_parser_t *) parser;
 
@@ -380,6 +419,8 @@ hw_ostc_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 	return DC_STATUS_SUCCESS;
 }
 
+#define BUFLEN 16
+
 static dc_status_t
 hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
 {
@@ -404,9 +445,12 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
+
 	unsigned int salinity = data[layout->salinity];
 	if (version == 0x23)
 		salinity += 100;
+	char buf[BUFLEN];
 
 	if (value) {
 		switch (type) {
@@ -496,6 +540,56 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			} else {
 				return DC_STATUS_UNSUPPORTED;
 			}
+			break;
+		case DC_FIELD_STRING:
+			switch(flags) {
+			case 0: /* battery */
+				string->desc = "Battery at end";
+				snprintf(buf, BUFLEN, "%.2f", array_uint16_le (data + layout->battery) / 1000.0);
+				break;
+			case 1: /* desat */
+				string->desc = "Desat time";
+				snprintf(buf, BUFLEN, "%0u:%02u", array_uint16_le (data + layout->desat) / 60,
+						 array_uint16_le (data + layout->desat) % 60);
+				break;
+			case 2: /* fw_version */
+				string->desc = "FW Version";
+				snprintf(buf, BUFLEN, "%0u.%02u", data[layout->fw_version], data[layout->fw_version + 1]);
+				break;
+			case 3: /* serial */
+				string->desc = "Serial";
+				snprintf(buf, BUFLEN, "%u", parser->serial);
+				break;
+			case 4: /* Deco model */
+				string->desc = "Deco model";
+				if ((version == 0x23 && data[layout->decomode] == OSTC3_ZHL16) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
+					strncpy(buf, "ZH-L16", BUFLEN);
+				if ((version == 0x23 && data[layout->decomode] == OSTC3_ZHL16_GF) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
+					strncpy(buf, "ZH-L16-GF", BUFLEN);
+				else
+					return DC_STATUS_DATAFORMAT;
+				break;
+			case 5: /* Deco model info */
+				string->desc = "Deco model info";
+				if ((version == 0x23 && data[layout->decomode] == OSTC3_ZHL16) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
+					snprintf(buf, BUFLEN, "Saturation %u, Desaturation %u", layout->deco_info1, layout->deco_info2);
+				if ((version == 0x23 && data[layout->decomode] == OSTC3_ZHL16_GF) ||
+						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
+						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
+					snprintf(buf, BUFLEN, "GF %u/%u", data[layout->deco_info1], data[layout->deco_info2]);
+				else
+					return DC_STATUS_DATAFORMAT;
+				break;
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;

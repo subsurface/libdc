@@ -2,6 +2,7 @@
  * libdivecomputer
  *
  * Copyright (C) 2012 Jef Driesen
+ * Copyright (C) 2015 Claudiu Olteanu
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -34,10 +35,13 @@ dc_status_t
 shearwater_predator_device_open (dc_device_t **device, dc_context_t *context, const char *name);
 
 dc_status_t
+shearwater_predator_device_custom_open (dc_device_t **device, dc_context_t *context, dc_serial_t *serial);
+
+dc_status_t
 shearwater_predator_extract_dives (dc_device_t *device, const unsigned char data[], unsigned int size, dc_dive_callback_t callback, void *userdata);
 
 dc_status_t
-shearwater_predator_parser_create (dc_parser_t **parser, dc_context_t *context);
+shearwater_predator_parser_create (dc_parser_t **parser, dc_context_t *context, unsigned int serial);
 
 #ifdef __cplusplus
 }

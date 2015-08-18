@@ -2,6 +2,7 @@
  * libdivecomputer
  *
  * Copyright (C) 2013 Jef Driesen
+ * Copyright (C) 2015 Claudiu Olteanu
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -41,30 +42,61 @@ dc_status_t
 shearwater_common_open (shearwater_common_device_t *device, dc_context_t *context, const char *name)
 {
 	// Open the device.
-	int rc = serial_open (&device->port, context, name);
+	int rc = dc_serial_native_open (&device->serial, context, name);
 	if (rc == -1) {
 		ERROR (context, "Failed to open the serial port.");
 		return DC_STATUS_IO;
 	}
 
 	// Set the serial communication protocol (115200 8N1).
-	rc = serial_configure (device->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
+	rc = serial_configure (device->serial->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
 	if (rc == -1) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		serial_close (device->port);
+		device->serial->ops->close (device->serial->port);
 		return DC_STATUS_IO;
 	}
 
 	// Set the timeout for receiving data (3000ms).
-	if (serial_set_timeout (device->port, 3000) == -1) {
+	if (serial_set_timeout (device->serial->port, 3000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		serial_close (device->port);
+		device->serial->ops->close (device->serial->port);
 		return DC_STATUS_IO;
 	}
 
 	// Make sure everything is in a sane state.
-	serial_sleep (device->port, 300);
-	serial_flush (device->port, SERIAL_QUEUE_BOTH);
+	serial_sleep (device->serial->port, 300);
+	device->serial->ops->flush (device->serial->port, SERIAL_QUEUE_BOTH);
+
+	return DC_STATUS_SUCCESS;
+}
+
+
+dc_status_t
+shearwater_common_custom_open (shearwater_common_device_t *device, dc_context_t *context, dc_serial_t *serial)
+{
+	// Set the serial reference
+	device->serial = serial;
+
+	if (serial->type == DC_TRANSPORT_SERIAL) {
+		// Set the serial communication protocol (115200 8N1).
+		int rc = serial_configure (device->serial->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
+		if (rc == -1) {
+			ERROR (context, "Failed to set the terminal attributes.");
+			device->serial->ops->close (device->serial->port);
+			return DC_STATUS_IO;
+		}
+	}
+
+	// Set the timeout for receiving data (3000ms).
+	if (device->serial->ops->set_timeout (device->serial->port, 3000) == -1) {
+		ERROR (context, "Failed to set the timeout.");
+		device->serial->ops->close (device->serial->port);
+		return DC_STATUS_IO;
+	}
+
+	// Make sure everything is in a sane state.
+	serial_sleep (device->serial->port, 300);
+	device->serial->ops->flush (device->serial->port, SERIAL_QUEUE_BOTH);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -74,7 +106,7 @@ dc_status_t
 shearwater_common_close (shearwater_common_device_t *device)
 {
 	// Close the device.
-	if (serial_close (device->port) == -1) {
+	if (device->serial->ops->close (device->serial->port) == -1) {
 		return DC_STATUS_IO;
 	}
 
@@ -154,7 +186,7 @@ shearwater_common_slip_write (shearwater_common_device_t *device, const unsigned
 #if 0
 	// Send an initial END character to flush out any data that may have
 	// accumulated in the receiver due to line noise.
-	n = serial_write (device->port, end, sizeof (end));
+	n = device->serial->ops->write (device->serial->port, end, sizeof (end));
 	if (n != sizeof (end)) {
 		return EXITCODE(n);
 	}
@@ -183,7 +215,7 @@ shearwater_common_slip_write (shearwater_common_device_t *device, const unsigned
 
 		// Flush the buffer if necessary.
 		if (nbytes + len + sizeof(end) > sizeof(buffer)) {
-			n = serial_write (device->port, buffer, nbytes);
+			n = device->serial->ops->write (device->serial->port, buffer, nbytes);
 			if (n != nbytes) {
 				return EXITCODE(n);
 			}
@@ -201,7 +233,7 @@ shearwater_common_slip_write (shearwater_common_device_t *device, const unsigned
 	nbytes += sizeof(end);
 
 	// Flush the buffer.
-	n = serial_write (device->port, buffer, nbytes);
+	n = device->serial->ops->write (device->serial->port, buffer, nbytes);
 	if (n != nbytes) {
 		return EXITCODE(n);
 	}
@@ -224,7 +256,7 @@ shearwater_common_slip_read (shearwater_common_device_t *device, unsigned char d
 		int n = 0;
 
 		// Get a single character to process.
-		n = serial_read (device->port, &c, 1);
+		n = device->serial->ops->read (device->serial->port, &c, 1);
 		if (n != 1) {
 			return EXITCODE(n);
 		}
@@ -243,7 +275,7 @@ shearwater_common_slip_read (shearwater_common_device_t *device, unsigned char d
 		case ESC:
 			// If it's an ESC character, get another character and then
 			// figure out what to store in the packet based on that.
-			n = serial_read (device->port, &c, 1);
+			n = device->serial->ops->read (device->serial->port, &c, 1);
 			if (n != 1) {
 				return EXITCODE(n);
 			}

@@ -20,6 +20,12 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#ifdef _MSC_VER
+#define snprintf _snprintf
+#endif
 
 #include <libdivecomputer/shearwater_predator.h>
 #include <libdivecomputer/shearwater_petrel.h>
@@ -61,6 +67,7 @@ struct shearwater_predator_parser_t {
 	unsigned int ngasmixes;
 	unsigned int oxygen[NGASMIXES];
 	unsigned int helium[NGASMIXES];
+	unsigned int serial;
 };
 
 static dc_status_t shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -89,7 +96,7 @@ static const dc_parser_vtable_t shearwater_petrel_parser_vtable = {
 
 
 dc_status_t
-shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int petrel)
+shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int petrel)
 {
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
@@ -103,6 +110,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 
 	// Initialize the base class.
 	parser->petrel = petrel;
+	parser->serial = serial;
 	if (petrel) {
 		parser_init (&parser->base, context, &shearwater_petrel_parser_vtable);
 		parser->samplesize = SZ_SAMPLE_PETREL;
@@ -128,16 +136,16 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 
 
 dc_status_t
-shearwater_predator_parser_create (dc_parser_t **out, dc_context_t *context)
+shearwater_predator_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
 {
-	return shearwater_common_parser_create (out, context, 0);
+	return shearwater_common_parser_create (out, context, serial, 0);
 }
 
 
 dc_status_t
-shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context)
+shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
 {
-	return shearwater_common_parser_create (out, context, 1);
+	return shearwater_common_parser_create (out, context, serial, 1);
 }
 
 
@@ -187,6 +195,8 @@ shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *d
 	return DC_STATUS_SUCCESS;
 }
 
+
+#define BUFLEN 16
 
 static dc_status_t
 shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
@@ -291,7 +301,9 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
 	unsigned int density = 0;
+	char buf[BUFLEN];
 
 	if (value) {
 		switch (type) {
@@ -325,6 +337,24 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			break;
 		case DC_FIELD_DIVEMODE:
 			*((dc_divemode_t *) value) = shearwater_predator_parser_get_divemode (parser);
+		case DC_FIELD_STRING:
+			switch(flags) {
+			case 0: // Battery
+				string->desc = "Battery at end";
+				snprintf(buf, BUFLEN, "%.1f", data[9] / 10.0);
+				break;
+			case 1: // Serial
+				string->desc = "Serial";
+				snprintf(buf, BUFLEN, "%08x", parser->serial);
+				break;
+			case 2: // FW Version
+				string->desc = "FW Version";
+				snprintf(buf, BUFLEN, "%2x", data[19]);
+				break;
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
@@ -390,9 +420,11 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		// Status flags.
 		unsigned int status = data[offset + 11];
 
-		// PPO2
-		sample.ppo2 = data[offset + 6] / 100.0;
-		if (callback) callback (DC_SAMPLE_PPO2, sample, userdata);
+		// PPO2 -- only return PPO2 if we are in closed circuit mode
+		if (data[offset + 11] & 0x10 == 0) {
+			sample.ppo2 = data[offset + 6] / 100.0;
+			if (callback) callback (DC_SAMPLE_PPO2, sample, userdata);
+		}
 
 		if ((status & OC) == 0) {
 			// Setpoint

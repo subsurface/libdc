@@ -42,7 +42,7 @@ dc_status_t
 suunto_d9_device_reset_maxdepth (dc_device_t *device);
 
 dc_status_t
-suunto_d9_parser_create (dc_parser_t **parser, dc_context_t *context, unsigned int model);
+suunto_d9_parser_create (dc_parser_t **parser, dc_context_t *context, unsigned int model, unsigned int serial);
 
 #ifdef __cplusplus
 }
