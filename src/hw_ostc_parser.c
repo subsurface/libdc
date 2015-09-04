@@ -68,8 +68,6 @@
 
 #define UNSUPPORTED 0xFFFFFFFF
 
-typedef struct hw_ostc_parser_t hw_ostc_parser_t;
-
 typedef struct hw_ostc_sample_info_t {
 	unsigned int type;
 	unsigned int divisor;

@@ -28,7 +28,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
-typedef struct serial_t serial_t;
+#include <libdivecomputer/custom_serial.h>
 
 typedef enum serial_parity_t {
 	SERIAL_PARITY_NONE,
