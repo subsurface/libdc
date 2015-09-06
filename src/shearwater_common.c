@@ -43,9 +43,9 @@ shearwater_common_open (shearwater_common_device_t *device, dc_context_t *contex
 {
 	// Open the device.
 	int rc = dc_serial_native_open (&device->serial, context, name);
-	if (rc == -1) {
+	if (rc != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to open the serial port.");
-		return DC_STATUS_IO;
+		return rc;
 	}
 
 	// Set the serial communication protocol (115200 8N1).
