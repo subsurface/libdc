@@ -374,6 +374,12 @@ uwatec_smart_event_info_t uwatec_smart_galileo_events_2[] = {
 	{EV_UNKNOWN,          0xFF, 0},
 };
 
+static const
+uwatec_smart_event_info_t uwatec_smart_trimix_events_2[] = {
+	{EV_UNKNOWN,          0x0F, 0},
+	{EV_GASMIX,           0xF0, 4},
+};
+
 static unsigned int
 uwatec_smart_find_gasmix (uwatec_smart_parser_t *parser, unsigned int id)
 {
@@ -419,6 +425,14 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 		if (data[43] & 0x80) {
 			trimix = 1;
 		}
+
+		if (trimix) {
+			parser->events[2] = uwatec_smart_trimix_events_2;
+			parser->nevents[2] = C_ARRAY_SIZE (uwatec_smart_trimix_events_2);
+		} else {
+			parser->events[2] = uwatec_smart_galileo_events_2;
+			parser->nevents[2] = C_ARRAY_SIZE (uwatec_smart_galileo_events_2);
+		}
 	}
 
 	// Get the gas mixes and tanks.
@@ -459,7 +473,8 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 					endpressure   = array_uint16_le(data + offset + 2);
 				}
 			}
-			if (beginpressure != 0 || endpressure != 0) {
+			if ((beginpressure != 0 || endpressure != 0) &&
+				(beginpressure != 0xFFFF) && (endpressure != 0xFFFF)) {
 				tank[ntanks].id = id;
 				tank[ntanks].beginpressure = beginpressure;
 				tank[ntanks].endpressure = endpressure;
@@ -1068,7 +1083,8 @@ uwatec_smart_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 					mixidx = idx;
 				}
 
-				if (beginpressure != 0 || endpressure != 0) {
+				if ((beginpressure != 0 || endpressure != 0) &&
+					(beginpressure != 0xFFFF) && (endpressure != 0xFFFF)) {
 					idx = uwatec_smart_find_tank (parser, mixid);
 					if (idx >= parser->ntanks) {
 						if (idx >= NGASMIXES) {
