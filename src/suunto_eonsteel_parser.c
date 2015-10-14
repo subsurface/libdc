@@ -90,6 +90,8 @@ typedef struct suunto_eonsteel_parser_t {
 		dc_salinity_t salinity;
 		double surface_pressure;
 		dc_field_string_t strings[MAXSTRINGS];
+		double tanksize[MAXGASES];
+		double tankworkingpressure[MAXGASES];
 	} cache;
 } suunto_eonsteel_parser_t;
 
@@ -898,6 +900,8 @@ static dc_status_t get_string_field(suunto_eonsteel_parser_t *eon, unsigned idx,
 static dc_status_t
 suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsigned int flags, void *value)
 {
+	dc_tank_t *tank = (dc_tank_t *) value;
+
 	suunto_eonsteel_parser_t *eon = (suunto_eonsteel_parser_t *)parser;
 
 	if (!(eon->cache.initialized >> type))
@@ -914,6 +918,7 @@ suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsi
 		field_value(value, eon->cache.avgdepth);
 		break;
 	case DC_FIELD_GASMIX_COUNT:
+	case DC_FIELD_TANK_COUNT:
 		field_value(value, eon->cache.ngases);
 		break;
 	case DC_FIELD_GASMIX:
@@ -926,6 +931,22 @@ suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsi
 		break;
 	case DC_FIELD_ATMOSPHERIC:
 		field_value(value, eon->cache.surface_pressure);
+		break;
+	case DC_FIELD_TANK:
+		/* Sadly it seems that the EON Steel doesn't tell us whether we get imperial
+		 * or metric data - the only indication is metric is always whole liters */
+		tank->volume = eon->cache.tanksize[flags];
+		if (eon->cache.tanksize[flags] - (int)eon->cache.tanksize[flags] < 0.001) {
+			tank->type = DC_TANKVOLUME_METRIC;
+			tank->workpressure = 0;
+		} else {
+			/* the pressure reported is NOT the pressure the user enters.
+			 * So 3000psi turns into 206.700 bar instead of 206.843 bar;
+			 * We report it as we get it and let the application figure out
+			 * what to do with that */
+			tank->type = DC_TANKVOLUME_IMPERIAL;
+			tank->workpressure = eon->cache.tankworkingpressure[flags];
+		}
 		break;
 	case DC_FIELD_STRING:
 		return get_string_field(eon, flags, (dc_field_string_t *)value);
@@ -1001,6 +1022,22 @@ static int add_gas_he(suunto_eonsteel_parser_t *eon, unsigned char he)
 	if (idx >= 0)
 		eon->cache.gasmix[idx].helium = he / 100.0;
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX;
+	return 0;
+}
+
+static int add_gas_size(suunto_eonsteel_parser_t *eon, float l)
+{
+	int idx = eon->cache.ngases-1;
+	if (idx >= 0)
+		eon->cache.tanksize[idx] = l;
+	return 0;
+}
+
+static int add_gas_workpressure(suunto_eonsteel_parser_t *eon, float wp)
+{
+	int idx = eon->cache.ngases-1;
+	if (idx >= 0)
+		eon->cache.tankworkingpressure[idx] = wp;
 	return 0;
 }
 
@@ -1114,6 +1151,12 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 
 	if (!strcmp(name, "Gases.Gas.TransmitterID"))
 		return add_string(eon, "Transmitter ID", data);
+
+	if (!strcmp(name, "Gases.Gas.TankSize"))
+		return add_gas_size(eon, get_le32_float(data));
+
+	if (!strcmp(name, "Gases.Gas.TankFillPressure"))
+		return add_gas_workpressure(eon, get_le32_float(data));
 
 	if (!strcmp(name, "SurfacePressure")) {
 		unsigned int pressure = array_uint32_le(data); // in SI units - Pascal
