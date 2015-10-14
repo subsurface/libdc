@@ -352,6 +352,38 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 				string->desc = "FW Version";
 				snprintf(buf, BUFLEN, "%2x", data[19]);
 				break;
+			case 3: /* Deco model */
+				string->desc = "Deco model";
+				switch (data[67]) {
+				case 0:
+					strncpy(buf, "GF", BUFLEN);
+					break;
+				case 1:
+					strncpy(buf, "VPM-B", BUFLEN);
+					break;
+				case 2:
+					strncpy(buf, "VPM-B/GFS", BUFLEN);
+					break;
+				default:
+					return DC_STATUS_DATAFORMAT;
+				}
+				break;
+			case 4: /* Deco model info */
+				string->desc = "Deco model info";
+				switch (data[67]) {
+				case 0:
+					snprintf(buf, BUFLEN, "GF %u/%u", data[4], data[5]);
+					break;
+				case 1:
+					snprintf(buf, BUFLEN, "VPM-B +%u", data[68]);
+					break;
+				case 2:
+					snprintf(buf, BUFLEN, "VPM-B/GFS +%u %%%u", data[68], data[85]);
+					break;
+				default:
+					return DC_STATUS_DATAFORMAT;
+				}
+				break;
 			default:
 				return DC_STATUS_UNSUPPORTED;
 			}
