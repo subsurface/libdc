@@ -37,6 +37,9 @@
 #define snprintf _snprintf
 #endif
 
+#if __APPLE__ && HAVE_HIDAPI
+#include "hidapi/hidapi.h"
+#endif
 #ifdef HAVE_LIBUSB
 
 #ifdef _WIN32
@@ -49,7 +52,11 @@ typedef struct suunto_eonsteel_device_t {
 	dc_device_t base;
 
 	libusb_context *ctx;
+#if __APPLE__ && HAVE_HIDAPI
+	hid_device *handle;
+#else
 	libusb_device_handle *handle;
+#endif
 	unsigned int magic;
 	unsigned short seq;
 } suunto_eonsteel_device_t;
@@ -143,7 +150,12 @@ static int receive_packet(suunto_eonsteel_device_t *eon, unsigned char *buffer, 
 	int rc, transferred,  len;
 
 	/* 5000 = 5s timeout */
+#if __APPLE__ && HAVE_HIDAPI
+	transferred = hid_read_timeout(eon->handle, buf, PACKET_SIZE, 5000);
+	rc = (transferred <= 0) ? -1 : 0;
+#else
 	rc = libusb_interrupt_transfer(eon->handle, InEndpoint, buf, PACKET_SIZE, &transferred, 5000);
+#endif
 	if (rc) {
 		ERROR(eon->base.context, "read interrupt transfer failed (%s)", libusb_error_name(rc));
 		return -1;
@@ -209,7 +221,13 @@ static int send_cmd(suunto_eonsteel_device_t *eon,
 		memcpy(buf+14, buffer, len);
 	}
 
+#if __APPLE__ && HAVE_HIDAPI
+	/* there is no write with timeout */
+	transferred = hid_write(eon->handle, buf, PACKET_SIZE);
+	rc = (transferred <= 0) ? -1 : 0;
+#else
 	rc = libusb_interrupt_transfer(eon->handle, OutEndpoint, buf, sizeof(buf), &transferred, 5000);
+#endif
 	if (rc < 0) {
 		ERROR(eon->base.context, "write interrupt transfer failed");
 		return -1;
@@ -530,7 +548,12 @@ static int initialize_eonsteel(suunto_eonsteel_device_t *eon)
 	for (;;) {
 		int transferred;
 
+#if __APPLE__ && HAVE_HIDAPI
+		transferred = hid_read_timeout(eon->handle, buf, sizeof(buf), 10);
+		int rc = (transferred <= 0) ? -1 : 0;
+#else
 		int rc = libusb_interrupt_transfer(eon->handle, InEndpoint, buf, sizeof(buf), &transferred, 10);
+#endif
 		if (rc < 0)
 			break;
 		if (!transferred)
@@ -572,6 +595,24 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char
 	// Set up the libdivecomputer interfaces
 	device_init(&eon->base, context, &suunto_eonsteel_device_vtable);
 
+#if __APPLE__ && HAVE_HIDAPI
+
+	if (hid_init()) {
+		ERROR(context, "hid_init() failed");
+		free(eon);
+		return DC_STATUS_IO;
+	}
+
+	eon->handle = hid_open(0x1493, 0x0030, NULL);
+	if (!eon->handle) {
+		ERROR(context, "unable to open device");
+		hid_exit();
+		free(eon);
+		return DC_STATUS_IO;
+	}
+
+#else
+
 	if (libusb_init(&eon->ctx)) {
 		ERROR(context, "libusb_init() failed");
 		free(eon);
@@ -591,11 +632,16 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char
 #endif
 
 	libusb_claim_interface(eon->handle, 0);
-
+#endif
 	if (initialize_eonsteel(eon) < 0) {
 		ERROR(context, "unable to initialize device");
+#if __APPLE__ && HAVE_HIDAPI
+		hid_close(eon->handle);
+		hid_exit();
+#else
 		libusb_close(eon->handle);
 		libusb_exit(eon->ctx);
+#endif
 		free(eon);
 		return DC_STATUS_IO;
 	}
@@ -688,8 +734,14 @@ suunto_eonsteel_device_close(dc_device_t *abstract)
 {
 	suunto_eonsteel_device_t *eon = (suunto_eonsteel_device_t *) abstract;
 
+
+#if __APPLE__ && HAVE_HIDAPI
+	hid_close(eon->handle);
+	hid_exit();
+#else
 	libusb_close(eon->handle);
 	libusb_exit(eon->ctx);
+#endif
 	free(eon);
 
 	return DC_STATUS_SUCCESS;

@@ -80,6 +80,13 @@ if test "$have_libusb" = "yes"; then
 	AC_SUBST([DEPENDENCIES], [libusb-1.0])
 fi
 
+# Checks for hidapi support.
+PKG_CHECK_MODULES([HIDAPI], [hidapi], [have_hidapi=yes], [have_hidapi=no])
+if test "$have_hidapi" = "yes"; then
+	AC_DEFINE([HAVE_HIDAPI], [1], [hidapi support])
+	AC_SUBST([DEPENDENCIES], [hidapi])
+fi
+
 # Checks for IrDA support.
 AC_CHECK_HEADERS([winsock2.h af_irda.h], [irda_win32=yes], [irda_win32=no], [
 #if HAVE_WINSOCK2_H
