@@ -34,13 +34,25 @@ extern "C" {
 
 #define UNUSED(x) (void)sizeof(x)
 
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
+#define FUNCTION __func__
+#else
+#define FUNCTION __FUNCTION__
+#endif
+
+#if defined(__GNUC__)
+#define ATTR_FORMAT_PRINTF(a,b) __attribute__((format(printf, a, b)))
+#else
+#define ATTR_FORMAT_PRINTF(a,b)
+#endif
+
 #ifdef ENABLE_LOGGING
-#define HEXDUMP(context, loglevel, prefix, data, size) dc_context_hexdump (context, loglevel, __FILE__, __LINE__, __FUNCTION__, prefix, data, size)
-#define SYSERROR(context, errcode) dc_context_syserror (context, DC_LOGLEVEL_ERROR, __FILE__, __LINE__, __FUNCTION__, errcode)
-#define ERROR(context, ...) dc_context_log (context, DC_LOGLEVEL_ERROR, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
-#define WARNING(context, ...) dc_context_log (context, DC_LOGLEVEL_WARNING, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
-#define INFO(context, ...) dc_context_log (context, DC_LOGLEVEL_INFO, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
-#define DEBUG(context, ...) dc_context_log (context, DC_LOGLEVEL_DEBUG, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define HEXDUMP(context, loglevel, prefix, data, size) dc_context_hexdump (context, loglevel, __FILE__, __LINE__, FUNCTION, prefix, data, size)
+#define SYSERROR(context, errcode) dc_context_syserror (context, DC_LOGLEVEL_ERROR, __FILE__, __LINE__, FUNCTION, errcode)
+#define ERROR(context, ...) dc_context_log (context, DC_LOGLEVEL_ERROR, __FILE__, __LINE__, FUNCTION, __VA_ARGS__)
+#define WARNING(context, ...) dc_context_log (context, DC_LOGLEVEL_WARNING, __FILE__, __LINE__, FUNCTION, __VA_ARGS__)
+#define INFO(context, ...) dc_context_log (context, DC_LOGLEVEL_INFO, __FILE__, __LINE__, FUNCTION, __VA_ARGS__)
+#define DEBUG(context, ...) dc_context_log (context, DC_LOGLEVEL_DEBUG, __FILE__, __LINE__, FUNCTION, __VA_ARGS__)
 #else
 #define HEXDUMP(context, loglevel, prefix, data, size) UNUSED(context)
 #define SYSERROR(context, errcode) UNUSED(context)
@@ -51,7 +63,7 @@ extern "C" {
 #endif
 
 dc_status_t
-dc_context_log (dc_context_t *context, dc_loglevel_t loglevel, const char *file, unsigned int line, const char *function, const char *format, ...);
+dc_context_log (dc_context_t *context, dc_loglevel_t loglevel, const char *file, unsigned int line, const char *function, const char *format, ...) ATTR_FORMAT_PRINTF(6, 7);
 
 dc_status_t
 dc_context_syserror (dc_context_t *context, dc_loglevel_t loglevel, const char *file, unsigned int line, const char *function, int errcode);

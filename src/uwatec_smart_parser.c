@@ -760,8 +760,6 @@ uwatec_smart_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 			*((double *) value) = (signed short) array_uint16_le (data + table->temp_surface) / 10.0;
 			break;
 		case DC_FIELD_DIVEMODE:
-			if (parser->trimix)
-				return DC_STATUS_UNSUPPORTED;
 			if (parser->ngasmixes)
 				*((dc_divemode_t *) value) = DC_DIVEMODE_OC;
 			else
@@ -1146,9 +1144,12 @@ uwatec_smart_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 			}
 
 			if (have_pressure) {
-				sample.pressure.tank = tank;
-				sample.pressure.value = pressure;
-				if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+				idx = uwatec_smart_find_tank(parser, tank);
+				if (idx < parser->ntanks) {
+					sample.pressure.tank = idx;
+					sample.pressure.value = pressure;
+					if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+				}
 			}
 
 			if (have_heartrate) {
