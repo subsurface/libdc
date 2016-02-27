@@ -1,7 +1,7 @@
 /*
  * libdivecomputer
  *
- * Copyright (C) 2011 Jef Driesen
+ * Copyright (C) 2015 Jef Driesen
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -19,23 +19,42 @@
  * MA 02110-1301 USA
  */
 
-#ifndef EXAMPLES_COMMON_H
-#define EXAMPLES_COMMON_H
+#ifndef DCTOOL_COMMON_H
+#define DCTOOL_COMMON_H
 
-#include <libdivecomputer/common.h>
 #include <libdivecomputer/context.h>
+#include <libdivecomputer/descriptor.h>
+#include <libdivecomputer/device.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
 const char *
-errmsg (dc_status_t rc);
+dctool_errmsg (dc_status_t status);
+
+dc_family_t
+dctool_family_type (const char *name);
+
+const char *
+dctool_family_name (dc_family_t type);
 
 void
-logfunc (dc_context_t *context, dc_loglevel_t loglevel, const char *file, unsigned int line, const char *function, const char *msg, void *userdata);
+dctool_event_cb (dc_device_t *device, dc_event_type_t event, const void *data, void *userdata);
+
+dc_status_t
+dctool_descriptor_search (dc_descriptor_t **out, const char *name, dc_family_t family, unsigned int model);
+
+dc_buffer_t *
+dctool_convert_hex2bin (const char *str);
+
+void
+dctool_file_write (const char *filename, dc_buffer_t *buffer);
+
+dc_buffer_t *
+dctool_file_read (const char *filename);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
-#endif /* EXAMPLES_COMMON_H */
+#endif /* DCTOOL_COMMON_H */

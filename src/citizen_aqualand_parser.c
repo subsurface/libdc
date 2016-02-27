@@ -40,45 +40,34 @@ static dc_status_t citizen_aqualand_parser_set_data (dc_parser_t *abstract, cons
 static dc_status_t citizen_aqualand_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t citizen_aqualand_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t citizen_aqualand_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t citizen_aqualand_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t citizen_aqualand_parser_vtable = {
+	sizeof(citizen_aqualand_parser_t),
 	DC_FAMILY_CITIZEN_AQUALAND,
 	citizen_aqualand_parser_set_data, /* set_data */
 	citizen_aqualand_parser_get_datetime, /* datetime */
 	citizen_aqualand_parser_get_field, /* fields */
 	citizen_aqualand_parser_samples_foreach, /* samples_foreach */
-	citizen_aqualand_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 
 dc_status_t
 citizen_aqualand_parser_create (dc_parser_t **out, dc_context_t *context)
 {
+	citizen_aqualand_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	citizen_aqualand_parser_t *parser = (citizen_aqualand_parser_t *) malloc (sizeof (citizen_aqualand_parser_t));
+	parser = (citizen_aqualand_parser_t *) dc_parser_allocate (context, &citizen_aqualand_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
 
-	// Initialize the base class.
-	parser_init (&parser->base, context, &citizen_aqualand_parser_vtable);
-
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-citizen_aqualand_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
 
 	return DC_STATUS_SUCCESS;
 }

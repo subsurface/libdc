@@ -179,6 +179,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Aeris",    "F11",                 DC_FAMILY_OCEANIC_ATOM2, 0x4549},
 	{"Oceanic",  "OCi",                 DC_FAMILY_OCEANIC_ATOM2, 0x454B},
 	{"Aeris",    "A300CS",              DC_FAMILY_OCEANIC_ATOM2, 0x454C},
+	{"Oceanic",  "F11",                 DC_FAMILY_OCEANIC_ATOM2, 0x4554},
 	{"Oceanic",  "VTX",                 DC_FAMILY_OCEANIC_ATOM2, 0x4557},
 	/* Mares Nemo */
 	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0},
@@ -254,6 +255,10 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"DiveSystem", "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x09},
 	{"DiveSystem", "iDive X3M",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x0A},
 	{"DiveSystem", "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x0B},
+	{"DiveSystem", "iX3M Easy",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x22},
+	{"DiveSystem", "iX3M Deep",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x23},
+	{"DiveSystem", "iX3M Tec",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x24},
+	{"DiveSystem", "iX3M Reb",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x25},
 };
 
 typedef struct dc_descriptor_iterator_t {

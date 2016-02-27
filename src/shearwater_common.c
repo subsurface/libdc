@@ -41,6 +41,8 @@
 dc_status_t
 shearwater_common_open (shearwater_common_device_t *device, dc_context_t *context, const char *name)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+
 	// Open the device.
 	int rc = dc_serial_native_open (&device->serial, context, name);
 	if (rc != DC_STATUS_SUCCESS) {
@@ -52,15 +54,15 @@ shearwater_common_open (shearwater_common_device_t *device, dc_context_t *contex
 	rc = serial_configure (device->serial->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
 	if (rc == -1) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		device->serial->ops->close (device->serial->port);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the timeout for receiving data (3000ms).
 	if (serial_set_timeout (device->serial->port, 3000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		device->serial->ops->close (device->serial->port);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Make sure everything is in a sane state.
@@ -68,12 +70,18 @@ shearwater_common_open (shearwater_common_device_t *device, dc_context_t *contex
 	device->serial->ops->flush (device->serial->port, SERIAL_QUEUE_BOTH);
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+		device->serial->ops->close (device->serial->port);
+	return status;
 }
 
 
 dc_status_t
 shearwater_common_custom_open (shearwater_common_device_t *device, dc_context_t *context, dc_serial_t *serial)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+
 	// Set the serial reference
 	device->serial = serial;
 
@@ -91,7 +99,8 @@ shearwater_common_custom_open (shearwater_common_device_t *device, dc_context_t 
 	if (device->serial->ops->set_timeout (device->serial->port, 3000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
 		device->serial->ops->close (device->serial->port);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Make sure everything is in a sane state.
@@ -99,6 +108,10 @@ shearwater_common_custom_open (shearwater_common_device_t *device, dc_context_t 
 	device->serial->ops->flush (device->serial->port, SERIAL_QUEUE_BOTH);
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	serial_close (device->serial->port);
+	return status;
 }
 
 

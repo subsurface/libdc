@@ -51,6 +51,7 @@ static dc_status_t uwatec_smart_device_foreach (dc_device_t *abstract, dc_dive_c
 static dc_status_t uwatec_smart_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t uwatec_smart_device_vtable = {
+	sizeof(uwatec_smart_device_t),
 	DC_FAMILY_UWATEC_SMART,
 	uwatec_smart_device_set_fingerprint, /* set_fingerprint */
 	NULL, /* read */
@@ -145,18 +146,18 @@ uwatec_smart_handshake (uwatec_smart_device_t *device)
 dc_status_t
 uwatec_smart_device_open (dc_device_t **out, dc_context_t *context)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+	uwatec_smart_device_t *device = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	uwatec_smart_device_t *device = (uwatec_smart_device_t *) malloc (sizeof (uwatec_smart_device_t));
+	device = (uwatec_smart_device_t *) dc_device_allocate (context, &uwatec_smart_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	device_init (&device->base, context, &uwatec_smart_device_vtable);
 
 	// Set the default values.
 	device->socket = NULL;
@@ -169,33 +170,30 @@ uwatec_smart_device_open (dc_device_t **out, dc_context_t *context)
 	int rc = irda_socket_open (&device->socket, context);
 	if (rc == -1) {
 		ERROR (context, "Failed to open the irda socket.");
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	// Discover the device.
 	rc = irda_socket_discover (device->socket, uwatec_smart_discovery, device);
 	if (rc == -1) {
 		ERROR (context, "Failed to discover the device.");
-		irda_socket_close (device->socket);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	if (device->address == 0) {
 		ERROR (context, "No dive computer found.");
-		irda_socket_close (device->socket);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Connect the device.
 	rc = irda_socket_connect_lsap (device->socket, device->address, 1);
 	if (rc == -1) {
 		ERROR (context, "Failed to connect the device.");
-		irda_socket_close (device->socket);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Perform the handshaking.
@@ -204,24 +202,27 @@ uwatec_smart_device_open (dc_device_t **out, dc_context_t *context)
 	*out = (dc_device_t*) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	irda_socket_close (device->socket);
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
 static dc_status_t
 uwatec_smart_device_close (dc_device_t *abstract)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	uwatec_smart_device_t *device = (uwatec_smart_device_t*) abstract;
 
 	// Close the device.
 	if (irda_socket_close (device->socket) == -1) {
-		free (device);
-		return DC_STATUS_IO;
+		dc_status_set_error(&status, DC_STATUS_IO);
 	}
 
-	// Free memory.
-	free (device);
-
-	return DC_STATUS_SUCCESS;
+	return status;
 }
 
 

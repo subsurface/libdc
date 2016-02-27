@@ -74,35 +74,62 @@ static dc_status_t shearwater_predator_parser_set_data (dc_parser_t *abstract, c
 static dc_status_t shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t shearwater_predator_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t shearwater_predator_parser_vtable = {
+	sizeof(shearwater_predator_parser_t),
 	DC_FAMILY_SHEARWATER_PREDATOR,
 	shearwater_predator_parser_set_data, /* set_data */
 	shearwater_predator_parser_get_datetime, /* datetime */
 	shearwater_predator_parser_get_field, /* fields */
 	shearwater_predator_parser_samples_foreach, /* samples_foreach */
-	shearwater_predator_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 static const dc_parser_vtable_t shearwater_petrel_parser_vtable = {
+	sizeof(shearwater_predator_parser_t),
 	DC_FAMILY_SHEARWATER_PETREL,
 	shearwater_predator_parser_set_data, /* set_data */
 	shearwater_predator_parser_get_datetime, /* datetime */
 	shearwater_predator_parser_get_field, /* fields */
 	shearwater_predator_parser_samples_foreach, /* samples_foreach */
-	shearwater_predator_parser_destroy /* destroy */
+	NULL /* destroy */
 };
+
+
+static unsigned int
+shearwater_predator_find_gasmix (shearwater_predator_parser_t *parser, unsigned int o2, unsigned int he)
+{
+	unsigned int i = 0;
+	while (i < parser->ngasmixes) {
+		if (o2 == parser->oxygen[i] && he == parser->helium[i])
+			break;
+		i++;
+	}
+
+	return i;
+}
 
 
 dc_status_t
 shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int petrel)
 {
+	shearwater_predator_parser_t *parser = NULL;
+	const dc_parser_vtable_t *vtable = NULL;
+	unsigned int samplesize = 0;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
+	if (petrel) {
+		vtable = &shearwater_petrel_parser_vtable;
+		samplesize = SZ_SAMPLE_PETREL;
+	} else {
+		vtable = &shearwater_predator_parser_vtable;
+		samplesize = SZ_SAMPLE_PREDATOR;
+	}
+
 	// Allocate memory.
-	shearwater_predator_parser_t *parser = (shearwater_predator_parser_t *) malloc (sizeof (shearwater_predator_parser_t));
+	parser = (shearwater_predator_parser_t *) dc_parser_allocate (context, vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -146,16 +173,6 @@ dc_status_t
 shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
 {
 	return shearwater_common_parser_create (out, context, serial, 1);
-}
-
-
-static dc_status_t
-shearwater_predator_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
-
-	return DC_STATUS_SUCCESS;
 }
 
 
@@ -443,7 +460,14 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
 
 		// Temperature (°C or °F).
-		unsigned int temperature = data[offset + 13];
+		int temperature = (signed char) data[offset + 13];
+		if (temperature < 0) {
+			// Fix negative temperatures.
+			temperature += 102;
+			if (temperature > 0) {
+				temperature = 0;
+			}
+		}
 		if (units == IMPERIAL)
 			sample.temperature = (temperature - 32.0) * (5.0 / 9.0);
 		else
@@ -481,11 +505,21 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		unsigned int o2 = data[offset + 7];
 		unsigned int he = data[offset + 8];
 		if (o2 != o2_previous || he != he_previous) {
+			unsigned int idx = shearwater_predator_find_gasmix (parser, o2, he);
+			if (idx >= parser->ngasmixes) {
+				ERROR (abstract->context, "Invalid gas mix.");
+				return DC_STATUS_DATAFORMAT;
+			}
+
+			sample.gasmix = idx;
+			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 			sample.event.type = SAMPLE_EVENT_GASCHANGE2;
 			sample.event.time = 0;
 			sample.event.flags = 0;
 			sample.event.value = o2 | (he << 16);
 			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 			o2_previous = o2;
 			he_previous = he;
 		}

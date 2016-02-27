@@ -150,15 +150,15 @@ static dc_status_t uwatec_smart_parser_set_data (dc_parser_t *abstract, const un
 static dc_status_t uwatec_smart_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t uwatec_smart_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t uwatec_smart_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t uwatec_smart_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t uwatec_smart_parser_vtable = {
+	sizeof(uwatec_smart_parser_t),
 	DC_FAMILY_UWATEC_SMART,
 	uwatec_smart_parser_set_data, /* set_data */
 	uwatec_smart_parser_get_datetime, /* datetime */
 	uwatec_smart_parser_get_field, /* fields */
 	uwatec_smart_parser_samples_foreach, /* samples_foreach */
-	uwatec_smart_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 static const
@@ -512,18 +512,18 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 dc_status_t
 uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int devtime, dc_ticks_t systime)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+	uwatec_smart_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	uwatec_smart_parser_t *parser = (uwatec_smart_parser_t *) malloc (sizeof (uwatec_smart_parser_t));
+	parser = (uwatec_smart_parser_t *) dc_parser_allocate (context, &uwatec_smart_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	parser_init (&parser->base, context, &uwatec_smart_parser_vtable);
 
 	// Set the default values.
 	parser->model = model;
@@ -594,8 +594,8 @@ uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 		parser->nevents[0] = C_ARRAY_SIZE (uwatec_smart_tec_events_0);
 		break;
 	default:
-		free (parser);
-		return DC_STATUS_INVALIDARGS;
+		status = DC_STATUS_INVALIDARGS;
+		goto error_free;
 	}
 
 	parser->cached = 0;
@@ -616,16 +616,10 @@ uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 	*out = (dc_parser_t*) parser;
 
 	return DC_STATUS_SUCCESS;
-}
 
-
-static dc_status_t
-uwatec_smart_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
-
-	return DC_STATUS_SUCCESS;
+error_free:
+	dc_parser_deallocate ((dc_parser_t *) parser);
+	return status;
 }
 
 
@@ -1115,6 +1109,9 @@ uwatec_smart_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 					ERROR (abstract->context, "Invalid gas mix index.");
 					return DC_STATUS_DATAFORMAT;
 				}
+				sample.gasmix = idx;
+				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 				unsigned int o2 = parser->gasmix[idx].oxygen;
 				unsigned int he = parser->gasmix[idx].helium;
 				sample.event.type = SAMPLE_EVENT_GASCHANGE2;
@@ -1122,6 +1119,7 @@ uwatec_smart_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 				sample.event.flags = 0;
 				sample.event.value = o2 | (he << 16);
 				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 				gasmix_previous = gasmix;
 			}
 

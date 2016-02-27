@@ -29,8 +29,15 @@
 
 #define ISINSTANCE(parser) dc_device_isinstance((parser), &divesystem_idive_parser_vtable)
 
-#define SZ_HEADER 0x32
-#define SZ_SAMPLE 0x2A
+#define IX3M_EASY 0x22
+#define IX3M_DEEP 0x23
+#define IX3M_TEC  0x24
+#define IX3M_REB  0x25
+
+#define SZ_HEADER_IDIVE 0x32
+#define SZ_SAMPLE_IDIVE 0x2A
+#define SZ_HEADER_IX3M  0x36
+#define SZ_SAMPLE_IX3M  0x36
 
 #define NGASMIXES 8
 
@@ -40,6 +47,8 @@ typedef struct divesystem_idive_parser_t divesystem_idive_parser_t;
 
 struct divesystem_idive_parser_t {
 	dc_parser_t base;
+	unsigned int headersize;
+	unsigned int samplesize;
 	// Cached fields.
 	unsigned int cached;
 	unsigned int divetime;
@@ -53,35 +62,48 @@ static dc_status_t divesystem_idive_parser_set_data (dc_parser_t *abstract, cons
 static dc_status_t divesystem_idive_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t divesystem_idive_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t divesystem_idive_parser_vtable = {
+	sizeof(divesystem_idive_parser_t),
 	DC_FAMILY_DIVESYSTEM_IDIVE,
 	divesystem_idive_parser_set_data, /* set_data */
 	divesystem_idive_parser_get_datetime, /* datetime */
 	divesystem_idive_parser_get_field, /* fields */
 	divesystem_idive_parser_samples_foreach, /* samples_foreach */
-	divesystem_idive_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 
 dc_status_t
 divesystem_idive_parser_create (dc_parser_t **out, dc_context_t *context)
 {
+	return divesystem_idive_parser_create2 (out, context, 0);
+}
+
+
+dc_status_t
+divesystem_idive_parser_create2 (dc_parser_t **out, dc_context_t *context, unsigned int model)
+{
+	divesystem_idive_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	divesystem_idive_parser_t *parser = (divesystem_idive_parser_t *) malloc (sizeof (divesystem_idive_parser_t));
+	parser = (divesystem_idive_parser_t *) dc_parser_allocate (context, &divesystem_idive_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
 
-	// Initialize the base class.
-	parser_init (&parser->base, context, &divesystem_idive_parser_vtable);
-
 	// Set the default values.
+	if (model >= IX3M_EASY && model <= IX3M_REB) {
+		parser->headersize = SZ_HEADER_IX3M;
+		parser->samplesize = SZ_SAMPLE_IX3M;
+	} else {
+		parser->headersize = SZ_HEADER_IDIVE;
+		parser->samplesize = SZ_SAMPLE_IDIVE;
+	}
 	parser->cached = 0;
 	parser->divetime = 0;
 	parser->maxdepth = 0;
@@ -92,16 +114,6 @@ divesystem_idive_parser_create (dc_parser_t **out, dc_context_t *context)
 	}
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-divesystem_idive_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -129,7 +141,9 @@ divesystem_idive_parser_set_data (dc_parser_t *abstract, const unsigned char *da
 static dc_status_t
 divesystem_idive_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 {
-	if (abstract->size < SZ_HEADER)
+	divesystem_idive_parser_t *parser = (divesystem_idive_parser_t *) abstract;
+
+	if (abstract->size < parser->headersize)
 		return DC_STATUS_DATAFORMAT;
 
 	dc_ticks_t ticks = array_uint32_le(abstract->data + 7) + EPOCH;
@@ -147,7 +161,7 @@ divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 	divesystem_idive_parser_t *parser = (divesystem_idive_parser_t *) abstract;
 	const unsigned char *data = abstract->data;
 
-	if (abstract->size < SZ_HEADER)
+	if (abstract->size < parser->headersize)
 		return DC_STATUS_DATAFORMAT;
 
 	if (!parser->cached) {
@@ -201,8 +215,8 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 	unsigned int o2_previous = 0xFFFFFFFF;
 	unsigned int he_previous = 0xFFFFFFFF;
 
-	unsigned int offset = SZ_HEADER;
-	while (offset + SZ_SAMPLE <= size) {
+	unsigned int offset = parser->headersize;
+	while (offset + parser->samplesize <= size) {
 		dc_sample_value_t sample = {0};
 
 		// Time (seconds).
@@ -250,11 +264,15 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 				ngasmixes = i + 1;
 			}
 
+			sample.gasmix = i;
+			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 			sample.event.type = SAMPLE_EVENT_GASCHANGE2;
 			sample.event.time = 0;
 			sample.event.flags = 0;
 			sample.event.value = o2 | (he << 16);
 			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 			o2_previous = o2;
 			he_previous = he;
 		}
@@ -279,7 +297,7 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		sample.cns = cns / 100.0;
 		if (callback) callback (DC_SAMPLE_CNS, sample, userdata);
 
-		offset += SZ_SAMPLE;
+		offset += parser->samplesize;
 	}
 
 	// Cache the data for later use.

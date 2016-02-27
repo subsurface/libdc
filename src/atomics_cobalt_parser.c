@@ -54,49 +54,38 @@ static dc_status_t atomics_cobalt_parser_set_data (dc_parser_t *abstract, const 
 static dc_status_t atomics_cobalt_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t atomics_cobalt_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t atomics_cobalt_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t atomics_cobalt_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t atomics_cobalt_parser_vtable = {
+	sizeof(atomics_cobalt_parser_t),
 	DC_FAMILY_ATOMICS_COBALT,
 	atomics_cobalt_parser_set_data, /* set_data */
 	atomics_cobalt_parser_get_datetime, /* datetime */
 	atomics_cobalt_parser_get_field, /* fields */
 	atomics_cobalt_parser_samples_foreach, /* samples_foreach */
-	atomics_cobalt_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 
 dc_status_t
 atomics_cobalt_parser_create (dc_parser_t **out, dc_context_t *context)
 {
+	atomics_cobalt_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	atomics_cobalt_parser_t *parser = (atomics_cobalt_parser_t *) malloc (sizeof (atomics_cobalt_parser_t));
+	parser = (atomics_cobalt_parser_t *) dc_parser_allocate (context, &atomics_cobalt_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	parser_init (&parser->base, context, &atomics_cobalt_parser_vtable);
 
 	// Set the default values.
 	parser->atmospheric = 0.0;
 	parser->hydrostatic = 1025.0 * GRAVITY;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-atomics_cobalt_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -341,6 +330,9 @@ atomics_cobalt_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
 				ERROR (abstract->context, "Invalid gas mix index.");
 				return DC_STATUS_DATAFORMAT;
 			}
+			sample.gasmix = idx;
+			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 			unsigned int o2 = data[SZ_HEADER + SZ_GASMIX * idx + 4];
 			unsigned int he = data[SZ_HEADER + SZ_GASMIX * idx + 5];
 			sample.event.type = SAMPLE_EVENT_GASCHANGE2;
@@ -348,6 +340,7 @@ atomics_cobalt_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
 			sample.event.flags = 0;
 			sample.event.value = o2 | (he << 16);
 			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 			gasmix_previous = gasmix;
 		}
 

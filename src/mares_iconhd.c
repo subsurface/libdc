@@ -84,6 +84,7 @@ static dc_status_t mares_iconhd_device_foreach (dc_device_t *abstract, dc_dive_c
 static dc_status_t mares_iconhd_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t mares_iconhd_device_vtable = {
+	sizeof(mares_iconhd_device_t),
 	DC_FAMILY_MARES_ICONHD,
 	mares_iconhd_device_set_fingerprint, /* set_fingerprint */
 	mares_iconhd_device_read, /* read */
@@ -214,18 +215,18 @@ mares_iconhd_transfer (mares_iconhd_device_t *device,
 dc_status_t
 mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, const char *name, unsigned int model)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+	mares_iconhd_device_t *device = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	mares_iconhd_device_t *device = (mares_iconhd_device_t *) malloc (sizeof (mares_iconhd_device_t));
+	device = (mares_iconhd_device_t *) dc_device_allocate (context, &mares_iconhd_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	device_init (&device->base, context, &mares_iconhd_device_vtable);
 
 	// Set the default values.
 	device->port = NULL;
@@ -239,25 +240,23 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, const char *
 	int rc = serial_open (&device->port, context, name);
 	if (rc == -1) {
 		ERROR (context, "Failed to open the serial port.");
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	// Set the serial communication protocol (115200 8E1).
 	rc = serial_configure (device->port, 115200, 8, SERIAL_PARITY_EVEN, 1, SERIAL_FLOWCONTROL_NONE);
 	if (rc == -1) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the timeout for receiving data (1000 ms).
 	if (serial_set_timeout (device->port, 1000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the DTR/RTS lines.
@@ -265,9 +264,8 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, const char *
 		serial_set_rts (device->port, 0) == -1)
 	{
 		ERROR (context, "Failed to set the DTR/RTS line.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Make sure everything is in a sane state.
@@ -275,12 +273,10 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, const char *
 
 	// Send the version command.
 	unsigned char command[] = {0xC2, 0x67};
-	dc_status_t status = mares_iconhd_transfer (device, command, sizeof (command),
+	status = mares_iconhd_transfer (device, command, sizeof (command),
 		device->version, sizeof (device->version));
 	if (status != DC_STATUS_SUCCESS) {
-		serial_close (device->port);
-		free (device);
-		return status;
+		goto error_close;
 	}
 
 	// Autodetect the model using the version packet.
@@ -314,24 +310,27 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, const char *
 	*out = (dc_device_t *) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	serial_close (device->port);
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
 static dc_status_t
 mares_iconhd_device_close (dc_device_t *abstract)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	mares_iconhd_device_t *device = (mares_iconhd_device_t*) abstract;
 
 	// Close the device.
 	if (serial_close (device->port) == -1) {
-		free (device);
-		return DC_STATUS_IO;
+		dc_status_set_error(&status, DC_STATUS_IO);
 	}
 
-	// Free memory.
-	free (device);
-
-	return DC_STATUS_SUCCESS;
+	return status;
 }
 
 

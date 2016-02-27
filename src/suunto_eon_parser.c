@@ -47,15 +47,15 @@ static dc_status_t suunto_eon_parser_set_data (dc_parser_t *abstract, const unsi
 static dc_status_t suunto_eon_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t suunto_eon_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t suunto_eon_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t suunto_eon_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t suunto_eon_parser_vtable = {
+	sizeof(suunto_eon_parser_t),
 	DC_FAMILY_SUUNTO_EON,
 	suunto_eon_parser_set_data, /* set_data */
 	suunto_eon_parser_get_datetime, /* datetime */
 	suunto_eon_parser_get_field, /* fields */
 	suunto_eon_parser_samples_foreach, /* samples_foreach */
-	suunto_eon_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 static dc_status_t
@@ -111,18 +111,17 @@ suunto_eon_parser_cache (suunto_eon_parser_t *parser)
 dc_status_t
 suunto_eon_parser_create (dc_parser_t **out, dc_context_t *context, int spyder)
 {
+	suunto_eon_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	suunto_eon_parser_t *parser = (suunto_eon_parser_t *) malloc (sizeof (suunto_eon_parser_t));
+	parser = (suunto_eon_parser_t *) dc_parser_allocate (context, &suunto_eon_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	parser_init (&parser->base, context, &suunto_eon_parser_vtable);
 
 	// Set the default values.
 	parser->spyder = spyder;
@@ -133,16 +132,6 @@ suunto_eon_parser_create (dc_parser_t **out, dc_context_t *context, int spyder)
 	parser->nitrox = 0;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-suunto_eon_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
 
 	return DC_STATUS_SUCCESS;
 }

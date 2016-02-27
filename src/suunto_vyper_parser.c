@@ -48,17 +48,29 @@ static dc_status_t suunto_vyper_parser_set_data (dc_parser_t *abstract, const un
 static dc_status_t suunto_vyper_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t suunto_vyper_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t suunto_vyper_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t suunto_vyper_parser_vtable = {
+	sizeof(suunto_vyper_parser_t),
 	DC_FAMILY_SUUNTO_VYPER,
 	suunto_vyper_parser_set_data, /* set_data */
 	suunto_vyper_parser_get_datetime, /* datetime */
 	suunto_vyper_parser_get_field, /* fields */
 	suunto_vyper_parser_samples_foreach, /* samples_foreach */
-	suunto_vyper_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
+static unsigned int
+suunto_vyper_parser_find_gasmix (suunto_vyper_parser_t *parser, unsigned int o2)
+{
+	unsigned int i = 0;
+	while (i < parser->ngasmixes) {
+		if (o2 == parser->oxygen[i])
+			break;
+		i++;
+	}
+
+	return i;
+}
 
 static dc_status_t
 suunto_vyper_parser_cache (suunto_vyper_parser_t *parser)
@@ -149,18 +161,17 @@ suunto_vyper_parser_cache (suunto_vyper_parser_t *parser)
 dc_status_t
 suunto_vyper_parser_create (dc_parser_t **out, dc_context_t *context)
 {
+	suunto_vyper_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	suunto_vyper_parser_t *parser = (suunto_vyper_parser_t *) malloc (sizeof (suunto_vyper_parser_t));
+	parser = (suunto_vyper_parser_t *) dc_parser_allocate (context, &suunto_vyper_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	parser_init (&parser->base, context, &suunto_vyper_parser_vtable);
 
 	// Set the default values.
 	parser->cached = 0;
@@ -173,16 +184,6 @@ suunto_vyper_parser_create (dc_parser_t **out, dc_context_t *context)
 	}
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-suunto_vyper_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -353,6 +354,7 @@ suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 			complete = 1;
 		} else {
 			// Event.
+			unsigned int o2 = 0, idx = 0;
 			sample.event.type = SAMPLE_EVENT_NONE;
 			sample.event.time = 0;
 			sample.event.flags = 0;
@@ -382,8 +384,22 @@ suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 			case 0x87: // Gas Change
 				if (offset + 1 > size)
 					return DC_STATUS_DATAFORMAT;
+
+				o2 = data[offset++];
+				idx = suunto_vyper_parser_find_gasmix (parser, o2);
+				if (idx >= parser->ngasmixes) {
+					ERROR (abstract->context, "Maximum number of gas mixes reached.");
+					return DC_STATUS_DATAFORMAT;
+				}
+
+				sample.gasmix = idx;
+				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 				sample.event.type = SAMPLE_EVENT_GASCHANGE;
-				sample.event.value = data[offset++];
+				sample.event.value = o2;
+#else
+				sample.event.type = SAMPLE_EVENT_NONE;
+#endif
 				break;
 			default: // Unknown
 				WARNING (abstract->context, "Unknown event");

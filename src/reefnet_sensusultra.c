@@ -64,6 +64,7 @@ static dc_status_t reefnet_sensusultra_device_foreach (dc_device_t *abstract, dc
 static dc_status_t reefnet_sensusultra_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t reefnet_sensusultra_device_vtable = {
+	sizeof(reefnet_sensusultra_device_t),
 	DC_FAMILY_REEFNET_SENSUSULTRA,
 	reefnet_sensusultra_device_set_fingerprint, /* set_fingerprint */
 	NULL, /* read */
@@ -77,18 +78,18 @@ static const dc_device_vtable_t reefnet_sensusultra_device_vtable = {
 dc_status_t
 reefnet_sensusultra_device_open (dc_device_t **out, dc_context_t *context, const char *name)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+	reefnet_sensusultra_device_t *device = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	reefnet_sensusultra_device_t *device = (reefnet_sensusultra_device_t *) malloc (sizeof (reefnet_sensusultra_device_t));
+	device = (reefnet_sensusultra_device_t *) dc_device_allocate (context, &reefnet_sensusultra_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	device_init (&device->base, context, &reefnet_sensusultra_device_vtable);
 
 	// Set the default values.
 	device->port = NULL;
@@ -101,25 +102,23 @@ reefnet_sensusultra_device_open (dc_device_t **out, dc_context_t *context, const
 	int rc = serial_open (&device->port, context, name);
 	if (rc == -1) {
 		ERROR (context, "Failed to open the serial port.");
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	// Set the serial communication protocol (115200 8N1).
 	rc = serial_configure (device->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
 	if (rc == -1) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the timeout for receiving data (3000ms).
 	if (serial_set_timeout (device->port, 3000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Make sure everything is in a sane state.
@@ -128,24 +127,27 @@ reefnet_sensusultra_device_open (dc_device_t **out, dc_context_t *context, const
 	*out = (dc_device_t*) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	serial_close (device->port);
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
 static dc_status_t
 reefnet_sensusultra_device_close (dc_device_t *abstract)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	reefnet_sensusultra_device_t *device = (reefnet_sensusultra_device_t*) abstract;
 
 	// Close the device.
 	if (serial_close (device->port) == -1) {
-		free (device);
-		return DC_STATUS_IO;
+		dc_status_set_error(&status, DC_STATUS_IO);
 	}
 
-	// Free memory.
-	free (device);
-
-	return DC_STATUS_SUCCESS;
+	return status;
 }
 
 

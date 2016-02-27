@@ -61,6 +61,7 @@ static dc_status_t mares_nemo_device_foreach (dc_device_t *abstract, dc_dive_cal
 static dc_status_t mares_nemo_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t mares_nemo_device_vtable = {
+	sizeof(mares_nemo_device_t),
 	DC_FAMILY_MARES_NEMO,
 	mares_nemo_device_set_fingerprint, /* set_fingerprint */
 	NULL, /* read */
@@ -90,18 +91,18 @@ static const mares_common_layout_t mares_nemo_apneist_layout = {
 dc_status_t
 mares_nemo_device_open (dc_device_t **out, dc_context_t *context, const char *name)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+	mares_nemo_device_t *device = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	mares_nemo_device_t *device = (mares_nemo_device_t *) malloc (sizeof (mares_nemo_device_t));
+	device = (mares_nemo_device_t *) dc_device_allocate (context, &mares_nemo_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	device_init (&device->base, context, &mares_nemo_device_vtable);
 
 	// Set the default values.
 	device->port = NULL;
@@ -111,34 +112,31 @@ mares_nemo_device_open (dc_device_t **out, dc_context_t *context, const char *na
 	int rc = serial_open (&device->port, context, name);
 	if (rc == -1) {
 		ERROR (context, "Failed to open the serial port.");
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	// Set the serial communication protocol (9600 8N1).
 	rc = serial_configure (device->port, 9600, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
 	if (rc == -1) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the timeout for receiving data (1000 ms).
 	if (serial_set_timeout (device->port, 1000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the DTR/RTS lines.
 	if (serial_set_dtr (device->port, 1) == -1 ||
 		serial_set_rts (device->port, 1) == -1) {
 		ERROR (context, "Failed to set the DTR/RTS line.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Make sure everything is in a sane state.
@@ -147,24 +145,27 @@ mares_nemo_device_open (dc_device_t **out, dc_context_t *context, const char *na
 	*out = (dc_device_t*) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	serial_close (device->port);
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
 static dc_status_t
 mares_nemo_device_close (dc_device_t *abstract)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	mares_nemo_device_t *device = (mares_nemo_device_t*) abstract;
 
 	// Close the device.
 	if (serial_close (device->port) == -1) {
-		free (device);
-		return DC_STATUS_IO;
+		dc_status_set_error(&status, DC_STATUS_IO);
 	}
 
-	// Free memory.
-	free (device);
-
-	return DC_STATUS_SUCCESS;
+	return status;
 }
 
 

@@ -72,9 +72,10 @@
 #define AMPHOS      0x4545
 #define AMPHOSAIR   0x4546
 #define PROPLUS3    0x4548
-#define F11         0x4549
+#define F11A        0x4549
 #define OCI         0x454B
 #define A300CS      0x454C
+#define F11B        0x4554
 #define VTX         0x4557
 
 #define NORMAL   0
@@ -110,33 +111,32 @@ static dc_status_t oceanic_atom2_parser_set_data (dc_parser_t *abstract, const u
 static dc_status_t oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t oceanic_atom2_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t oceanic_atom2_parser_vtable = {
+	sizeof(oceanic_atom2_parser_t),
 	DC_FAMILY_OCEANIC_ATOM2,
 	oceanic_atom2_parser_set_data, /* set_data */
 	oceanic_atom2_parser_get_datetime, /* datetime */
 	oceanic_atom2_parser_get_field, /* fields */
 	oceanic_atom2_parser_samples_foreach, /* samples_foreach */
-	oceanic_atom2_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 
 dc_status_t
 oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
 {
+	oceanic_atom2_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	oceanic_atom2_parser_t *parser = (oceanic_atom2_parser_t *) malloc (sizeof (oceanic_atom2_parser_t));
+	parser = (oceanic_atom2_parser_t *) dc_parser_allocate (context, &oceanic_atom2_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	parser_init (&parser->base, context, &oceanic_atom2_parser_vtable);
 
 	// Set the default values.
 	parser->model = model;
@@ -157,10 +157,10 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		parser->headersize -= 2 * PAGESIZE;
 	} else if (model == F10) {
 		parser->headersize = 3 * PAGESIZE;
-		parser->footersize = PAGESIZE / 2;
-	} else if (model == F11) {
+		parser->footersize = 0;
+	} else if (model == F11A || model == F11B) {
 		parser->headersize = 5 * PAGESIZE;
-		parser->footersize = PAGESIZE / 2;
+		parser->footersize = 0;
 	} else if (model == A300CS || model == VTX) {
 		parser->headersize = 5 * PAGESIZE;
 	}
@@ -179,16 +179,6 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 	parser->maxdepth = 0.0;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-oceanic_atom2_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -222,7 +212,8 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 	oceanic_atom2_parser_t *parser = (oceanic_atom2_parser_t *) abstract;
 
 	unsigned int header = 8;
-	if (parser->model == F10 || parser->model == F11)
+	if (parser->model == F10 || parser->model == F11A ||
+		parser->model == F11B)
 		header = 32;
 
 	if (abstract->size < header)
@@ -255,6 +246,12 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case VEO20:
 		case VEO30:
 		case DG03:
+		case T3A:
+		case T3B:
+		case GEO20:
+		case PROPLUS3:
+		case DATAMASK:
+		case COMPUMASK:
 			datetime->year   = ((p[3] & 0xE0) >> 1) + (p[4] & 0x0F) + 2000;
 			datetime->month  = (p[4] & 0xF0) >> 4;
 			datetime->day    = p[3] & 0x1F;
@@ -265,14 +262,15 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case AMPHOS:
 		case AMPHOSAIR:
 		case VOYAGER2G:
-			datetime->year   = (p[3] & 0x0F) + 2000;
+			datetime->year   = (p[3] & 0x1F) + 2000;
 			datetime->month  = (p[7] & 0xF0) >> 4;
 			datetime->day    = ((p[3] & 0x80) >> 3) + ((p[5] & 0xF0) >> 4);
 			datetime->hour   = bcd2dec (p[1] & 0x1F);
 			datetime->minute = bcd2dec (p[0]);
 			break;
 		case F10:
-		case F11:
+		case F11A:
+		case F11B:
 			datetime->year   = bcd2dec (p[6]) + 2000;
 			datetime->month  = bcd2dec (p[7]);
 			datetime->day    = bcd2dec (p[8]);
@@ -298,11 +296,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		default:
 			datetime->year   = bcd2dec (((p[3] & 0xC0) >> 2) + (p[4] & 0x0F)) + 2000;
 			datetime->month  = (p[4] & 0xF0) >> 4;
-			if (parser->model == T3A || parser->model == T3B ||
-				parser->model == GEO20 || parser->model == PROPLUS3)
-				datetime->day = p[3] & 0x3F;
-			else
-				datetime->day = bcd2dec (p[3] & 0x3F);
+			datetime->day    = bcd2dec (p[3] & 0x3F);
 			datetime->hour   = bcd2dec (p[1] & 0x1F);
 			datetime->minute = bcd2dec (p[0]);
 			break;
@@ -377,7 +371,8 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 
 	// Get the dive mode.
 	unsigned int mode = NORMAL;
-	if (parser->model == F10 || parser->model == F11) {
+	if (parser->model == F10 || parser->model == F11A ||
+		parser->model == F11B) {
 		mode = FREEDIVE;
 	} else if (parser->model == T3B || parser->model == VT3 ||
 		parser->model == DG03) {
@@ -481,13 +476,15 @@ oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 	if (value) {
 		switch (type) {
 		case DC_FIELD_DIVETIME:
-			if (parser->model == F10 || parser->model == F11)
-				*((unsigned int *) value) = bcd2dec (data[2]) + bcd2dec (data[3]) * 60 + bcd2dec (data[1]) * 3600;
+			if (parser->model == F10 || parser->model == F11A ||
+				parser->model == F11B)
+				*((unsigned int *) value) = bcd2dec (data[2]) + bcd2dec (data[3]) * 60;
 			else
 				*((unsigned int *) value) = parser->divetime;
 			break;
 		case DC_FIELD_MAXDEPTH:
-			if (parser->model == F10 || parser->model == F11)
+			if (parser->model == F10 || parser->model == F11A ||
+				parser->model == F11B)
 				*((double *) value) = array_uint16_le (data + 4) / 16.0 * FEET;
 			else
 				*((double *) value) = array_uint16_le (data + parser->footer + 4) / 16.0 * FEET;
@@ -563,6 +560,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 
 	unsigned int time = 0;
 	unsigned int interval = 1;
+	unsigned int samplerate = 1;
 	if (parser->mode != FREEDIVE) {
 		unsigned int idx = 0x17;
 		if (parser->model == A300CS || parser->model == VTX)
@@ -581,11 +579,36 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			interval = 60;
 			break;
 		}
+	} else if (parser->model == F11A || parser->model == F11B) {
+		unsigned int idx = 0x29;
+		switch (data[idx] & 0x03) {
+		case 0:
+			interval = 1;
+			samplerate = 4;
+			break;
+		case 1:
+			interval = 1;
+			samplerate = 2;
+			break;
+		case 2:
+			interval = 1;
+			break;
+		case 3:
+			interval = 2;
+			break;
+		}
+		if (samplerate > 1) {
+			// Some models supports multiple samples per second.
+			// Since our smallest unit of time is one second, we can't
+			// represent this, and the extra samples will get dropped.
+			WARNING(abstract->context, "Multiple samples per second are not supported!");
+		}
 	}
 
 	unsigned int samplesize = PAGESIZE / 2;
 	if (parser->mode == FREEDIVE) {
-		if (parser->model == F10 || parser->model == F11) {
+		if (parser->model == F10 || parser->model == F11A ||
+			parser->model == F11B) {
 			samplesize = 2;
 		} else {
 			samplesize = 4;
@@ -636,7 +659,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 		dc_sample_value_t sample = {0};
 
 		// Ignore empty samples.
-		if (array_isequal (data + offset, samplesize, 0x00) ||
+		if ((parser->mode != FREEDIVE &&
+			array_isequal (data + offset, samplesize, 0x00)) ||
 			array_isequal (data + offset, samplesize, 0xFF)) {
 			offset += samplesize;
 			continue;
@@ -658,7 +682,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 
 		// The sample size is usually fixed, but some sample types have a
 		// larger size. Check whether we have that many bytes available.
-		unsigned int length = samplesize;
+		unsigned int length = samplesize * samplerate;
 		if (sampletype == 0xBB) {
 			length = PAGESIZE;
 			if (offset + length > size - PAGESIZE)
@@ -796,6 +820,9 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 					ERROR (abstract->context, "Invalid gas mix index (%u).", gasmix);
 					return DC_STATUS_DATAFORMAT;
 				}
+				sample.gasmix = gasmix - 1;
+				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 				unsigned int o2 = parser->oxygen[gasmix - 1];
 				unsigned int he = parser->helium[gasmix - 1];
 				sample.event.type = SAMPLE_EVENT_GASCHANGE2;
@@ -803,6 +830,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				sample.event.flags = 0;
 				sample.event.value = o2 | (he << 16);
 				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 				gasmix_previous = gasmix;
 			}
 

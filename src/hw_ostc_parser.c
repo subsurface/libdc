@@ -39,6 +39,8 @@
 #define MAXCONFIG 7
 #define NGASMIXES 15
 
+#define UNDEFINED 0xFF
+
 #define ALL    0
 #define FIXED  1
 #define MANUAL 2
@@ -115,15 +117,15 @@ static dc_status_t hw_ostc_parser_set_data (dc_parser_t *abstract, const unsigne
 static dc_status_t hw_ostc_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t hw_ostc_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t hw_ostc_parser_vtable = {
+	sizeof(hw_ostc_parser_t),
 	DC_FAMILY_HW_OSTC,
 	hw_ostc_parser_set_data, /* set_data */
 	hw_ostc_parser_get_datetime, /* datetime */
 	hw_ostc_parser_get_field, /* fields */
 	hw_ostc_parser_samples_foreach, /* samples_foreach */
-	hw_ostc_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_ostc = {
@@ -247,7 +249,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 	}
 
 	// Get all the gas mixes, and the index of the inital mix.
-	unsigned int initial = 0;
+	unsigned int initial = UNDEFINED;
 	unsigned int ngasmixes = 0;
 	hw_ostc_gasmix_t gasmix[NGASMIXES] = {{0}};
 	if (version == 0x22) {
@@ -263,7 +265,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 			gasmix[i].oxygen = data[28 + 4 * i + 0];
 			gasmix[i].helium = data[28 + 4 * i + 1];
 			// Find the first gas marked as the initial gas.
-			if (!initial && data[28 + 4 * i + 3] == 1) {
+			if (initial == UNDEFINED && data[28 + 4 * i + 3] == 1) {
 				initial = i + 1; /* One based index! */
 			}
 		}
@@ -275,7 +277,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 			gasmix[i].helium = data[19 + 2 * i + 1];
 		}
 	}
-	if (initial != 0xFF) {
+	if (initial != UNDEFINED) {
 		if (initial < 1 || initial > ngasmixes) {
 			ERROR(abstract->context, "Invalid initial gas mix.");
 			return DC_STATUS_DATAFORMAT;
@@ -303,18 +305,17 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 dc_status_t
 hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int frog)
 {
+	hw_ostc_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	hw_ostc_parser_t *parser = (hw_ostc_parser_t *) malloc (sizeof (hw_ostc_parser_t));
+	parser = (hw_ostc_parser_t *) dc_parser_allocate (context, &hw_ostc_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	parser_init (&parser->base, context, &hw_ostc_parser_vtable);
 
 	// Set the default values.
 	parser->frog = frog;
@@ -332,16 +333,6 @@ hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int se
 	parser->serial = serial;
 
 	*out = (dc_parser_t *) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-hw_ostc_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -707,7 +698,10 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
 
 		// Initial gas mix.
-		if (time == samplerate && parser->initial != 0xFF) {
+		if (time == samplerate && parser->initial != UNDEFINED) {
+			sample.gasmix = parser->initial;
+			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 			unsigned int idx = parser->initial;
 			unsigned int o2 = parser->gasmix[idx].oxygen;
 			unsigned int he = parser->gasmix[idx].helium;
@@ -716,6 +710,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 			sample.event.flags = 0;
 			sample.event.value = o2 | (he << 16);
 			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 		}
 
 		// Depth (mbar).
@@ -800,11 +795,16 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				parser->gasmix[idx].helium = he;
 				parser->ngasmixes = idx + 1;
 			}
+
+			sample.gasmix = idx;
+			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 			sample.event.type = SAMPLE_EVENT_GASCHANGE2;
 			sample.event.time = 0;
 			sample.event.flags = 0;
 			sample.event.value = o2 | (he << 16);
 			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 			offset += 2;
 			length -= 2;
 		}
@@ -821,6 +821,9 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				return DC_STATUS_DATAFORMAT;
 			}
 			idx--; /* Convert to a zero based index. */
+			sample.gasmix = idx;
+			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 			unsigned int o2 = parser->gasmix[idx].oxygen;
 			unsigned int he = parser->gasmix[idx].helium;
 			sample.event.type = SAMPLE_EVENT_GASCHANGE2;
@@ -828,6 +831,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 			sample.event.flags = 0;
 			sample.event.value = o2 | (he << 16);
 			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 			offset++;
 			length--;
 		}
@@ -851,11 +855,29 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 					ERROR (abstract->context, "Buffer overflow detected!");
 					return DC_STATUS_DATAFORMAT;
 				}
+
+				unsigned int o2 = data[offset];
+				unsigned int he = data[offset + 1];
+				unsigned int idx = hw_ostc_find_gasmix (parser, o2, he, MANUAL);
+				if (idx >= parser->ngasmixes) {
+					if (idx >= NGASMIXES) {
+						ERROR (abstract->context, "Maximum number of gas mixes reached.");
+						return DC_STATUS_NOMEMORY;
+					}
+					parser->gasmix[idx].oxygen = o2;
+					parser->gasmix[idx].helium = he;
+					parser->ngasmixes = idx + 1;
+				}
+
+				sample.gasmix = idx;
+				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 				sample.event.type = SAMPLE_EVENT_GASCHANGE2;
 				sample.event.time = 0;
 				sample.event.flags = 0;
-				sample.event.value = data[offset] | (data[offset + 1] << 16);
+				sample.event.value = o2 | (he << 16);
 				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 				offset += 2;
 				length -= 2;
 			}
@@ -941,11 +963,29 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 					ERROR (abstract->context, "Buffer overflow detected!");
 					return DC_STATUS_DATAFORMAT;
 				}
+
+				unsigned int o2 = data[offset];
+				unsigned int he = data[offset + 1];
+				unsigned int idx = hw_ostc_find_gasmix (parser, o2, he, MANUAL);
+				if (idx >= parser->ngasmixes) {
+					if (idx >= NGASMIXES) {
+						ERROR (abstract->context, "Maximum number of gas mixes reached.");
+						return DC_STATUS_NOMEMORY;
+					}
+					parser->gasmix[idx].oxygen = o2;
+					parser->gasmix[idx].helium = he;
+					parser->ngasmixes = idx + 1;
+				}
+
+				sample.gasmix = idx;
+				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 				sample.event.type = SAMPLE_EVENT_GASCHANGE2;
 				sample.event.time = 0;
 				sample.event.flags = 0;
-				sample.event.value = data[offset] | (data[offset + 1] << 16);
+				sample.event.value = o2 | (he << 16);
 				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 				offset += 2;
 				length -= 2;
 			}

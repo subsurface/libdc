@@ -124,6 +124,7 @@ static dc_status_t hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callb
 static dc_status_t hw_ostc3_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t hw_ostc3_device_vtable = {
+	sizeof(hw_ostc3_device_t),
 	DC_FAMILY_HW_OSTC3,
 	hw_ostc3_device_set_fingerprint, /* set_fingerprint */
 	NULL, /* read */
@@ -276,18 +277,18 @@ hw_ostc3_transfer (hw_ostc3_device_t *device,
 dc_status_t
 hw_ostc3_device_open (dc_device_t **out, dc_context_t *context, const char *name)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+	hw_ostc3_device_t *device = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	hw_ostc3_device_t *device = (hw_ostc3_device_t *) malloc (sizeof (hw_ostc3_device_t));
+	device = (hw_ostc3_device_t *) dc_device_allocate (context, &hw_ostc3_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	device_init (&device->base, context, &hw_ostc3_device_vtable);
 
 	// Set the default values.
 	device->serial = NULL;
@@ -297,25 +298,23 @@ hw_ostc3_device_open (dc_device_t **out, dc_context_t *context, const char *name
 	int rc = dc_serial_native_open (&device->serial, context, name);
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to open the serial port.");
-		free (device);
-		return rc;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	// Set the serial communication protocol (115200 8N1).
 	rc = serial_configure (device->serial->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
 	if (rc == -1) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		device->serial->ops->close (device->serial->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the timeout for receiving data (3000ms).
 	if (serial_set_timeout (device->serial->port, 3000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		device->serial->ops->close (device->serial->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Make sure everything is in a sane state.
@@ -327,12 +326,20 @@ hw_ostc3_device_open (dc_device_t **out, dc_context_t *context, const char *name
 	*out = (dc_device_t *) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	device->serial->ops->close (device->serial->port);
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
 dc_status_t
 hw_ostc3_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial_t *serial)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+
 	if (out == NULL || serial == NULL || serial->port == NULL)
 		return DC_STATUS_INVALIDARGS;
 
@@ -342,9 +349,6 @@ hw_ostc3_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	device_init (&device->base, context, &hw_ostc3_device_vtable);
 
 	// Set the default values.
 	memset (device->fingerprint, 0, sizeof (device->fingerprint));
@@ -357,18 +361,17 @@ hw_ostc3_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial
 		int rc = serial_configure (device->serial->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
 		if (rc == -1) {
 			ERROR (context, "Failed to set the terminal attributes.");
-			device->serial->ops->close (device->serial->port);
 			free (device);
-			return DC_STATUS_IO;
+			status = DC_STATUS_IO;
+			goto error_close;
 		}
 	}
 
 	// Set the timeout for receiving data (3000ms).
 	if (device->serial->ops->set_timeout (device->serial->port, 3000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		device->serial->ops->close (device->serial->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Make sure everything is in a sane state.
@@ -380,6 +383,12 @@ hw_ostc3_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial
 	*out = (dc_device_t *) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	device->serial->ops->close (device->serial->port);
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
@@ -434,7 +443,7 @@ hw_ostc3_device_init_service (hw_ostc3_device_t *device)
 			output[2] != 0xCD || output[3] != 0xEF ||
 			output[4] != S_READY) {
 		ERROR (context, "Failed to verify echo.");
-		return DC_STATUS_IO;
+		return DC_STATUS_PROTOCOL;
 	}
 
 	device->state = SERVICE;
@@ -477,6 +486,7 @@ hw_ostc3_device_init (hw_ostc3_device_t *device, hw_ostc3_state_t state)
 static dc_status_t
 hw_ostc3_device_close (dc_device_t *abstract)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	hw_ostc3_device_t *device = (hw_ostc3_device_t*) abstract;
 	dc_status_t rc = DC_STATUS_SUCCESS;
 
@@ -486,21 +496,16 @@ hw_ostc3_device_close (dc_device_t *abstract)
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to send the command.");
 			device->serial->ops->close (device->serial->port);
-			free (device);
-			return rc;
+			dc_status_set_error(&status, rc);
 		}
 	}
 
 	// Close the device.
 	if (device->serial->ops->close (device->serial->port) == -1) {
-		free (device);
-		return DC_STATUS_IO;
+		dc_status_set_error(&status, DC_STATUS_IO);
 	}
 
-	// Free memory.
-	free (device);
-
-	return DC_STATUS_SUCCESS;
+	return status;
 }
 
 
@@ -1065,7 +1070,7 @@ hw_ostc3_firmware_readfile (hw_ostc3_firmware_t *firmware, dc_context_t *context
 
 	if (firmware->checksum != hw_ostc3_firmware_checksum (firmware)) {
 		ERROR (context, "Failed to verify file checksum.");
-		return DC_STATUS_IO;
+		return DC_STATUS_DATAFORMAT;
 	}
 
 	return DC_STATUS_SUCCESS;

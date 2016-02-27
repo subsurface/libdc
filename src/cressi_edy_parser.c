@@ -43,15 +43,15 @@ static dc_status_t cressi_edy_parser_set_data (dc_parser_t *abstract, const unsi
 static dc_status_t cressi_edy_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t cressi_edy_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t cressi_edy_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t cressi_edy_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t cressi_edy_parser_vtable = {
+	sizeof(cressi_edy_parser_t),
 	DC_FAMILY_CRESSI_EDY,
 	cressi_edy_parser_set_data, /* set_data */
 	cressi_edy_parser_get_datetime, /* datetime */
 	cressi_edy_parser_get_field, /* fields */
 	cressi_edy_parser_samples_foreach, /* samples_foreach */
-	cressi_edy_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 
@@ -73,33 +73,22 @@ cressi_edy_parser_count_gasmixes (const unsigned char *data)
 dc_status_t
 cressi_edy_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
 {
+	cressi_edy_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	cressi_edy_parser_t *parser = (cressi_edy_parser_t *) malloc (sizeof (cressi_edy_parser_t));
+	parser = (cressi_edy_parser_t *) dc_parser_allocate (context, &cressi_edy_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
 
-	// Initialize the base class.
-	parser_init (&parser->base, context, &cressi_edy_parser_vtable);
-
 	// Set the default values.
 	parser->model = model;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-cressi_edy_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -227,11 +216,15 @@ cressi_edy_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 				return DC_STATUS_DATAFORMAT;
 			}
 			if (idx != gasmix) {
+				sample.gasmix = idx;
+				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+#ifdef ENABLE_DEPRECATED
 				sample.event.type = SAMPLE_EVENT_GASCHANGE;
 				sample.event.time = 0;
 				sample.event.flags = 0;
 				sample.event.value = bcd2dec(data[0x17 - idx]);
 				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+#endif
 				gasmix = idx;
 			}
 		}

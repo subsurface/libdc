@@ -567,20 +567,23 @@ static void sample_gas_switch_event(struct sample_data *info, unsigned short idx
 {
 	suunto_eonsteel_parser_t *eon = info->eon;
 	dc_sample_value_t sample = {0};
-	int o2, he;
 
 	if (idx < 1 || idx > eon->cache.ngases)
 		return;
 
-	// Horrible, broken, gas change events
-	o2 = 100 * eon->cache.gasmix[idx-1].oxygen;
-	he = 100 * eon->cache.gasmix[idx-1].helium;
+	sample.gasmix = idx - 1;
+	if (info->callback) info->callback(DC_SAMPLE_GASMIX, sample, info->userdata);
 
+#ifdef ENABLE_DEPRECATED
+	unsigned int o2 = 100 * eon->cache.gasmix[idx-1].oxygen;
+	unsigned int he = 100 * eon->cache.gasmix[idx-1].helium;
 	sample.event.type = SAMPLE_EVENT_GASCHANGE2;
-	sample.event.value = o2 | (he << 16);
+	sample.event.time = 0;
 	sample.event.flags = idx;
+	sample.event.value = o2 | (he << 16);
 
 	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+#endif
 }
 
 /*
@@ -1300,11 +1303,12 @@ suunto_eonsteel_parser_destroy(dc_parser_t *parser)
 	suunto_eonsteel_parser_t *eon = (suunto_eonsteel_parser_t *) parser;
 
 	desc_free(eon->type_desc, MAXTYPE);
-	free(parser);
+
 	return DC_STATUS_SUCCESS;
 }
 
 static const dc_parser_vtable_t suunto_eonsteel_parser_vtable = {
+	sizeof(suunto_eonsteel_parser_t),
 	DC_FAMILY_SUUNTO_EONSTEEL,
 	suunto_eonsteel_parser_set_data, /* set_data */
 	suunto_eonsteel_parser_get_datetime, /* datetime */
@@ -1316,18 +1320,21 @@ static const dc_parser_vtable_t suunto_eonsteel_parser_vtable = {
 dc_status_t
 suunto_eonsteel_parser_create(dc_parser_t **out, dc_context_t *context, unsigned int model)
 {
-	suunto_eonsteel_parser_t *eon;
+	suunto_eonsteel_parser_t *parser = NULL;
 
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
-	eon = (suunto_eonsteel_parser_t *) calloc(1, sizeof(*eon));
-	if (!eon)
+	parser = (suunto_eonsteel_parser_t *) dc_parser_allocate (context, &suunto_eonsteel_parser_vtable);
+	if (parser == NULL) {
+		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
+	}
 
-	parser_init(&eon->base, context, &suunto_eonsteel_parser_vtable);
+	memset(&parser->type_desc, 0, sizeof(parser->type_desc));
+	memset(&parser->cache, 0, sizeof(parser->cache));
 
-	*out = (dc_parser_t *) eon;
+	*out = (dc_parser_t *) parser;
 
 	return DC_STATUS_SUCCESS;
 }

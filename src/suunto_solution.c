@@ -52,6 +52,7 @@ static dc_status_t suunto_solution_device_foreach (dc_device_t *abstract, dc_div
 static dc_status_t suunto_solution_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t suunto_solution_device_vtable = {
+	sizeof(suunto_solution_device_t),
 	DC_FAMILY_SUUNTO_SOLUTION,
 	NULL, /* set_fingerprint */
 	NULL, /* read */
@@ -65,18 +66,18 @@ static const dc_device_vtable_t suunto_solution_device_vtable = {
 dc_status_t
 suunto_solution_device_open (dc_device_t **out, dc_context_t *context, const char *name)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+	suunto_solution_device_t *device = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	suunto_solution_device_t *device = (suunto_solution_device_t *) malloc (sizeof (suunto_solution_device_t));
+	device = (suunto_solution_device_t *) dc_device_allocate (context, &suunto_solution_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	device_init (&device->base, context, &suunto_solution_device_vtable);
 
 	// Set the default values.
 	device->port = NULL;
@@ -85,56 +86,56 @@ suunto_solution_device_open (dc_device_t **out, dc_context_t *context, const cha
 	int rc = serial_open (&device->port, context, name);
 	if (rc == -1) {
 		ERROR (context, "Failed to open the serial port.");
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	// Set the serial communication protocol (1200 8N2).
 	rc = serial_configure (device->port, 1200, 8, SERIAL_PARITY_NONE, 2, SERIAL_FLOWCONTROL_NONE);
 	if (rc == -1) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the timeout for receiving data (1000ms).
 	if (serial_set_timeout (device->port, 1000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Clear the RTS line.
 	if (serial_set_rts (device->port, 0)) {
 		ERROR (context, "Failed to set the DTR/RTS line.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	*out = (dc_device_t*) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	serial_close (device->port);
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
 static dc_status_t
 suunto_solution_device_close (dc_device_t *abstract)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	suunto_solution_device_t *device = (suunto_solution_device_t*) abstract;
 
 	// Close the device.
 	if (serial_close (device->port) == -1) {
-		free (device);
-		return DC_STATUS_IO;
+		dc_status_set_error(&status, DC_STATUS_IO);
 	}
 
-	// Free memory.
-	free (device);
-
-	return DC_STATUS_SUCCESS;
+	return status;
 }
 
 

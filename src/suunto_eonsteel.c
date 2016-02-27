@@ -40,7 +40,7 @@
 #if __APPLE__ && HAVE_HIDAPI
 #include "hidapi/hidapi.h"
 #endif
-#ifdef HAVE_LIBUSB
+#if HAVE_LIBUSB || (__APPLE__ && HAVE_HIDAPI)
 
 #ifdef _WIN32
 #define NOGDI
@@ -92,6 +92,7 @@ static dc_status_t suunto_eonsteel_device_foreach(dc_device_t *abstract, dc_dive
 static dc_status_t suunto_eonsteel_device_close(dc_device_t *abstract);
 
 static const dc_device_vtable_t suunto_eonsteel_device_vtable = {
+	sizeof(suunto_eonsteel_device_t),
 	DC_FAMILY_SUUNTO_EONSTEEL,
 	NULL, /* set_fingerprint */
 	NULL, /* read */
@@ -579,12 +580,13 @@ static int initialize_eonsteel(suunto_eonsteel_device_t *eon)
 dc_status_t
 suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char *name, unsigned int model)
 {
-	suunto_eonsteel_device_t *eon;
+	dc_status_t status = DC_STATUS_SUCCESS;
+	suunto_eonsteel_device_t *eon = NULL;
 
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
-	eon = (suunto_eonsteel_device_t *) calloc(1, sizeof(suunto_eonsteel_device_t));
+	eon = (suunto_eonsteel_device_t *) dc_device_allocate(context, &suunto_eonsteel_device_vtable);
 	if (!eon)
 		return DC_STATUS_NOMEMORY;
 
@@ -592,39 +594,35 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char
 	eon->magic = INIT_MAGIC;
 	eon->seq = INIT_SEQ;
 
-	// Set up the libdivecomputer interfaces
-	device_init(&eon->base, context, &suunto_eonsteel_device_vtable);
-
 #if __APPLE__ && HAVE_HIDAPI
 
 	if (hid_init()) {
 		ERROR(context, "hid_init() failed");
-		free(eon);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	eon->handle = hid_open(0x1493, 0x0030, NULL);
 	if (!eon->handle) {
 		ERROR(context, "unable to open device");
 		hid_exit();
-		free(eon);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_usb_exit;
 	}
 
 #else
 
 	if (libusb_init(&eon->ctx)) {
 		ERROR(context, "libusb_init() failed");
-		free(eon);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	eon->handle = libusb_open_device_with_vid_pid(eon->ctx, 0x1493, 0x0030);
 	if (!eon->handle) {
 		ERROR(context, "unable to open device");
-		libusb_exit(eon->ctx);
-		free(eon);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_usb_exit;
 	}
 
 #if defined(LIBUSB_API_VERSION) && (LIBUSB_API_VERSION >= 0x01000102)
@@ -635,20 +633,31 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char
 #endif
 	if (initialize_eonsteel(eon) < 0) {
 		ERROR(context, "unable to initialize device");
-#if __APPLE__ && HAVE_HIDAPI
-		hid_close(eon->handle);
-		hid_exit();
-#else
-		libusb_close(eon->handle);
-		libusb_exit(eon->ctx);
-#endif
-		free(eon);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_usb_close;
 	}
 
 	*out = (dc_device_t *) eon;
 
 	return DC_STATUS_SUCCESS;
+
+error_usb_close:
+#if __APPLE__ && HAVE_HIDAPI
+	hid_close(eon->handle);
+#else
+	libusb_close(eon->handle);
+#endif
+
+error_usb_exit:
+#if __APPLE__ && HAVE_HIDAPI
+	hid_exit();
+#else
+	libusb_exit(eon->ctx);
+#endif
+
+error_free:
+	free(eon);
+	return status;
 }
 
 static int count_dir_entries(struct directory_entry *de)

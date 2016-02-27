@@ -52,33 +52,32 @@ static dc_status_t reefnet_sensus_parser_set_data (dc_parser_t *abstract, const 
 static dc_status_t reefnet_sensus_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t reefnet_sensus_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t reefnet_sensus_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
-static dc_status_t reefnet_sensus_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t reefnet_sensus_parser_vtable = {
+	sizeof(reefnet_sensus_parser_t),
 	DC_FAMILY_REEFNET_SENSUS,
 	reefnet_sensus_parser_set_data, /* set_data */
 	reefnet_sensus_parser_get_datetime, /* datetime */
 	reefnet_sensus_parser_get_field, /* fields */
 	reefnet_sensus_parser_samples_foreach, /* samples_foreach */
-	reefnet_sensus_parser_destroy /* destroy */
+	NULL /* destroy */
 };
 
 
 dc_status_t
 reefnet_sensus_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int devtime, dc_ticks_t systime)
 {
+	reefnet_sensus_parser_t *parser = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	reefnet_sensus_parser_t *parser = (reefnet_sensus_parser_t *) malloc (sizeof (reefnet_sensus_parser_t));
+	parser = (reefnet_sensus_parser_t *) dc_parser_allocate (context, &reefnet_sensus_parser_vtable);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Initialize the base class.
-	parser_init (&parser->base, context, &reefnet_sensus_parser_vtable);
 
 	// Set the default values.
 	parser->atmospheric = ATM;
@@ -90,16 +89,6 @@ reefnet_sensus_parser_create (dc_parser_t **out, dc_context_t *context, unsigned
 	parser->maxdepth = 0;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-reefnet_sensus_parser_destroy (dc_parser_t *abstract)
-{
-	// Free memory.
-	free (abstract);
 
 	return DC_STATUS_SUCCESS;
 }

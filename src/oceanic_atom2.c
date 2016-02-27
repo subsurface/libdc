@@ -71,6 +71,7 @@ static dc_status_t oceanic_atom2_device_write (dc_device_t *abstract, unsigned i
 static dc_status_t oceanic_atom2_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t oceanic_atom2_device_vtable = {
+	sizeof(oceanic_atom2_device_t),
 	DC_FAMILY_OCEANIC_ATOM2,
 	oceanic_common_device_set_fingerprint, /* set_fingerprint */
 	oceanic_atom2_device_read, /* read */
@@ -85,7 +86,8 @@ static const oceanic_common_version_t aeris_f10_version[] = {
 };
 
 static const oceanic_common_version_t aeris_f11_version[] = {
-    {"AERISF11 \0\0 1024"},
+	{"AERISF11 \0\0 1024"},
+	{"OCEANF11 \0\0 1024"},
 };
 
 static const oceanic_common_version_t oceanic_atom1_version[] = {
@@ -196,9 +198,9 @@ static const oceanic_common_layout_t aeris_f11_layout = {
 	0x0000, /* cf_devinfo */
 	0x0040, /* cf_pointers */
 	0x0100, /* rb_logbook_begin */
-	0x0AC0, /* rb_logbook_end */
+	0x0D80, /* rb_logbook_end */
 	32, /* rb_logbook_entry_size */
-	0xD810, /* rb_profile_begin */
+	0x0D80, /* rb_profile_begin */
 	0x20000, /* rb_profile_end */
 	0, /* pt_mode_global */
 	3 /* pt_mode_logbook */
@@ -520,20 +522,22 @@ oceanic_atom2_device_open (dc_device_t **out, dc_context_t *context, const char 
 
 dc_status_t
 oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char *name, unsigned int model)
-
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
+	oceanic_atom2_device_t *device = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	oceanic_atom2_device_t *device = (oceanic_atom2_device_t *) malloc (sizeof (oceanic_atom2_device_t));
+	device = (oceanic_atom2_device_t *) dc_device_allocate (context, &oceanic_atom2_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
 
 	// Initialize the base class.
-	oceanic_common_device_init (&device->base, context, &oceanic_atom2_device_vtable);
+	oceanic_common_device_init (&device->base);
 
 	// Set the default values.
 	device->port = NULL;
@@ -546,8 +550,8 @@ oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char
 	int rc = serial_open (&device->port, context, name);
 	if (rc == -1) {
 		ERROR (context, "Failed to open the serial port.");
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	// Get the correct baudrate.
@@ -560,17 +564,15 @@ oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char
 	rc = serial_configure (device->port, baudrate, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
 	if (rc == -1) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the timeout for receiving data (1000 ms).
 	if (serial_set_timeout (device->port, 1000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Give the interface 100 ms to settle and draw power up.
@@ -586,11 +588,9 @@ oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char
 	// Switch the device from surface mode into download mode. Before sending
 	// this command, the device needs to be in PC mode (automatically activated
 	// by connecting the device), or already in download mode.
-	dc_status_t status = oceanic_atom2_device_version ((dc_device_t *) device, device->base.version, sizeof (device->base.version));
+	status = oceanic_atom2_device_version ((dc_device_t *) device, device->base.version, sizeof (device->base.version));
 	if (status != DC_STATUS_SUCCESS) {
-		serial_close (device->port);
-		free (device);
-		return status;
+		goto error_close;
 	}
 
 	// Override the base class values.
@@ -641,12 +641,19 @@ oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char
 	*out = (dc_device_t*) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	serial_close (device->port);
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
 static dc_status_t
 oceanic_atom2_device_close (dc_device_t *abstract)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	oceanic_atom2_device_t *device = (oceanic_atom2_device_t*) abstract;
 
 	// Send the quit command.
@@ -654,14 +661,10 @@ oceanic_atom2_device_close (dc_device_t *abstract)
 
 	// Close the device.
 	if (serial_close (device->port) == -1) {
-		free (device);
-		return DC_STATUS_IO;
+		dc_status_set_error(&status, DC_STATUS_IO);
 	}
 
-	// Free memory.
-	free (device);
-
-	return DC_STATUS_SUCCESS;
+	return status;
 }
 
 

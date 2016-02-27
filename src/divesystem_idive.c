@@ -37,6 +37,11 @@
 	rc == -1 ? DC_STATUS_IO : DC_STATUS_TIMEOUT \
 )
 
+#define IX3M_EASY 0x22
+#define IX3M_DEEP 0x23
+#define IX3M_TEC  0x24
+#define IX3M_REB  0x25
+
 #define MAXRETRIES 9
 
 #define MAXPACKET 0xFF
@@ -45,23 +50,26 @@
 #define NAK       0x15
 #define BUSY      0x60
 
-#define CMD_ID     0x10
-#define CMD_RANGE  0x98
-#define CMD_HEADER 0xA0
-#define CMD_SAMPLE 0xA8
-
-#define SZ_ID     0x0A
-#define SZ_RANGE  0x04
-#define SZ_HEADER 0x32
-#define SZ_SAMPLE 0x2A
-
 #define NSTEPS    1000
 #define STEP(i,n) (NSTEPS * (i) / (n))
+
+typedef struct divesystem_idive_command_t {
+	unsigned char cmd;
+	unsigned int size;
+} divesystem_idive_command_t;
+
+typedef struct divesystem_idive_commands_t {
+	divesystem_idive_command_t id;
+	divesystem_idive_command_t range;
+	divesystem_idive_command_t header;
+	divesystem_idive_command_t sample;
+} divesystem_idive_commands_t;
 
 typedef struct divesystem_idive_device_t {
 	dc_device_t base;
 	serial_t *port;
 	unsigned char fingerprint[4];
+	unsigned int model;
 } divesystem_idive_device_t;
 
 static dc_status_t divesystem_idive_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
@@ -69,6 +77,7 @@ static dc_status_t divesystem_idive_device_foreach (dc_device_t *abstract, dc_di
 static dc_status_t divesystem_idive_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t divesystem_idive_device_vtable = {
+	sizeof(divesystem_idive_device_t),
 	DC_FAMILY_DIVESYSTEM_IDIVE,
 	divesystem_idive_device_set_fingerprint, /* set_fingerprint */
 	NULL, /* read */
@@ -78,50 +87,69 @@ static const dc_device_vtable_t divesystem_idive_device_vtable = {
 	divesystem_idive_device_close /* close */
 };
 
+static const divesystem_idive_commands_t idive = {
+	{0x10, 0x0A},
+	{0x98, 0x04},
+	{0xA0, 0x32},
+	{0xA8, 0x2A},
+};
+
+static const divesystem_idive_commands_t ix3m = {
+	{0x11, 0x1A},
+	{0x78, 0x04},
+	{0x79, 0x36},
+	{0x7A, 0x36},
+};
 
 dc_status_t
 divesystem_idive_device_open (dc_device_t **out, dc_context_t *context, const char *name)
 {
+	return divesystem_idive_device_open2 (out, context, name, 0);
+}
+
+
+dc_status_t
+divesystem_idive_device_open2 (dc_device_t **out, dc_context_t *context, const char *name, unsigned int model)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+	divesystem_idive_device_t *device = NULL;
+
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	divesystem_idive_device_t *device = (divesystem_idive_device_t *) malloc (sizeof (divesystem_idive_device_t));
+	device = (divesystem_idive_device_t *) dc_device_allocate (context, &divesystem_idive_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
 
-	// Initialize the base class.
-	device_init (&device->base, context, &divesystem_idive_device_vtable);
-
 	// Set the default values.
 	device->port = NULL;
 	memset (device->fingerprint, 0, sizeof (device->fingerprint));
+	device->model = model;
 
 	// Open the device.
 	int rc = serial_open (&device->port, context, name);
 	if (rc == -1) {
 		ERROR (context, "Failed to open the serial port.");
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_free;
 	}
 
 	// Set the serial communication protocol (115200 8N1).
 	rc = serial_configure (device->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
 	if (rc == -1) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Set the timeout for receiving data (1000ms).
 	if (serial_set_timeout (device->port, 1000) == -1) {
 		ERROR (context, "Failed to set the timeout.");
-		serial_close (device->port);
-		free (device);
-		return DC_STATUS_IO;
+		status = DC_STATUS_IO;
+		goto error_close;
 	}
 
 	// Make sure everything is in a sane state.
@@ -131,24 +159,27 @@ divesystem_idive_device_open (dc_device_t **out, dc_context_t *context, const ch
 	*out = (dc_device_t *) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_close:
+	serial_close (device->port);
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
 static dc_status_t
 divesystem_idive_device_close (dc_device_t *abstract)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	divesystem_idive_device_t *device = (divesystem_idive_device_t*) abstract;
 
 	// Close the device.
 	if (serial_close (device->port) == -1) {
-		free (device);
-		return DC_STATUS_IO;
+		dc_status_set_error(&status, DC_STATUS_IO);
 	}
 
-	// Free memory.
-	free (device);
-
-	return DC_STATUS_SUCCESS;
+	return status;
 }
 
 
@@ -334,39 +365,43 @@ divesystem_idive_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
 {
 	dc_status_t rc = DC_STATUS_SUCCESS;
 	divesystem_idive_device_t *device = (divesystem_idive_device_t *) abstract;
+	unsigned char packet[MAXPACKET - 2];
+
+	const divesystem_idive_commands_t *commands = &idive;
+	if (device->model >= IX3M_EASY && device->model <= IX3M_REB) {
+		commands = &ix3m;
+	}
 
 	// Enable progress notifications.
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
 	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
-	unsigned char cmd_id[] = {CMD_ID, 0xED};
-	unsigned char id[SZ_ID];
-	rc = divesystem_idive_transfer (device, cmd_id, sizeof(cmd_id), id, sizeof(id));
+	unsigned char cmd_id[] = {commands->id.cmd, 0xED};
+	rc = divesystem_idive_transfer (device, cmd_id, sizeof(cmd_id), packet, commands->id.size);
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
 
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
-	devinfo.model = array_uint16_le (id);
+	devinfo.model = array_uint16_le (packet);
 	devinfo.firmware = 0;
-	devinfo.serial = array_uint32_le (id + 6);
+	devinfo.serial = array_uint32_le (packet + 6);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Emit a vendor event.
 	dc_event_vendor_t vendor;
-	vendor.data = id;
-	vendor.size = sizeof (id);
+	vendor.data = packet;
+	vendor.size = commands->id.size;
 	device_event_emit (abstract, DC_EVENT_VENDOR, &vendor);
 
-	unsigned char cmd_range[] = {CMD_RANGE, 0x8D};
-	unsigned char range[4];
-	rc = divesystem_idive_transfer (device, cmd_range, sizeof(cmd_range), range, sizeof(range));
+	unsigned char cmd_range[] = {commands->range.cmd, 0x8D};
+	rc = divesystem_idive_transfer (device, cmd_range, sizeof(cmd_range), packet, commands->range.size);
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
 
 	// Get the range of the available dive numbers.
-	unsigned int first = array_uint16_le (range + 0);
-	unsigned int last  = array_uint16_le (range + 2);
+	unsigned int first = array_uint16_le (packet + 0);
+	unsigned int last  = array_uint16_le (packet + 2);
 	if (first > last) {
 		ERROR(abstract->context, "Invalid dive numbers.");
 		return DC_STATUS_DATAFORMAT;
@@ -386,34 +421,32 @@ divesystem_idive_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
 
 	for (unsigned int i = 0; i < ndives; ++i) {
 		unsigned int number = last - i;
-		unsigned char cmd_header[] = {CMD_HEADER,
+		unsigned char cmd_header[] = {commands->header.cmd,
 			(number     ) & 0xFF,
 			(number >> 8) & 0xFF};
-		unsigned char header[SZ_HEADER];
-		rc = divesystem_idive_transfer (device, cmd_header, sizeof(cmd_header), header, sizeof(header));
+		rc = divesystem_idive_transfer (device, cmd_header, sizeof(cmd_header), packet, commands->header.size);
 		if (rc != DC_STATUS_SUCCESS)
 			return rc;
 
-		if (memcmp(header + 7, device->fingerprint, sizeof(device->fingerprint)) == 0)
+		if (memcmp(packet + 7, device->fingerprint, sizeof(device->fingerprint)) == 0)
 			break;
 
-		unsigned int nsamples = array_uint16_le (header + 1);
+		unsigned int nsamples = array_uint16_le (packet + 1);
 
 		// Update and emit a progress event.
 		progress.current = i * NSTEPS + STEP(1, nsamples + 1);
 		device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
 		dc_buffer_clear(buffer);
-		dc_buffer_reserve(buffer, SZ_HEADER + SZ_SAMPLE * nsamples);
-		dc_buffer_append(buffer, header, sizeof(header));
+		dc_buffer_reserve(buffer, commands->header.size + commands->sample.size * nsamples);
+		dc_buffer_append(buffer, packet, commands->header.size);
 
 		for (unsigned int j = 0; j < nsamples; ++j) {
 			unsigned int idx = j + 1;
-			unsigned char cmd_sample[] = {CMD_SAMPLE,
+			unsigned char cmd_sample[] = {commands->sample.cmd,
 				(idx     ) & 0xFF,
 				(idx >> 8) & 0xFF};
-			unsigned char sample[SZ_SAMPLE];
-			rc = divesystem_idive_transfer (device, cmd_sample, sizeof(cmd_sample), sample, sizeof(sample));
+			rc = divesystem_idive_transfer (device, cmd_sample, sizeof(cmd_sample), packet, commands->sample.size);
 			if (rc != DC_STATUS_SUCCESS)
 				return rc;
 
@@ -421,7 +454,7 @@ divesystem_idive_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
 			progress.current = i * NSTEPS + STEP(j + 2, nsamples + 1);
 			device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
-			dc_buffer_append(buffer, sample, sizeof(sample));
+			dc_buffer_append(buffer, packet, commands->sample.size);
 		}
 
 		unsigned char *data = dc_buffer_get_data(buffer);
