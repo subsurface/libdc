@@ -128,9 +128,6 @@ shearwater_petrel_device_custom_open (dc_device_t **out, dc_context_t *context, 
 		return DC_STATUS_NOMEMORY;
 	}
 
-	// Initialize the base class.
-	device_init (&device->base.base, context, &shearwater_petrel_device_vtable);
-
 	// Set the default values.
 	memset (device->fingerprint, 0, sizeof (device->fingerprint));
 

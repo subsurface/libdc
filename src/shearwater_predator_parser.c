@@ -139,10 +139,8 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 	parser->petrel = petrel;
 	parser->serial = serial;
 	if (petrel) {
-		parser_init (&parser->base, context, &shearwater_petrel_parser_vtable);
 		parser->samplesize = SZ_SAMPLE_PETREL;
 	} else {
-		parser_init (&parser->base, context, &shearwater_predator_parser_vtable);
 		parser->samplesize = SZ_SAMPLE_PREDATOR;
 	}
 
