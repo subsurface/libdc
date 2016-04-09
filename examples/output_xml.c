@@ -23,6 +23,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <libdivecomputer/units.h>
+
 #include "output-private.h"
 #include "utils.h"
 
@@ -32,6 +34,7 @@ static dc_status_t dctool_xml_output_free (dctool_output_t *output);
 typedef struct dctool_xml_output_t {
 	dctool_output_t base;
 	FILE *ostream;
+	dctool_units_t units;
 } dctool_xml_output_t;
 
 static const dctool_output_vtable_t xml_vtable = {
@@ -42,8 +45,49 @@ static const dctool_output_vtable_t xml_vtable = {
 
 typedef struct sample_data_t {
 	FILE *ostream;
+	dctool_units_t units;
 	unsigned int nsamples;
 } sample_data_t;
+
+static double
+convert_depth (double value, dctool_units_t units)
+{
+	if (units == DCTOOL_UNITS_IMPERIAL) {
+		return value / FEET;
+	} else {
+		return value;
+	}
+}
+
+static double
+convert_temperature (double value, dctool_units_t units)
+{
+	if (units == DCTOOL_UNITS_IMPERIAL) {
+		return value * (9.0 / 5.0) + 32.0;
+	} else {
+		return value;
+	}
+}
+
+static double
+convert_pressure (double value, dctool_units_t units)
+{
+	if (units == DCTOOL_UNITS_IMPERIAL) {
+		return value * BAR / PSI;
+	} else {
+		return value;
+	}
+}
+
+static double
+convert_volume (double value, dctool_units_t units)
+{
+	if (units == DCTOOL_UNITS_IMPERIAL) {
+		return value / 1000.0 / CUFT;
+	} else {
+		return value;
+	}
+}
 
 static void
 sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata)
@@ -68,13 +112,17 @@ sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata)
 		fprintf (sampledata->ostream, "   <time>%02u:%02u</time>\n", value.time / 60, value.time % 60);
 		break;
 	case DC_SAMPLE_DEPTH:
-		fprintf (sampledata->ostream, "   <depth>%.2f</depth>\n", value.depth);
+		fprintf (sampledata->ostream, "   <depth>%.2f</depth>\n",
+			convert_depth(value.depth, sampledata->units));
 		break;
 	case DC_SAMPLE_PRESSURE:
-		fprintf (sampledata->ostream, "   <pressure tank=\"%u\">%.2f</pressure>\n", value.pressure.tank, value.pressure.value);
+		fprintf (sampledata->ostream, "   <pressure tank=\"%u\">%.2f</pressure>\n",
+			value.pressure.tank,
+			convert_pressure(value.pressure.value, sampledata->units));
 		break;
 	case DC_SAMPLE_TEMPERATURE:
-		fprintf (sampledata->ostream, "   <temperature>%.2f</temperature>\n", value.temperature);
+		fprintf (sampledata->ostream, "   <temperature>%.2f</temperature>\n",
+			convert_temperature(value.temperature, sampledata->units));
 		break;
 	case DC_SAMPLE_EVENT:
 		if (value.event.type != SAMPLE_EVENT_GASCHANGE && value.event.type != SAMPLE_EVENT_GASCHANGE2) {
@@ -108,7 +156,9 @@ sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata)
 		break;
 	case DC_SAMPLE_DECO:
 		fprintf (sampledata->ostream, "   <deco time=\"%u\" depth=\"%.2f\">%s</deco>\n",
-			value.deco.time, value.deco.depth, decostop[value.deco.type]);
+			value.deco.time,
+			convert_depth(value.deco.depth, sampledata->units),
+			decostop[value.deco.type]);
 		break;
 	case DC_SAMPLE_GASMIX:
 		fprintf (sampledata->ostream, "   <gasmix>%u</gasmix>\n", value.gasmix);
@@ -119,7 +169,7 @@ sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata)
 }
 
 dctool_output_t *
-dctool_xml_output_new (const char *filename)
+dctool_xml_output_new (const char *filename, dctool_units_t units)
 {
 	dctool_xml_output_t *output = NULL;
 
@@ -138,6 +188,8 @@ dctool_xml_output_new (const char *filename)
 		goto error_free;
 	}
 
+	output->units = units;
+
 	fprintf (output->ostream, "<device>\n");
 
 	return (dctool_output_t *) output;
@@ -153,6 +205,12 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 {
 	dctool_xml_output_t *output = (dctool_xml_output_t *) abstract;
 	dc_status_t status = DC_STATUS_SUCCESS;
+
+	// Initialize the sample data.
+	sample_data_t sampledata = {0};
+	sampledata.nsamples = 0;
+	sampledata.ostream = output->ostream;
+	sampledata.units = output->units;
 
 	fprintf (output->ostream, "<dive>\n<number>%u</number>\n<size>%u</size>\n", abstract->number, size);
 
@@ -198,7 +256,7 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 	}
 
 	fprintf (output->ostream, "<maxdepth>%.2f</maxdepth>\n",
-		maxdepth);
+		convert_depth(maxdepth, output->units));
 
 	// Parse the temperature.
 	message ("Parsing the temperature.\n");
@@ -217,7 +275,8 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 
 		if (status != DC_STATUS_UNSUPPORTED) {
 			fprintf (output->ostream, "<temperature type=\"%s\">%.1f</temperature>\n",
-				names[i], temperature);
+				names[i],
+				convert_temperature(temperature, output->units));
 		}
 	}
 
@@ -279,13 +338,16 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 				"   <type>%s</type>\n"
 				"   <volume>%.1f</volume>\n"
 				"   <workpressure>%.2f</workpressure>\n",
-				names[tank.type], tank.volume, tank.workpressure);
+				names[tank.type],
+				convert_volume(tank.volume, output->units),
+				convert_pressure(tank.workpressure, output->units));
 		}
 		fprintf (output->ostream,
 			"   <beginpressure>%.2f</beginpressure>\n"
 			"   <endpressure>%.2f</endpressure>\n"
 			"</tank>\n",
-			tank.beginpressure, tank.endpressure);
+			convert_pressure(tank.beginpressure, output->units),
+			convert_pressure(tank.endpressure, output->units));
 	}
 
 	// Parse the dive mode.
@@ -328,13 +390,8 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 
 	if (status != DC_STATUS_UNSUPPORTED) {
 		fprintf (output->ostream, "<atmospheric>%.5f</atmospheric>\n",
-			atmospheric);
+			convert_pressure(atmospheric, output->units));
 	}
-
-	// Initialize the sample data.
-	sample_data_t sampledata = {0};
-	sampledata.nsamples = 0;
-	sampledata.ostream = output->ostream;
 
 	// Parse the sample data.
 	message ("Parsing the sample data.\n");
@@ -344,11 +401,12 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 		goto cleanup;
 	}
 
+cleanup:
+
 	if (sampledata.nsamples)
 		fprintf (output->ostream, "</sample>\n");
 	fprintf (output->ostream, "</dive>\n");
 
-cleanup:
 	return status;
 }
 

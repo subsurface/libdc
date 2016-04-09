@@ -184,6 +184,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Aeris",    "A300CS",              DC_FAMILY_OCEANIC_ATOM2, 0x454C},
 	{"Oceanic",  "F11",                 DC_FAMILY_OCEANIC_ATOM2, 0x4554},
 	{"Oceanic",  "VTX",                 DC_FAMILY_OCEANIC_ATOM2, 0x4557},
+	{"Aqualung", "i450T",               DC_FAMILY_OCEANIC_ATOM2, 0x4641},
 	/* Mares Nemo */
 	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0},
 	{"Mares", "Nemo Steel",   DC_FAMILY_MARES_NEMO, 0},
@@ -228,6 +229,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Cressi Leonardo */
 	{"Cressi", "Leonardo", DC_FAMILY_CRESSI_LEONARDO, 1},
 	{"Cressi", "Giotto",   DC_FAMILY_CRESSI_LEONARDO, 4},
+	{"Cressi", "Newton",   DC_FAMILY_CRESSI_LEONARDO, 5},
 	/* Zeagle N2iTiON3 */
 	{"Zeagle",   "N2iTiON3",   DC_FAMILY_ZEAGLE_N2ITION3, 0},
 	{"Apeks",    "Quantum X",  DC_FAMILY_ZEAGLE_N2ITION3, 0},
