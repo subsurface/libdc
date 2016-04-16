@@ -83,7 +83,7 @@ parse (dc_buffer_t *buffer, dc_context_t *context, dc_descriptor_t *descriptor, 
 		break;
 	case DC_FAMILY_SUUNTO_VYPER2:
 	case DC_FAMILY_SUUNTO_D9:
-		rc = suunto_d9_parser_create (&parser, context, model);
+		rc = suunto_d9_parser_create (&parser, context, model, 0);
 		break;
 	case DC_FAMILY_SUUNTO_EONSTEEL:
 		rc = suunto_eonsteel_parser_create(&parser, context, model);
@@ -115,7 +115,7 @@ parse (dc_buffer_t *buffer, dc_context_t *context, dc_descriptor_t *descriptor, 
 		if (model == REACTPROWHITE)
 			rc = oceanic_veo250_parser_create (&parser, context, model);
 		else
-			rc = oceanic_atom2_parser_create (&parser, context, model);
+			rc = oceanic_atom2_parser_create (&parser, context, model, 0);
 		break;
 	case DC_FAMILY_MARES_NEMO:
 	case DC_FAMILY_MARES_PUCK:
@@ -128,11 +128,11 @@ parse (dc_buffer_t *buffer, dc_context_t *context, dc_descriptor_t *descriptor, 
 		rc = mares_iconhd_parser_create (&parser, context, model);
 		break;
 	case DC_FAMILY_HW_OSTC:
-		rc = hw_ostc_parser_create (&parser, context, 0);
+		rc = hw_ostc_parser_create (&parser, context, 0, 0);
 		break;
 	case DC_FAMILY_HW_FROG:
 	case DC_FAMILY_HW_OSTC3:
-		rc = hw_ostc_parser_create (&parser, context, 1);
+		rc = hw_ostc_parser_create (&parser, context, 0, 1);
 		break;
 	case DC_FAMILY_CRESSI_EDY:
 	case DC_FAMILY_ZEAGLE_N2ITION3:
@@ -145,10 +145,10 @@ parse (dc_buffer_t *buffer, dc_context_t *context, dc_descriptor_t *descriptor, 
 		rc = atomics_cobalt_parser_create (&parser, context);
 		break;
 	case DC_FAMILY_SHEARWATER_PREDATOR:
-		rc = shearwater_predator_parser_create (&parser, context);
+		rc = shearwater_predator_parser_create (&parser, context, 0);
 		break;
 	case DC_FAMILY_SHEARWATER_PETREL:
-		rc = shearwater_petrel_parser_create (&parser, context);
+		rc = shearwater_petrel_parser_create (&parser, context, 0);
 		break;
 	case DC_FAMILY_DIVERITE_NITEKQ:
 		rc = diverite_nitekq_parser_create (&parser, context);
