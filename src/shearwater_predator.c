@@ -102,13 +102,14 @@ error_free:
 dc_status_t
 shearwater_predator_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial_t *serial)
 {
-	dc_status_t rc = DC_STATUS_SUCCESS;
+	dc_status_t status = DC_STATUS_SUCCESS;
+	shearwater_predator_device_t *device = NULL;
 
 	if (out == NULL || serial == NULL || serial->port == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	shearwater_predator_device_t *device = (shearwater_predator_device_t *) malloc (sizeof (shearwater_predator_device_t));
+	device = (shearwater_predator_device_t *) dc_device_allocate (context, &shearwater_predator_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -118,15 +119,18 @@ shearwater_predator_device_custom_open (dc_device_t **out, dc_context_t *context
 	memset (device->fingerprint, 0, sizeof (device->fingerprint));
 
 	// Open the device.
-	rc = shearwater_common_custom_open (&device->base, context, serial);
-	if (rc != DC_STATUS_SUCCESS) {
-		free (device);
-		return rc;
+	status = shearwater_common_custom_open (&device->base, context, serial);
+	if (status != DC_STATUS_SUCCESS) {
+		goto error_free;
 	}
 
 	*out = (dc_device_t *) device;
 
 	return DC_STATUS_SUCCESS;
+
+error_free:
+	dc_device_deallocate ((dc_device_t *) device);
+	return status;
 }
 
 
