@@ -379,18 +379,20 @@ dc_status_t
 hw_ostc3_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial_t *serial)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
+	hw_ostc3_device_t *device = NULL;
 
 	if (out == NULL || serial == NULL || serial->port == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	hw_ostc3_device_t *device = (hw_ostc3_device_t *) malloc (sizeof (hw_ostc3_device_t));
+	device = (hw_ostc3_device_t *) dc_device_allocate (context, &hw_ostc3_device_vtable);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
 
 	// Set the default values.
+	device->hardware = INVALID;
 	memset (device->fingerprint, 0, sizeof (device->fingerprint));
 
 	// Set the serial reference
@@ -401,7 +403,6 @@ hw_ostc3_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial
 		int rc = serial_configure (device->serial->port, 115200, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
 		if (rc == -1) {
 			ERROR (context, "Failed to set the terminal attributes.");
-			free (device);
 			status = DC_STATUS_IO;
 			goto error_close;
 		}
