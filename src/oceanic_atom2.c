@@ -83,6 +83,7 @@ static const dc_device_vtable_t oceanic_atom2_device_vtable = {
 
 static const oceanic_common_version_t aeris_f10_version[] = {
 	{"FREEWAER \0\0 512K"},
+	{"MUNDIAL R\0\0 512K"},
 };
 
 static const oceanic_common_version_t aeris_f11_version[] = {
@@ -128,6 +129,7 @@ static const oceanic_common_version_t oceanic_default_version[] = {
 	{"DATAMASK \0\0 512K"},
 	{"COMPMASK \0\0 512K"},
 	{"HOLLDG03 \0\0 512K"},
+	{"AQUAI300 \0\0 512K"},
 };
 
 static const oceanic_common_version_t oceanic_proplus3_version[] = {
