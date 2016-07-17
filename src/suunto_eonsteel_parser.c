@@ -1074,6 +1074,7 @@ static int add_gas_type(suunto_eonsteel_parser_t *eon, const struct type_desc *d
 	if (eon->cache.ngases < MAXGASES)
 		eon->cache.ngases++;
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX_COUNT;
+	eon->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
 	return 0;
 }
 
@@ -1104,6 +1105,7 @@ static int add_gas_size(suunto_eonsteel_parser_t *eon, float l)
 	int idx = eon->cache.ngases-1;
 	if (idx >= 0)
 		eon->cache.tanksize[idx] = l;
+	eon->cache.initialized |= 1 << DC_FIELD_TANK;
 	return 0;
 }
 
