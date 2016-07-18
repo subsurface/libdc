@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <math.h>
 
 /* Wow. MSC is truly crap */
 #ifdef _MSC_VER
@@ -97,6 +98,7 @@ typedef struct suunto_eonsteel_parser_t {
 		double highsetpoint;
 		double customsetpoint;
 		dc_field_string_t strings[MAXSTRINGS];
+		dc_tankinfo_t tankinfo[MAXGASES];
 		double tanksize[MAXGASES];
 		double tankworkingpressure[MAXGASES];
 	} cache;
@@ -1007,19 +1009,32 @@ suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsi
 		field_value(value, eon->cache.divemode);
 		break;
 	case DC_FIELD_TANK:
-		/* Sadly it seems that the EON Steel doesn't tell us whether we get imperial
-		 * or metric data - the only indication is metric is always whole liters */
+		/*
+		 * Sadly it seems that the EON Steel doesn't tell us whether
+		 * we get imperial or metric data - the only indication is
+		 * that metric is (at least so far) always whole liters
+		 */
 		tank->volume = eon->cache.tanksize[flags];
-		if (eon->cache.tanksize[flags] - (int)eon->cache.tanksize[flags] < 0.001) {
-			tank->type = DC_TANKVOLUME_METRIC;
-			tank->workpressure = 0;
-		} else {
-			/* the pressure reported is NOT the pressure the user enters.
-			 * So 3000psi turns into 206.700 bar instead of 206.843 bar;
-			 * We report it as we get it and let the application figure out
-			 * what to do with that */
-			tank->type = DC_TANKVOLUME_IMPERIAL;
-			tank->workpressure = eon->cache.tankworkingpressure[flags];
+
+		/*
+		 * The pressure reported is NOT the pressure the user enters.
+		 *
+		 * So 3000psi turns into 206.700 bar instead of 206.843 bar;
+		 * We report it as we get it and let the application figure out
+		 * what to do with that
+		 */
+		tank->workpressure = eon->cache.tankworkingpressure[flags];
+		tank->type = eon->cache.tankinfo[flags];
+
+		/*
+		 * See if we should call this imperial instead.
+		 *
+		 * We need to have workpressure and a valid tank. In that case,
+		 * a fractional tank size implies imperial.
+		 */
+		if (tank->workpressure && (tank->type & DC_TANKINFO_METRIC)) {
+			if (fabs(tank->volume - rint(tank->volume)) > 0.001)
+				tank->type += DC_TANKINFO_IMPERIAL - DC_TANKINFO_METRIC;
 		}
 		break;
 	case DC_FIELD_STRING:
@@ -1069,10 +1084,36 @@ static void set_depth_field(suunto_eonsteel_parser_t *eon, unsigned short d)
 // Two versions so far:
 //   "enum:0=Off,1=Primary,2=?,3=Diluent"
 //   "enum:0=Off,1=Primary,3=Diluent,4=Oxygen"
+//
+// We turn that into the DC_TANKINFO data here, but
+// initially consider all non-off tanks to me METRIC.
+//
+// We may later turn the METRIC tank size into IMPERIAL if we
+// get a working pressure and non-integral size
 static int add_gas_type(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, unsigned char type)
 {
-	if (eon->cache.ngases < MAXGASES)
-		eon->cache.ngases++;
+	int idx = eon->cache.ngases;
+	dc_tankinfo_t tankinfo = DC_TANKINFO_METRIC;
+
+	if (idx >= MAXGASES)
+		return 0;
+
+	eon->cache.ngases = idx+1;
+	switch (type) {
+	case 0:
+		tankinfo = 0;
+		break;
+	case 3:
+		tankinfo |= DC_TANKINFO_CC_DILUENT;
+		break;
+	case 4:
+		tankinfo |= DC_TANKINFO_CC_O2;
+		break;
+	default:
+		break;
+	}
+	eon->cache.tankinfo[idx] = tankinfo;
+
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX_COUNT;
 	eon->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
 	return 0;
