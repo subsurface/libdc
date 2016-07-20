@@ -699,22 +699,18 @@ static void sample_event_state_type(const struct type_desc *desc, struct sample_
 
 static void sample_event_state_value(const struct type_desc *desc, struct sample_data *info, unsigned char value)
 {
+	dc_sample_value_t sample = {0};
 	const char *name;
 
 	name = info->state_type;
 	if (!name)
 		return;
 
-	/*
-	 * We could turn these into sample events, but they don't actually
-	 * match any libdivecomputer events.
-	 *
-	 *   unsigned int state = info->state_type;
-	 *   dc_sample_value_t sample = {0};
-	 *   sample.event.type = ...
-	 *   sample.event.value = value;
-	 *   if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
-	 */
+	sample.event.type = SAMPLE_EVENT_STRING;
+	sample.event.name = name;
+
+	sample.event.value = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
 }
 
 static void sample_event_notify_type(const struct type_desc *desc, struct sample_data *info, unsigned char type)
