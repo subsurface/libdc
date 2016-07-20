@@ -94,7 +94,11 @@ typedef enum parser_sample_event_t {
 	SAMPLE_EVENT_HEADING,
 	SAMPLE_EVENT_TISSUELEVEL,
 	SAMPLE_EVENT_GASCHANGE2, /* Deprecated: replaced by DC_SAMPLE_GASMIX. */
+	SAMPLE_EVENT_STRING,
 } parser_sample_event_t;
+
+/* To let the compile know we have this */
+#define SAMPLE_EVENT_STRING SAMPLE_EVENT_STRING
 
 /* For backwards compatibility */
 #define SAMPLE_EVENT_UNKNOWN SAMPLE_EVENT_FLOOR
@@ -206,6 +210,7 @@ typedef union dc_sample_value_t {
 	struct {
 		unsigned int type;
 		unsigned int time;
+		const char *name;
 		unsigned int flags;
 		unsigned int value;
 	} event;
