@@ -24,10 +24,12 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <math.h>
+#include <stdarg.h>
 
 /* Wow. MSC is truly crap */
 #ifdef _MSC_VER
 #define snprintf _snprintf
+#define vsnprintf _vsnprintf
 #endif
 
 #include <libdivecomputer/suunto_eonsteel.h>
@@ -1198,6 +1200,26 @@ static int add_string(suunto_eonsteel_parser_t *eon, const char *desc, const cha
 	return 0;
 }
 
+static int add_string_fmt(suunto_eonsteel_parser_t *eon, const char *desc, const char *fmt, ...)
+{
+	char buffer[256];
+	va_list ap;
+
+	/*
+	 * We ignore the return value from vsnprintf, and we
+	 * always NUL-terminate the destination buffer ourselves.
+	 *
+	 * That way we don't have to worry about random bad legacy
+	 * implementations.
+	 */
+	va_start(ap, fmt);
+	buffer[sizeof(buffer)-1] = 0;
+	(void) vsnprintf(buffer, sizeof(buffer)-1, fmt, ap);
+	va_end(ap);
+
+	return add_string(eon, desc, buffer);
+}
+
 static float get_le32_float(const unsigned char *src)
 {
 	union {
@@ -1325,11 +1347,9 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 
 	/* Signed byte of conservatism (-2 .. +2) */
 	if (!strcmp(name, "Conservatism")) {
-		char buffer[10];
 		int val = *(signed char *)data;
 
-		snprintf(buffer, sizeof(buffer), "P%d", val);
-		return add_string(eon, "Personal Adjustment", buffer);
+		return add_string_fmt(eon, "Personal Adjustment", "P%d", val);
 	}
 
 	if (!strcmp(name, "LowSetPoint")) {
@@ -1344,14 +1364,11 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 		return 0;
 	}
 
+	// Time recoded in seconds.
+	// Let's just agree to ignore seconds
 	if (!strcmp(name, "DesaturationTime")) {
-		char desat[16];
-		unsigned int time = array_uint32_le(data); // In seconds!
-
-		// Let's just agree to ignore seconds
-		time /= 60;
-		snprintf(desat, sizeof(desat), "%d:%02d", time / 60, time % 60);
-		return add_string(eon, "Desaturation Time", desat);
+		unsigned int time = array_uint32_le(data) / 60;
+		return add_string_fmt(eon, "Desaturation Time", "%d:%02d", time / 60, time % 60);
 	}
 
 	return 0;
