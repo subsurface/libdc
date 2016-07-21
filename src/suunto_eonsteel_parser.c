@@ -1292,6 +1292,21 @@ static int traverse_gas_fields(suunto_eonsteel_parser_t *eon, const struct type_
 	if (!strcmp(name, ".Gas.TankFillPressure"))
 		return add_gas_workpressure(eon, get_le32_float(data));
 
+	// There is a bug with older transmitters, where the transmitter
+	// battery charge returns zero. Rather than returning that bogus
+	// data, just don't return any battery charge information at all.
+	//
+	// Make sure to add all non-battery-charge field checks above this
+	// test, so that it doesn't trigger for anything else.
+	if (!data[0])
+		return 0;
+
+	if (!strcmp(name, ".Gas.TransmitterStartBatteryCharge"))
+		return add_string_fmt(eon, "Transmitter Battery at start", "%d %%", data[0]);
+
+	if (!strcmp(name, ".Gas.TransmitterEndBatteryCharge"))
+		return add_string_fmt(eon, "Transmitter Battery at end", "%d %%", data[0]);
+
 	return 0;
 }
 
