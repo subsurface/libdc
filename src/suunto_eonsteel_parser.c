@@ -1344,6 +1344,16 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 		return 0;
 	}
 
+	if (!strcmp(name, "DesaturationTime")) {
+		char desat[16];
+		unsigned int time = array_uint32_le(data); // In seconds!
+
+		// Let's just agree to ignore seconds
+		time /= 60;
+		snprintf(desat, sizeof(desat), "%d:%02d", time / 60, time % 60);
+		return add_string(eon, "Desaturation Time", desat);
+	}
+
 	return 0;
 }
 
