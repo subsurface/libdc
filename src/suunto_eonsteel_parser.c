@@ -1385,6 +1385,11 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 		return add_string_fmt(eon, "Desaturation Time", "%d:%02d", time / 60, time % 60);
 	}
 
+	if (!strcmp(name, "SurfaceTime")) {
+		unsigned int time = array_uint32_le(data) / 60;
+		return add_string_fmt(eon, "Surface Time", "%d:%02d", time / 60, time % 60);
+	}
+
 	return 0;
 }
 
