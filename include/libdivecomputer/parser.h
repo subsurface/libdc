@@ -106,8 +106,11 @@ typedef enum parser_sample_event_t {
 typedef enum parser_sample_flags_t {
 	SAMPLE_FLAGS_NONE = 0,
 	SAMPLE_FLAGS_BEGIN = (1 << 0),
-	SAMPLE_FLAGS_END = (1 << 1)
+	SAMPLE_FLAGS_END = (1 << 1),
+	SAMPLE_FLAGS_SEVERITY_MASK = (7 << 2),
 } parser_sample_flags_t;
+
+#define SAMPLE_FLAGS_SEVERITY_SHIFT 2
 
 typedef enum parser_sample_vendor_t {
 	SAMPLE_VENDOR_NONE,

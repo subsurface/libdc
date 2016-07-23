@@ -678,21 +678,6 @@ static const char *lookup_enum(const struct type_desc *desc, unsigned char value
 /*
  * The EON Steel has four different sample events: "state", "notification",
  * "warning" and "alarm". All end up having two fields: type and a boolean value.
- *
- * The type enumerations are available as part of the type descriptor, and we
- * *should* probably parse them dynamically, but this hardcodes the different
- * type values.
- *
- * For event states, the types are:
- *
- * 0=Wet Outside
- * 1=Below Wet Activation Depth
- * 2=Below Surface
- * 3=Dive Active
- * 4=Surface Calculation
- * 5=Tank pressure available
- *
- * FIXME! This needs to parse the actual type descriptor enum
  */
 static void sample_event_state_type(const struct type_desc *desc, struct sample_data *info, unsigned char type)
 {
@@ -710,8 +695,9 @@ static void sample_event_state_value(const struct type_desc *desc, struct sample
 
 	sample.event.type = SAMPLE_EVENT_STRING;
 	sample.event.name = name;
+	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	sample.event.flags |= 1 << SAMPLE_FLAGS_SEVERITY_SHIFT;
 
-	sample.event.value = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
 	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
 }
 
@@ -733,8 +719,9 @@ static void sample_event_notify_value(const struct type_desc *desc, struct sampl
 
 	sample.event.type = SAMPLE_EVENT_STRING;
 	sample.event.name = name;
+	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	sample.event.flags |= 2 << SAMPLE_FLAGS_SEVERITY_SHIFT;
 
-	sample.event.value = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
 	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
 }
 
@@ -755,8 +742,9 @@ static void sample_event_warning_value(const struct type_desc *desc, struct samp
 
 	sample.event.type = SAMPLE_EVENT_STRING;
 	sample.event.name = name;
+	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	sample.event.flags |= 3 << SAMPLE_FLAGS_SEVERITY_SHIFT;
 
-	sample.event.value = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
 	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
 }
 
@@ -778,7 +766,9 @@ static void sample_event_alarm_value(const struct type_desc *desc, struct sample
 
 	sample.event.type = SAMPLE_EVENT_STRING;
 	sample.event.name = name;
-	sample.event.value = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	sample.event.flags |= 4 << SAMPLE_FLAGS_SEVERITY_SHIFT;
+
 	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
 }
 
