@@ -80,7 +80,7 @@ struct type_desc {
 
 #define MAXTYPE 512
 #define MAXGASES 16
-#define MAXSTRINGS 16
+#define MAXSTRINGS 32
 
 typedef struct suunto_eonsteel_parser_t {
 	dc_parser_t base;
