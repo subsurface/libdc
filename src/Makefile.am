@@ -66,8 +66,7 @@ libdivecomputer_la_SOURCES = \
 	array.h array.c \
 	buffer.c \
 	cochran_commander.h cochran_commander.c \
-	cochran_commander_parser.c \
-	custom_serial.c
+	cochran_commander_parser.c
 
 if OS_WIN32
 libdivecomputer_la_SOURCES += serial.h serial_win32.c

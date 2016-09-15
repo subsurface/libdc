@@ -78,9 +78,11 @@
 #define A300CS      0x454C
 #define MUNDIAL3    0x4550
 #define F11B        0x4554
+#define VISION      0x4556
 #define VTX         0x4557
 #define I300        0x4559
 #define I450T       0x4641
+#define I550T       0x4642
 
 #define NORMAL   0
 #define GAUGE    1
@@ -152,7 +154,7 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		model == OCS || model == PROPLUS3 ||
 		model == A300 || model == MANTA ||
 		model == INSIGHT2 || model == ZEN ||
-		model == I300) {
+		model == I300 || model == I550T) {
 		parser->headersize -= PAGESIZE;
 	} else if (model == VT4 || model == VT41) {
 		parser->headersize += PAGESIZE;
@@ -242,6 +244,8 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case ATOM31:
 		case A300AI:
 		case OCI:
+		case I550T:
+		case VISION:
 			datetime->year   = ((p[5] & 0xE0) >> 5) + ((p[7] & 0xE0) >> 2) + 2000;
 			datetime->month  = (p[3] & 0x0F);
 			datetime->day    = ((p[0] & 0x80) >> 3) + ((p[3] & 0xF0) >> 4);
@@ -376,7 +380,7 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 	unsigned int header = headersize - PAGESIZE / 2;
 	unsigned int footer = size - footersize;
 	if (parser->model == VT4 || parser->model == VT41 ||
-		parser->model == A300AI) {
+		parser->model == A300AI || parser->model == VISION) {
 		header = 3 * PAGESIZE;
 	}
 
@@ -403,7 +407,7 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 		ngasmixes = 1;
 		o2_offset = header + 3;
 	} else if (parser->model == VT4 || parser->model == VT41 ||
-		parser->model == A300AI) {
+		parser->model == A300AI || parser->model == VISION) {
 		o2_offset = header + 4;
 		ngasmixes = 4;
 	} else if (parser->model == OCI) {
@@ -504,7 +508,7 @@ oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 				parser->model == MUNDIAL3)
 				*((double *) value) = array_uint16_le (data + 4) / 16.0 * FEET;
 			else
-				*((double *) value) = array_uint16_le (data + parser->footer + 4) / 16.0 * FEET;
+				*((double *) value) = (array_uint16_le (data + parser->footer + 4) & 0x0FFF) / 16.0 * FEET;
 			break;
 		case DC_FIELD_GASMIX_COUNT:
 			*((unsigned int *) value) = parser->ngasmixes;
@@ -580,7 +584,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 	unsigned int samplerate = 1;
 	if (parser->mode != FREEDIVE) {
 		unsigned int idx = 0x17;
-		if (parser->model == A300CS || parser->model == VTX)
+		if (parser->model == A300CS || parser->model == VTX ||
+			parser->model == I450T)
 			idx = 0x1f;
 		switch (data[idx] & 0x03) {
 		case 0:
@@ -764,16 +769,19 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 					temperature = data[offset + 3];
 				} else if (parser->model == OCS || parser->model == TX1) {
 					temperature = data[offset + 1];
-				} else if (parser->model == VT4 || parser->model == VT41 || parser->model == ATOM3 || parser->model == ATOM31 || parser->model == A300AI) {
+				} else if (parser->model == VT4 || parser->model == VT41 ||
+					parser->model == ATOM3 || parser->model == ATOM31 ||
+					parser->model == A300AI || parser->model == VISION) {
 					temperature = ((data[offset + 7] & 0xF0) >> 4) | ((data[offset + 7] & 0x0C) << 2) | ((data[offset + 5] & 0x0C) << 4);
 				} else if (parser->model == A300CS || parser->model == VTX) {
 					temperature = data[offset + 11];
 				} else {
 					unsigned int sign;
-					if (parser->model == DG03 || parser->model == PROPLUS3)
+					if (parser->model == DG03 || parser->model == PROPLUS3 ||
+						parser->model == I550T)
 						sign = (~data[offset + 5] & 0x04) >> 2;
 					else if (parser->model == VOYAGER2G || parser->model == AMPHOS ||
-						parser->model == AMPHOSAIR)
+						parser->model == AMPHOSAIR || parser->model == ZENAIR)
 						sign = (data[offset + 5] & 0x04) >> 2;
 					else if (parser->model == ATOM2 || parser->model == PROPLUS21 ||
 						parser->model == EPICA || parser->model == EPICB ||
@@ -801,7 +809,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 					parser->model == ATOM3 || parser->model == ATOM31 ||
 					parser->model == ZENAIR ||parser->model == A300AI ||
 					parser->model == DG03 || parser->model == PROPLUS3 ||
-					parser->model == AMPHOSAIR)
+					parser->model == AMPHOSAIR || parser->model == I550T ||
+					parser->model == VISION)
 					pressure = (((data[offset + 0] & 0x03) << 8) + data[offset + 1]) * 5;
 				else if (parser->model == TX1 || parser->model == A300CS || parser->model == VTX)
 					pressure = array_uint16_le (data + offset + 4);
@@ -870,6 +879,14 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				decostop = data[offset + 10];
 				decotime = array_uint16_le(data + offset + 6);
 				have_deco = 1;
+			} else if (parser->model == ATOM31 || parser->model == VISION) {
+				decostop = (data[offset + 5] & 0xF0) >> 4;
+				decotime = array_uint16_le(data + offset + 4) & 0x03FF;
+				have_deco = 1;
+			} else if (parser->model == I550T) {
+				decostop = (data[offset + 7] & 0xF0) >> 4;
+				decotime = array_uint16_le(data + offset + 6) & 0x03FF;
+				have_deco = 1;
 			}
 			if (have_deco) {
 				if (decostop) {
@@ -881,6 +898,26 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				}
 				sample.deco.time = decotime * 60;
 				if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+			}
+
+			unsigned int have_rbt = 0;
+			unsigned int rbt = 0;
+			if (parser->model == ATOM31) {
+				rbt = array_uint16_le(data + offset + 6) & 0x01FF;
+				have_rbt = 1;
+			} else if (parser->model == I450T) {
+				rbt = array_uint16_le(data + offset + 8) & 0x01FF;
+				have_rbt = 1;
+			} else if (parser->model == I550T) {
+				rbt = array_uint16_le(data + offset + 4) & 0x03FF;
+				have_rbt = 1;
+			} else if (parser->model == VISION) {
+				rbt = array_uint16_le(data + offset + 6) & 0x03FF;
+				have_rbt = 1;
+			}
+			if (have_rbt) {
+				sample.rbt = rbt;
+				if (callback) callback (DC_SAMPLE_RBT, sample, userdata);
 			}
 
 			complete = 1;

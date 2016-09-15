@@ -32,18 +32,13 @@
 #include "ringbuffer.h"
 #include "checksum.h"
 
-#define ISINSTANCE(device) dc_device_isinstance((device), &oceanic_atom2_device_vtable)
+#define ISINSTANCE(device) dc_device_isinstance((device), &oceanic_atom2_device_vtable.base)
 
 #define VTX        0x4557
 
 #define MAXRETRIES 2
 #define MAXDELAY   16
 #define INVALID    0xFFFFFFFF
-
-#define EXITCODE(rc) \
-( \
-	rc == -1 ? DC_STATUS_IO : DC_STATUS_TIMEOUT \
-)
 
 #define CMD_INIT      0xA8
 #define CMD_VERSION   0x84
@@ -59,7 +54,7 @@
 
 typedef struct oceanic_atom2_device_t {
 	oceanic_common_device_t base;
-	serial_t *port;
+	dc_serial_t *port;
 	unsigned int delay;
 	unsigned int bigpage;
 	unsigned char cache[256];
@@ -70,15 +65,19 @@ static dc_status_t oceanic_atom2_device_read (dc_device_t *abstract, unsigned in
 static dc_status_t oceanic_atom2_device_write (dc_device_t *abstract, unsigned int address, const unsigned char data[], unsigned int size);
 static dc_status_t oceanic_atom2_device_close (dc_device_t *abstract);
 
-static const dc_device_vtable_t oceanic_atom2_device_vtable = {
-	sizeof(oceanic_atom2_device_t),
-	DC_FAMILY_OCEANIC_ATOM2,
-	oceanic_common_device_set_fingerprint, /* set_fingerprint */
-	oceanic_atom2_device_read, /* read */
-	oceanic_atom2_device_write, /* write */
-	oceanic_common_device_dump, /* dump */
-	oceanic_common_device_foreach, /* foreach */
-	oceanic_atom2_device_close /* close */
+static const oceanic_common_device_vtable_t oceanic_atom2_device_vtable = {
+	{
+		sizeof(oceanic_atom2_device_t),
+		DC_FAMILY_OCEANIC_ATOM2,
+		oceanic_common_device_set_fingerprint, /* set_fingerprint */
+		oceanic_atom2_device_read, /* read */
+		oceanic_atom2_device_write, /* write */
+		oceanic_common_device_dump, /* dump */
+		oceanic_common_device_foreach, /* foreach */
+		oceanic_atom2_device_close /* close */
+	},
+	oceanic_common_device_logbook,
+	oceanic_common_device_profile,
 };
 
 static const oceanic_common_version_t aeris_f10_version[] = {
@@ -114,6 +113,7 @@ static const oceanic_common_version_t oceanic_atom2b_version[] = {
 	{"ELEMENT2 \0\0 512K"},
 	{"OCEVEO20 \0\0 512K"},
 	{"TUSAZEN \0\0  512K"},
+	{"AQUAI300 \0\0 512K"},
 };
 
 static const oceanic_common_version_t oceanic_atom2c_version[] = {
@@ -147,6 +147,7 @@ static const oceanic_common_version_t oceanic_oc1_version[] = {
 	{"OCWATCH R\0\0 1024"},
 	{"OC1WATCH \0\0 1024"},
 	{"OCSWATCH \0\0 1024"},
+	{"AQUAI550 \0\0 1024"},
 };
 
 static const oceanic_common_version_t oceanic_oci_version[] = {
@@ -162,6 +163,7 @@ static const oceanic_common_version_t oceanic_vt4_version[] = {
 	{"OCEANVT4 \0\0 1024"},
 	{"OCEAVT41 \0\0 1024"},
 	{"AERISAIR \0\0 1024"},
+	{"SWVISION \0\0 1024"},
 };
 
 static const oceanic_common_version_t hollis_tx1_version[] = {
@@ -196,7 +198,8 @@ static const oceanic_common_layout_t aeris_f10_layout = {
 	0x0D80, /* rb_profile_begin */
 	0x10000, /* rb_profile_end */
 	0, /* pt_mode_global */
-	2 /* pt_mode_logbook */
+	2, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t aeris_f11_layout = {
@@ -209,7 +212,8 @@ static const oceanic_common_layout_t aeris_f11_layout = {
 	0x0D80, /* rb_profile_begin */
 	0x20000, /* rb_profile_end */
 	0, /* pt_mode_global */
-	3 /* pt_mode_logbook */
+	3, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_default_layout = {
@@ -222,7 +226,8 @@ static const oceanic_common_layout_t oceanic_default_layout = {
 	0x0A40, /* rb_profile_begin */
 	0x10000, /* rb_profile_end */
 	0, /* pt_mode_global */
-	0 /* pt_mode_logbook */
+	0, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_atom1_layout = {
@@ -235,7 +240,8 @@ static const oceanic_common_layout_t oceanic_atom1_layout = {
 	0x0440, /* rb_profile_begin */
 	0x8000, /* rb_profile_end */
 	0, /* pt_mode_global */
-	0 /* pt_mode_logbook */
+	0, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_atom2a_layout = {
@@ -248,7 +254,8 @@ static const oceanic_common_layout_t oceanic_atom2a_layout = {
 	0x0A40, /* rb_profile_begin */
 	0xFE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	0 /* pt_mode_logbook */
+	0, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_atom2b_layout = {
@@ -261,7 +268,8 @@ static const oceanic_common_layout_t oceanic_atom2b_layout = {
 	0x0A40, /* rb_profile_begin */
 	0xFE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	0 /* pt_mode_logbook */
+	0, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_atom2c_layout = {
@@ -274,7 +282,8 @@ static const oceanic_common_layout_t oceanic_atom2c_layout = {
 	0x0A40, /* rb_profile_begin */
 	0xFFF0, /* rb_profile_end */
 	0, /* pt_mode_global */
-	0 /* pt_mode_logbook */
+	0, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_proplus3_layout = {
@@ -287,7 +296,8 @@ static const oceanic_common_layout_t oceanic_proplus3_layout = {
 	0x0A40, /* rb_profile_begin */
 	0xFE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	0 /* pt_mode_logbook */
+	0, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t tusa_zenair_layout = {
@@ -300,7 +310,8 @@ static const oceanic_common_layout_t tusa_zenair_layout = {
 	0x0A40, /* rb_profile_begin */
 	0xFE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_oc1_layout = {
@@ -313,7 +324,8 @@ static const oceanic_common_layout_t oceanic_oc1_layout = {
 	0x0A40, /* rb_profile_begin */
 	0x1FE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_oci_layout = {
@@ -326,7 +338,8 @@ static const oceanic_common_layout_t oceanic_oci_layout = {
 	0x1400, /* rb_profile_begin */
 	0x1FE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_atom3_layout = {
@@ -339,7 +352,8 @@ static const oceanic_common_layout_t oceanic_atom3_layout = {
 	0x0A40, /* rb_profile_begin */
 	0x1FE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_vt4_layout = {
@@ -352,7 +366,8 @@ static const oceanic_common_layout_t oceanic_vt4_layout = {
 	0x0A40, /* rb_profile_begin */
 	0x1FE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t hollis_tx1_layout = {
@@ -365,7 +380,8 @@ static const oceanic_common_layout_t hollis_tx1_layout = {
 	0x1000, /* rb_profile_begin */
 	0x40000, /* rb_profile_end */
 	0, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_veo1_layout = {
@@ -378,7 +394,8 @@ static const oceanic_common_layout_t oceanic_veo1_layout = {
 	0x0400, /* rb_profile_begin */
 	0x0400, /* rb_profile_end */
 	0, /* pt_mode_global */
-	0 /* pt_mode_logbook */
+	0, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t oceanic_reactpro_layout = {
@@ -391,7 +408,8 @@ static const oceanic_common_layout_t oceanic_reactpro_layout = {
 	0x0600, /* rb_profile_begin */
 	0xFFF0, /* rb_profile_end */
 	1, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	1, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t aeris_a300cs_layout = {
@@ -404,7 +422,8 @@ static const oceanic_common_layout_t aeris_a300cs_layout = {
 	0x1000, /* rb_profile_begin */
 	0x3FE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static const oceanic_common_layout_t aqualung_i450t_layout = {
@@ -417,26 +436,28 @@ static const oceanic_common_layout_t aqualung_i450t_layout = {
 	0x1400, /* rb_profile_begin */
 	0x3FE00, /* rb_profile_end */
 	0, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
 };
 
 static dc_status_t
 oceanic_atom2_packet (oceanic_atom2_device_t *device, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize, unsigned int crc_size)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
 
 	if (device_is_cancelled (abstract))
 		return DC_STATUS_CANCELLED;
 
 	if (device->delay) {
-		serial_sleep (device->port, device->delay);
+		dc_serial_sleep (device->port, device->delay);
 	}
 
 	// Send the command to the dive computer.
-	int n = serial_write (device->port, command, csize);
-	if (n != csize) {
+	status = dc_serial_write (device->port, command, csize, NULL);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to send the command.");
-		return EXITCODE (n);
+		return status;
 	}
 
 	// Get the correct ACK byte.
@@ -447,10 +468,10 @@ oceanic_atom2_packet (oceanic_atom2_device_t *device, const unsigned char comman
 
 	// Receive the response (ACK/NAK) of the dive computer.
 	unsigned char response = 0;
-	n = serial_read (device->port, &response, 1);
-	if (n != 1) {
+	status = dc_serial_read (device->port, &response, 1, NULL);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to receive the answer.");
-		return EXITCODE (n);
+		return status;
 	}
 
 	// Verify the response of the dive computer.
@@ -461,10 +482,10 @@ oceanic_atom2_packet (oceanic_atom2_device_t *device, const unsigned char comman
 
 	if (asize) {
 		// Receive the answer of the dive computer.
-		int n = serial_read (device->port, answer, asize);
-		if (n != asize) {
+		status = dc_serial_read (device->port, answer, asize, NULL);
+		if (status != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to receive the answer.");
-			return EXITCODE (n);
+			return status;
 		}
 
 		// Verify the checksum of the answer.
@@ -510,8 +531,8 @@ oceanic_atom2_transfer (oceanic_atom2_device_t *device, const unsigned char comm
 			device->delay++;
 
 		// Delay the next attempt.
-		serial_sleep (device->port, 100);
-		serial_flush (device->port, SERIAL_QUEUE_INPUT);
+		dc_serial_sleep (device->port, 100);
+		dc_serial_purge (device->port, DC_DIRECTION_INPUT);
 	}
 
 	return DC_STATUS_SUCCESS;
@@ -548,7 +569,7 @@ oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	device = (oceanic_atom2_device_t *) dc_device_allocate (context, &oceanic_atom2_device_vtable);
+	device = (oceanic_atom2_device_t *) dc_device_allocate (context, &oceanic_atom2_device_vtable.base);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -565,10 +586,9 @@ oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char
 	memset(device->cache, 0, sizeof(device->cache));
 
 	// Open the device.
-	int rc = serial_open (&device->port, context, name);
-	if (rc == -1) {
+	status = dc_serial_open (&device->port, context, name);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to open the serial port.");
-		status = DC_STATUS_IO;
 		goto error_free;
 	}
 
@@ -579,29 +599,28 @@ oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char
 	}
 
 	// Set the serial communication protocol (38400 8N1).
-	rc = serial_configure (device->port, baudrate, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
-	if (rc == -1) {
+	status = dc_serial_configure (device->port, baudrate, 8, DC_PARITY_NONE, DC_STOPBITS_ONE, DC_FLOWCONTROL_NONE);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		status = DC_STATUS_IO;
 		goto error_close;
 	}
 
 	// Set the timeout for receiving data (1000 ms).
-	if (serial_set_timeout (device->port, 1000) == -1) {
+	status = dc_serial_set_timeout (device->port, 1000);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the timeout.");
-		status = DC_STATUS_IO;
 		goto error_close;
 	}
 
 	// Give the interface 100 ms to settle and draw power up.
-	serial_sleep (device->port, 100);
+	dc_serial_sleep (device->port, 100);
 
 	// Set the DTR/RTS lines.
-	serial_set_dtr(device->port, 1);
-	serial_set_rts(device->port, 1);
+	dc_serial_set_dtr(device->port, 1);
+	dc_serial_set_rts(device->port, 1);
 
 	// Make sure everything is in a sane state.
-	serial_flush (device->port, SERIAL_QUEUE_BOTH);
+	dc_serial_purge (device->port, DC_DIRECTION_ALL);
 
 	// Switch the device from surface mode into download mode. Before sending
 	// this command, the device needs to be in PC mode (automatically activated
@@ -654,8 +673,22 @@ oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char
 		device->bigpage = 16;
 	} else if (OCEANIC_COMMON_MATCH (device->base.version, aqualung_i450t_version)) {
 		device->base.layout = &aqualung_i450t_layout;
-	} else {
+	} else if (OCEANIC_COMMON_MATCH (device->base.version, oceanic_default_version)) {
 		device->base.layout = &oceanic_default_layout;
+	} else {
+		WARNING (context, "Unsupported device detected!");
+		device->base.layout = &oceanic_default_layout;
+		if (memcmp(device->base.version + 12, "256K", 4) == 0) {
+			device->base.layout = &oceanic_atom1_layout;
+		} else if (memcmp(device->base.version + 12, "512K", 4) == 0) {
+			device->base.layout = &oceanic_default_layout;
+		} else if (memcmp(device->base.version + 12, "1024", 4) == 0) {
+			device->base.layout = &oceanic_oc1_layout;
+		} else if (memcmp(device->base.version + 12, "2048", 4) == 0) {
+			device->base.layout = &hollis_tx1_layout;
+		} else {
+			device->base.layout = &oceanic_default_layout;
+		}
 	}
 
 	*out = (dc_device_t*) device;
@@ -663,7 +696,7 @@ oceanic_atom2_device_open2 (dc_device_t **out, dc_context_t *context, const char
 	return DC_STATUS_SUCCESS;
 
 error_close:
-	serial_close (device->port);
+	dc_serial_close (device->port);
 error_free:
 	dc_device_deallocate ((dc_device_t *) device);
 	return status;
@@ -675,13 +708,15 @@ oceanic_atom2_device_close (dc_device_t *abstract)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	oceanic_atom2_device_t *device = (oceanic_atom2_device_t*) abstract;
+	dc_status_t rc = DC_STATUS_SUCCESS;
 
 	// Send the quit command.
 	oceanic_atom2_quit (device);
 
 	// Close the device.
-	if (serial_close (device->port) == -1) {
-		dc_status_set_error(&status, DC_STATUS_IO);
+	rc = dc_serial_close (device->port);
+	if (rc != DC_STATUS_SUCCESS) {
+		dc_status_set_error(&status, rc);
 	}
 
 	return status;

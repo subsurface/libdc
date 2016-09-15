@@ -31,40 +31,39 @@
 #include "ringbuffer.h"
 #include "checksum.h"
 
-#define ISINSTANCE(device) dc_device_isinstance((device), &oceanic_veo250_device_vtable)
+#define ISINSTANCE(device) dc_device_isinstance((device), &oceanic_veo250_device_vtable.base)
 
 #define MAXRETRIES 2
 #define MULTIPAGE  4
-
-#define EXITCODE(rc) \
-( \
-	rc == -1 ? DC_STATUS_IO : DC_STATUS_TIMEOUT \
-)
 
 #define ACK 0x5A
 #define NAK 0xA5
 
 typedef struct oceanic_veo250_device_t {
 	oceanic_common_device_t base;
-	serial_t *port;
+	dc_serial_t *port;
 	unsigned int last;
 } oceanic_veo250_device_t;
 
 static dc_status_t oceanic_veo250_device_read (dc_device_t *abstract, unsigned int address, unsigned char data[], unsigned int size);
 static dc_status_t oceanic_veo250_device_close (dc_device_t *abstract);
 
-static const dc_device_vtable_t oceanic_veo250_device_vtable = {
-	sizeof(oceanic_veo250_device_t),
-	DC_FAMILY_OCEANIC_VEO250,
-	oceanic_common_device_set_fingerprint, /* set_fingerprint */
-	oceanic_veo250_device_read, /* read */
-	NULL, /* write */
-	oceanic_common_device_dump, /* dump */
-	oceanic_common_device_foreach, /* foreach */
-	oceanic_veo250_device_close /* close */
+static const oceanic_common_device_vtable_t oceanic_veo250_device_vtable = {
+	{
+		sizeof(oceanic_veo250_device_t),
+		DC_FAMILY_OCEANIC_VEO250,
+		oceanic_common_device_set_fingerprint, /* set_fingerprint */
+		oceanic_veo250_device_read, /* read */
+		NULL, /* write */
+		oceanic_common_device_dump, /* dump */
+		oceanic_common_device_foreach, /* foreach */
+		oceanic_veo250_device_close /* close */
+	},
+	oceanic_common_device_logbook,
+	oceanic_common_device_profile,
 };
 
-static const oceanic_common_version_t oceanic_vtpro_version[] = {
+static const oceanic_common_version_t oceanic_veo250_version[] = {
 	{"GENREACT \0\0 256K"},
 	{"VEO 200 R\0\0 256K"},
 	{"VEO 250 R\0\0 256K"},
@@ -84,34 +83,36 @@ static const oceanic_common_layout_t oceanic_veo250_layout = {
 	0x0600, /* rb_profile_begin */
 	0x8000, /* rb_profile_end */
 	1, /* pt_mode_global */
-	1 /* pt_mode_logbook */
+	1, /* pt_mode_logbook */
+	1, /* pt_mode_serial */
 };
 
 
 static dc_status_t
 oceanic_veo250_send (oceanic_veo250_device_t *device, const unsigned char command[], unsigned int csize)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
 
 	if (device_is_cancelled (abstract))
 		return DC_STATUS_CANCELLED;
 
 	// Discard garbage bytes.
-	serial_flush (device->port, SERIAL_QUEUE_INPUT);
+	dc_serial_purge (device->port, DC_DIRECTION_INPUT);
 
 	// Send the command to the dive computer.
-	int n = serial_write (device->port, command, csize);
-	if (n != csize) {
+	status = dc_serial_write (device->port, command, csize, NULL);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to send the command.");
-		return EXITCODE (n);
+		return status;
 	}
 
 	// Receive the response (ACK/NAK) of the dive computer.
 	unsigned char response = NAK;
-	n = serial_read (device->port, &response, 1);
-	if (n != 1) {
+	status = dc_serial_read (device->port, &response, 1, NULL);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to receive the answer.");
-		return EXITCODE (n);
+		return status;
 	}
 
 	// Verify the response of the dive computer.
@@ -127,6 +128,7 @@ oceanic_veo250_send (oceanic_veo250_device_t *device, const unsigned char comman
 static dc_status_t
 oceanic_veo250_transfer (oceanic_veo250_device_t *device, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
 
 	// Send the command to the device. If the device responds with an
@@ -146,14 +148,14 @@ oceanic_veo250_transfer (oceanic_veo250_device_t *device, const unsigned char co
 			return rc;
 
 		// Delay the next attempt.
-		serial_sleep (device->port, 100);
+		dc_serial_sleep (device->port, 100);
 	}
 
 	// Receive the answer of the dive computer.
-	int n = serial_read (device->port, answer, asize);
-	if (n != asize) {
+	status = dc_serial_read (device->port, answer, asize, NULL);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to receive the answer.");
-		return EXITCODE (n);
+		return status;
 	}
 
 	// Verify the last byte of the answer.
@@ -169,24 +171,26 @@ oceanic_veo250_transfer (oceanic_veo250_device_t *device, const unsigned char co
 static dc_status_t
 oceanic_veo250_init (oceanic_veo250_device_t *device)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
 
 	// Send the command to the dive computer.
 	unsigned char command[2] = {0x55, 0x00};
-	int n = serial_write (device->port, command, sizeof (command));
-	if (n != sizeof (command)) {
+	status = dc_serial_write (device->port, command, sizeof (command), NULL);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to send the command.");
-		return EXITCODE (n);
+		return status;
 	}
 
 	// Receive the answer of the dive computer.
+	size_t n = 0;
 	unsigned char answer[13] = {0};
-	n = serial_read (device->port, answer, sizeof (answer));
-	if (n != sizeof (answer)) {
+	status = dc_serial_read (device->port, answer, sizeof (answer), &n);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to receive the answer.");
 		if (n == 0)
 			return DC_STATUS_SUCCESS;
-		return EXITCODE (n);
+		return status;
 	}
 
 	// Verify the answer.
@@ -205,14 +209,15 @@ oceanic_veo250_init (oceanic_veo250_device_t *device)
 static dc_status_t
 oceanic_veo250_quit (oceanic_veo250_device_t *device)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
 
 	// Send the command to the dive computer.
 	unsigned char command[2] = {0x98, 0x00};
-	int n = serial_write (device->port, command, sizeof (command));
-	if (n != sizeof (command)) {
+	status = dc_serial_write (device->port, command, sizeof (command), NULL);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to send the command.");
-		return EXITCODE (n);
+		return status;
 	}
 
 	return DC_STATUS_SUCCESS;
@@ -229,7 +234,7 @@ oceanic_veo250_device_open (dc_device_t **out, dc_context_t *context, const char
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	device = (oceanic_veo250_device_t *) dc_device_allocate (context, &oceanic_veo250_device_vtable);
+	device = (oceanic_veo250_device_t *) dc_device_allocate (context, &oceanic_veo250_device_vtable.base);
 	if (device == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -239,7 +244,6 @@ oceanic_veo250_device_open (dc_device_t **out, dc_context_t *context, const char
 	oceanic_common_device_init (&device->base);
 
 	// Override the base class values.
-	device->base.layout = &oceanic_veo250_layout;
 	device->base.multipage = MULTIPAGE;
 
 	// Set the default values.
@@ -247,41 +251,45 @@ oceanic_veo250_device_open (dc_device_t **out, dc_context_t *context, const char
 	device->last = 0;
 
 	// Open the device.
-	int rc = serial_open (&device->port, context, name);
-	if (rc == -1) {
+	status = dc_serial_open (&device->port, context, name);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to open the serial port.");
-		status = DC_STATUS_IO;
 		goto error_free;
 	}
 
 	// Set the serial communication protocol (9600 8N1).
-	rc = serial_configure (device->port, 9600, 8, SERIAL_PARITY_NONE, 1, SERIAL_FLOWCONTROL_NONE);
-	if (rc == -1) {
+	status = dc_serial_configure (device->port, 9600, 8, DC_PARITY_NONE, DC_STOPBITS_ONE, DC_FLOWCONTROL_NONE);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the terminal attributes.");
-		status = DC_STATUS_IO;
 		goto error_close;
 	}
 
 	// Set the timeout for receiving data (3000 ms).
-	if (serial_set_timeout (device->port, 3000) == -1) {
+	status = dc_serial_set_timeout (device->port, 3000);
+	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the timeout.");
-		status = DC_STATUS_IO;
 		goto error_close;
 	}
 
-	// Set the DTR and RTS lines.
-	if (serial_set_dtr (device->port, 1) == -1 ||
-		serial_set_rts (device->port, 1) == -1) {
-		ERROR (context, "Failed to set the DTR/RTS line.");
-		status = DC_STATUS_IO;
+	// Set the DTR line.
+	status = dc_serial_set_dtr (device->port, 1);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (context, "Failed to set the DTR line.");
+		goto error_close;
+	}
+
+	// Set the RTS line.
+	status = dc_serial_set_rts (device->port, 1);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (context, "Failed to set the RTS line.");
 		goto error_close;
 	}
 
 	// Give the interface 100 ms to settle and draw power up.
-	serial_sleep (device->port, 100);
+	dc_serial_sleep (device->port, 100);
 
 	// Make sure everything is in a sane state.
-	serial_flush (device->port, SERIAL_QUEUE_BOTH);
+	dc_serial_purge (device->port, DC_DIRECTION_ALL);
 
 	// Initialize the data cable (PPS mode).
 	status = oceanic_veo250_init (device);
@@ -290,7 +298,7 @@ oceanic_veo250_device_open (dc_device_t **out, dc_context_t *context, const char
 	}
 
 	// Delay the sending of the version command.
-	serial_sleep (device->port, 100);
+	dc_serial_sleep (device->port, 100);
 
 	// Switch the device from surface mode into download mode. Before sending
 	// this command, the device needs to be in PC mode (manually activated by
@@ -300,12 +308,20 @@ oceanic_veo250_device_open (dc_device_t **out, dc_context_t *context, const char
 		goto error_close;
 	}
 
+	// Override the base class values.
+	if (OCEANIC_COMMON_MATCH (device->base.version, oceanic_veo250_version)) {
+		device->base.layout = &oceanic_veo250_layout;
+	} else {
+		WARNING (context, "Unsupported device detected!");
+		device->base.layout = &oceanic_veo250_layout;
+	}
+
 	*out = (dc_device_t*) device;
 
 	return DC_STATUS_SUCCESS;
 
 error_close:
-	serial_close (device->port);
+	dc_serial_close (device->port);
 error_free:
 	dc_device_deallocate ((dc_device_t *) device);
 	return status;
@@ -317,13 +333,15 @@ oceanic_veo250_device_close (dc_device_t *abstract)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	oceanic_veo250_device_t *device = (oceanic_veo250_device_t*) abstract;
+	dc_status_t rc = DC_STATUS_SUCCESS;
 
 	// Switch the device back to surface mode.
 	oceanic_veo250_quit (device);
 
 	// Close the device.
-	if (serial_close (device->port) == -1) {
-		dc_status_set_error(&status, DC_STATUS_IO);
+	rc = dc_serial_close (device->port);
+	if (rc != DC_STATUS_SUCCESS) {
+		dc_status_set_error(&status, rc);
 	}
 
 	return status;

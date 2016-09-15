@@ -100,12 +100,12 @@ error_free:
 
 
 dc_status_t
-shearwater_predator_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial_t *serial)
+shearwater_predator_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial_t *port)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	shearwater_predator_device_t *device = NULL;
 
-	if (out == NULL || serial == NULL || serial->port == NULL)
+	if (out == NULL || port == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
@@ -119,7 +119,7 @@ shearwater_predator_device_custom_open (dc_device_t **out, dc_context_t *context
 	memset (device->fingerprint, 0, sizeof (device->fingerprint));
 
 	// Open the device.
-	status = shearwater_common_custom_open (&device->base, context, serial);
+	status = shearwater_common_custom_open (&device->base, context, port);
 	if (status != DC_STATUS_SUCCESS) {
 		goto error_free;
 	}

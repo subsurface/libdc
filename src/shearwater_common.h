@@ -25,7 +25,6 @@
 
 #include "device-private.h"
 #include "serial.h"
-#include "libdivecomputer/custom_serial.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +35,7 @@ extern "C" {
 
 typedef struct shearwater_common_device_t {
 	dc_device_t base;
-	dc_serial_t *serial;
+	dc_serial_t *port;
 } shearwater_common_device_t;
 
 dc_status_t

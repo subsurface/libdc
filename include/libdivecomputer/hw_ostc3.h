@@ -27,7 +27,6 @@
 #include "device.h"
 #include "parser.h"
 #include "buffer.h"
-#include "custom_serial.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -68,6 +67,9 @@ hw_ostc3_device_config_reset (dc_device_t *abstract);
 
 dc_status_t
 hw_ostc3_device_fwupdate (dc_device_t *abstract, const char *filename);
+
+dc_status_t
+hw_ostc3_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int model);
 
 #ifdef __cplusplus
 }

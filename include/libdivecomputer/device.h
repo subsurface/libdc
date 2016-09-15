@@ -28,7 +28,6 @@
 #include "descriptor.h"
 #include "buffer.h"
 #include "datetime.h"
-#include "custom_serial.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +42,7 @@ typedef enum dc_event_type_t {
 } dc_event_type_t;
 
 typedef struct dc_device_t dc_device_t;
+typedef struct dc_serial_t dc_serial_t;
 
 typedef struct dc_event_progress_t {
 	unsigned int current;

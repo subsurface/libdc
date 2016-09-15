@@ -68,6 +68,8 @@
 #define OSTC3_ZHL16    0
 #define OSTC3_ZHL16_GF 1
 
+#define OSTC4      0x3B
+
 #define UNSUPPORTED 0xFFFFFFFF
 
 typedef struct hw_ostc_sample_info_t {
@@ -87,7 +89,7 @@ typedef struct hw_ostc_layout_t {
 	unsigned int temperature;
 	unsigned int battery;
 	unsigned int desat;
-	unsigned int fw_version;
+	unsigned int firmware;
 	unsigned int deco_info1;
 	unsigned int deco_info2;
 	unsigned int decomode;
@@ -100,7 +102,8 @@ typedef struct hw_ostc_gasmix_t {
 
 typedef struct hw_ostc_parser_t {
 	dc_parser_t base;
-	unsigned int frog;
+	unsigned int hwos;
+	unsigned int model;
 	unsigned int serial;
 	// Cached fields.
 	unsigned int cached;
@@ -139,7 +142,7 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	13, /* temperature */
 	34, /* battery volt after dive */
 	17, /* desat */
-	32, /* fw_version */
+	32, /* firmware */
 	49, /* deco_info1 */
 	50, /* deco_info1 */
 	51, /* decomode */
@@ -156,7 +159,7 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	19, /* temperature */
 	34, /* battery volt after dive */
 	23, /* desat */
-	32, /* fw_version */
+	32, /* firmware */ /* 32 or 34??? Anton says 32 (34 == battery), Jef says 34 */
 	49, /* deco_info1 */
 	50, /* deco_info2 */
 	51, /* decomode */
@@ -173,7 +176,7 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	22, /* temperature */
 	50, /* battery volt after dive */
 	26, /* desat */
-	48, /* fw_version */
+	48, /* firmware */
 	77, /* deco_info1 */
 	78, /* deco_info2 */
 	79, /* decomode */
@@ -217,7 +220,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 	}
 
 	// Check the profile version
-	unsigned int version = data[parser->frog ? 8 : 2];
+	unsigned int version = data[parser->hwos ? 8 : 2];
 	const hw_ostc_layout_t *layout = NULL;
 	unsigned int header = 0;
 	switch (version) {
@@ -303,7 +306,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 }
 
 dc_status_t
-hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int frog)
+hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int hwos, unsigned int model)
 {
 	hw_ostc_parser_t *parser = NULL;
 
@@ -318,7 +321,8 @@ hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int se
 	}
 
 	// Set the default values.
-	parser->frog = frog;
+	parser->hwos = hwos;
+	parser->model = model;
 	parser->cached = 0;
 	parser->version = 0;
 	parser->header = 0;
@@ -337,6 +341,18 @@ hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int se
 	return DC_STATUS_SUCCESS;
 }
 
+
+dc_status_t
+hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int hwos)
+{
+	return hw_ostc_parser_create_internal (out, context, serial, hwos, 0);
+}
+
+dc_status_t
+hw_ostc3_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int model)
+{
+	return hw_ostc_parser_create_internal (out, context, serial, 1, model);
+}
 
 static dc_status_t
 hw_ostc_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
@@ -551,9 +567,9 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				snprintf(buf, BUFLEN, "%0u:%02u", array_uint16_le (data + layout->desat) / 60,
 						 array_uint16_le (data + layout->desat) % 60);
 				break;
-			case 2: /* fw_version */
+			case 2: /* firmware */
 				string->desc = "FW Version";
-				snprintf(buf, BUFLEN, "%0u.%02u", data[layout->fw_version], data[layout->fw_version + 1]);
+				snprintf(buf, BUFLEN, "%0u.%02u", data[layout->firmware], data[layout->firmware + 1]);
 				break;
 			case 3: /* serial */
 				string->desc = "Serial";
@@ -679,6 +695,14 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				break;
 			}
 		}
+	}
+
+	// Get the firmware version.
+	unsigned int firmware = 0;
+	if (parser->model == OSTC4) {
+		firmware = array_uint16_le (data + layout->firmware);
+	} else {
+		firmware = array_uint16_be (data + layout->firmware);
 	}
 
 	unsigned int time = 0;
@@ -901,6 +925,10 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 					if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
 					break;
 				case 1: // Deco / NDL
+					// Due to a firmware bug, the deco/ndl info is incorrect for
+					// all OSTC4 dives with a firmware older than version 1.0.8.
+					if (parser->model == OSTC4 && firmware < 0x0810)
+						break;
 					if (data[offset]) {
 						sample.deco.type = DC_DECO_DECOSTOP;
 						sample.deco.depth = data[offset];

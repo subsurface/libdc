@@ -37,6 +37,7 @@ struct dc_descriptor_t {
 	const char *product;
 	dc_family_t type;
 	unsigned int model;
+	unsigned int serial;
 };
 
 /*
@@ -115,12 +116,15 @@ static const dc_descriptor_t g_descriptors[] = {
 #endif
 	/* Scubapro/Uwatec Meridian */
 	{"Scubapro", "Meridian",    DC_FAMILY_UWATEC_MERIDIAN, 0x20},
+	{"Scubapro", "Mantis",      DC_FAMILY_UWATEC_MERIDIAN, 0x20},
 	{"Scubapro", "Chromis",     DC_FAMILY_UWATEC_MERIDIAN, 0x24},
+	{"Scubapro", "Mantis 2",    DC_FAMILY_UWATEC_MERIDIAN, 0x26},
 	/* Reefnet */
 	{"Reefnet", "Sensus",       DC_FAMILY_REEFNET_SENSUS, 1},
 	{"Reefnet", "Sensus Pro",   DC_FAMILY_REEFNET_SENSUSPRO, 2},
 	{"Reefnet", "Sensus Ultra", DC_FAMILY_REEFNET_SENSUSULTRA, 3},
 	/* Oceanic VT Pro */
+	{"Aeris",    "500 AI",     DC_FAMILY_OCEANIC_VTPRO, 0x4151},
 	{"Oceanic",  "Versa Pro",  DC_FAMILY_OCEANIC_VTPRO, 0x4155},
 	{"Aeris",    "Atmos 2",    DC_FAMILY_OCEANIC_VTPRO, 0x4158},
 	{"Oceanic",  "Pro Plus 2", DC_FAMILY_OCEANIC_VTPRO, 0x4159},
@@ -185,9 +189,11 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Aeris",    "A300CS",              DC_FAMILY_OCEANIC_ATOM2, 0x454C},
 	{"Beuchat",  "Mundial 3",           DC_FAMILY_OCEANIC_ATOM2, 0x4550},
 	{"Oceanic",  "F11",                 DC_FAMILY_OCEANIC_ATOM2, 0x4554},
+	{"Sherwood", "Vision",              DC_FAMILY_OCEANIC_ATOM2, 0x4556},
 	{"Oceanic",  "VTX",                 DC_FAMILY_OCEANIC_ATOM2, 0x4557},
 	{"Aqualung", "i300",                DC_FAMILY_OCEANIC_ATOM2, 0x4559},
 	{"Aqualung", "i450T",               DC_FAMILY_OCEANIC_ATOM2, 0x4641},
+	{"Aqualung", "i550T",               DC_FAMILY_OCEANIC_ATOM2, 0x4642},
 	/* Mares Nemo */
 	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0},
 	{"Mares", "Nemo Steel",   DC_FAMILY_MARES_NEMO, 0},
@@ -221,11 +227,16 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Heinrichs Weikamp", "OSTC 2C",  DC_FAMILY_HW_OSTC, 3},
 	{"Heinrichs Weikamp", "Frog",     DC_FAMILY_HW_FROG, 0},
 	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x11},
+	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x13},
+	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x1B},
 	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A},
-	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x1A},
+	{"Heinrichs Weikamp", "OSTC 3+",    DC_FAMILY_HW_OSTC3, 0x13},
+	{"Heinrichs Weikamp", "OSTC 3+",    DC_FAMILY_HW_OSTC3, 0x1A},
 	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x3B},
 	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05},
+	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07},
 	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x12},
+	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x13},
 	/* Cressi Edy */
 	{"Tusa",   "IQ-700", DC_FAMILY_CRESSI_EDY, 0x05},
 	{"Cressi", "Edy",    DC_FAMILY_CRESSI_EDY, 0x08},
@@ -377,6 +388,15 @@ dc_descriptor_get_model (dc_descriptor_t *descriptor)
 		return 0;
 
 	return descriptor->model;
+}
+
+unsigned int
+dc_descriptor_get_serial (dc_descriptor_t *descriptor)
+{
+	if (descriptor == NULL)
+		return 0;
+
+	return descriptor->serial;
 }
 
 dc_transport_t

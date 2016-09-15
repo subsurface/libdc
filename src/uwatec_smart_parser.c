@@ -46,6 +46,7 @@
 #define SMARTZ        0x1C
 #define MERIDIAN      0x20
 #define CHROMIS       0x24
+#define MANTIS2       0x26
 
 #define UNSUPPORTED 0xFFFFFFFF
 
@@ -57,6 +58,11 @@
 
 #define FRESH 1.000
 #define SALT  1.025
+
+#define FREEDIVE1 0x00000080
+#define FREEDIVE2 0x00000200
+#define GAUGE     0x00001000
+#define SALINITY  0x00100000
 
 typedef enum {
 	PRESSURE_DEPTH,
@@ -91,8 +97,8 @@ typedef struct uwatec_smart_header_info_t {
 	unsigned int temp_maximum;
 	unsigned int temp_surface;
 	unsigned int tankpressure;
-	unsigned int salinity;
 	unsigned int timezone;
+	unsigned int settings;
 } uwatec_smart_header_info_t;
 
 typedef struct uwatec_smart_sample_info_t {
@@ -144,6 +150,7 @@ struct uwatec_smart_parser_t {
 	unsigned int ntanks;
 	uwatec_smart_tank_t tank[NGASMIXES];
 	dc_water_t watertype;
+	dc_divemode_t divemode;
 };
 
 static dc_status_t uwatec_smart_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -170,8 +177,8 @@ uwatec_smart_header_info_t uwatec_smart_pro_header = {
 	UNSUPPORTED, /* temp_maximum */
 	UNSUPPORTED, /* temp_surface */
 	UNSUPPORTED, /* tankpressure */
-	UNSUPPORTED, /* salinity */
 	UNSUPPORTED, /* timezone */
+	UNSUPPORTED, /* settings */
 };
 
 static const
@@ -183,8 +190,8 @@ uwatec_smart_header_info_t uwatec_smart_galileo_header = {
 	28, /* temp_maximum */
 	32, /* temp_surface */
 	50, /* tankpressure */
-	94, /* salinity */
 	16, /* timezone */
+	92, /* settings */
 };
 
 static const
@@ -196,8 +203,8 @@ uwatec_smart_header_info_t uwatec_smart_aladin_tec_header = {
 	28, /* temp_maximum */
 	32, /* temp_surface */
 	UNSUPPORTED, /* tankpressure */
-	UNSUPPORTED, /* salinity */
 	16, /* timezone */
+	52, /* settings */
 };
 
 static const
@@ -209,8 +216,8 @@ uwatec_smart_header_info_t uwatec_smart_aladin_tec2g_header = {
 	28, /* temp_maximum */
 	32, /* temp_surface */
 	UNSUPPORTED, /* tankpressure */
-	UNSUPPORTED, /* salinity */
-	UNSUPPORTED, /* timezone */
+	16, /* timezone */
+	60, /* settings */
 };
 
 static const
@@ -222,8 +229,8 @@ uwatec_smart_header_info_t uwatec_smart_com_header = {
 	UNSUPPORTED, /* temp_maximum */
 	UNSUPPORTED, /* temp_surface */
 	30, /* tankpressure */
-	UNSUPPORTED, /* salinity */
 	UNSUPPORTED, /* timezone */
+	UNSUPPORTED, /* settings */
 };
 
 static const
@@ -235,8 +242,8 @@ uwatec_smart_header_info_t uwatec_smart_tec_header = {
 	UNSUPPORTED, /* temp_maximum */
 	UNSUPPORTED, /* temp_surface */
 	34, /* tankpressure */
-	UNSUPPORTED, /* salinity */
 	UNSUPPORTED, /* timezone */
+	UNSUPPORTED, /* settings */
 };
 
 static const
@@ -435,6 +442,40 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 		}
 	}
 
+	// Get the settings.
+	dc_divemode_t divemode = DC_DIVEMODE_OC;
+	dc_water_t watertype = DC_WATER_FRESH;
+	if (header->settings != UNSUPPORTED) {
+		unsigned int settings = array_uint32_le (data + header->settings);
+
+		// Get the freedive/gauge bits.
+		unsigned int freedive = 0;
+		unsigned int gauge = (settings & GAUGE) != 0;
+		if (parser->model == ALADINTEC) {
+			freedive = 0;
+		} else if (parser->model == ALADINTEC2G) {
+			freedive = (settings & FREEDIVE2) != 0;
+		} else {
+			freedive = (settings & FREEDIVE1) != 0;
+		}
+
+		// Get the dive mode. The freedive bit needs to be checked
+		// first, because freedives have both the freedive and gauge
+		// bits set.
+		if (freedive) {
+			divemode = DC_DIVEMODE_FREEDIVE;
+		} else if (gauge) {
+			divemode = DC_DIVEMODE_GAUGE;
+		} else {
+			divemode = DC_DIVEMODE_OC;
+		}
+
+		// Get the water type.
+		if (settings & SALINITY) {
+			watertype = DC_WATER_SALT;
+		}
+	}
+
 	// Get the gas mixes and tanks.
 	unsigned int ntanks = 0;
 	unsigned int ngasmixes = 0;
@@ -460,10 +501,11 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 
 			unsigned int beginpressure = 0;
 			unsigned int endpressure = 0;
-			if (header->tankpressure != UNSUPPORTED) {
+			if (header->tankpressure != UNSUPPORTED &&
+				divemode != DC_DIVEMODE_FREEDIVE) {
 				if (parser->model == GALILEO || parser->model == GALILEOTRIMIX ||
 					parser->model == ALADIN2G || parser->model == MERIDIAN ||
-					parser->model == CHROMIS) {
+					parser->model == CHROMIS || parser->model == MANTIS2) {
 					unsigned int offset = header->tankpressure + 2 * i;
 					endpressure   = array_uint16_le(data + offset);
 					beginpressure = array_uint16_le(data + offset + 2 * header->ngases);
@@ -484,14 +526,6 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 		}
 	}
 
-	// Get the water type.
-	dc_water_t watertype = DC_WATER_FRESH;
-	if (header->salinity != UNSUPPORTED) {
-		if (data[header->salinity] & 0x10) {
-			watertype = DC_WATER_SALT;
-		}
-	}
-
 	// Cache the data for later use.
 	parser->trimix = trimix;
 	parser->ngasmixes = ngasmixes;
@@ -503,6 +537,7 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 		parser->tank[i] = tank[i];
 	}
 	parser->watertype = watertype;
+	parser->divemode = divemode;
 	parser->cached = HEADER;
 
 	return DC_STATUS_SUCCESS;
@@ -547,6 +582,7 @@ uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 	case ALADIN2G:
 	case MERIDIAN:
 	case CHROMIS:
+	case MANTIS2:
 		parser->headersize = 152;
 		parser->header = &uwatec_smart_galileo_header;
 		parser->samples = uwatec_smart_galileo_samples;
@@ -612,6 +648,7 @@ uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 		parser->tank[i].gasmix = 0;
 	}
 	parser->watertype = DC_WATER_FRESH;
+	parser->divemode = DC_DIVEMODE_OC;
 
 	*out = (dc_parser_t*) parser;
 
@@ -643,6 +680,7 @@ uwatec_smart_parser_set_data (dc_parser_t *abstract, const unsigned char *data, 
 		parser->tank[i].gasmix = 0;
 	}
 	parser->watertype = DC_WATER_FRESH;
+	parser->divemode = DC_DIVEMODE_OC;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -754,13 +792,12 @@ uwatec_smart_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 			*((double *) value) = (signed short) array_uint16_le (data + table->temp_surface) / 10.0;
 			break;
 		case DC_FIELD_DIVEMODE:
-			if (parser->ngasmixes)
-				*((dc_divemode_t *) value) = DC_DIVEMODE_OC;
-			else
-				*((dc_divemode_t *) value) = DC_DIVEMODE_GAUGE;
+			if (table->settings == UNSUPPORTED)
+				return DC_STATUS_UNSUPPORTED;
+			*((dc_divemode_t *) value) = parser->divemode;
 			break;
 		case DC_FIELD_SALINITY:
-			if (table->salinity == UNSUPPORTED)
+			if (table->settings == UNSUPPORTED)
 				return DC_STATUS_UNSUPPORTED;
 			water->type = parser->watertype;
 			water->density = salinity * 1000.0;
@@ -880,6 +917,11 @@ uwatec_smart_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 
 	double salinity = (parser->watertype == DC_WATER_SALT ? SALT : FRESH);
 
+	unsigned int interval = 4;
+	if (parser->divemode == DC_DIVEMODE_FREEDIVE) {
+		interval = 1;
+	}
+
 	int have_depth = 0, have_temperature = 0, have_pressure = 0, have_rbt = 0,
 		have_heartrate = 0, have_bearing = 0;
 
@@ -891,7 +933,7 @@ uwatec_smart_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 		unsigned int id = 0;
 		if (parser->model == GALILEO || parser->model == GALILEOTRIMIX ||
 			parser->model == ALADIN2G || parser->model == MERIDIAN ||
-			parser->model == CHROMIS) {
+			parser->model == CHROMIS || parser->model == MANTIS2) {
 			// Uwatec Galileo
 			id = uwatec_galileo_identify (data[offset]);
 		} else {
@@ -1166,7 +1208,7 @@ uwatec_smart_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 				if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
 			}
 
-			time += 4;
+			time += interval;
 			complete--;
 		}
 	}
