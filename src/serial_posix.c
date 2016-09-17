@@ -167,6 +167,8 @@ dc_serial_open (dc_serial_t **out, dc_context_t *context, const char *name)
 	device->baudrate = 0;
 	device->nbits = 0;
 
+	RETURN_IF_CUSTOM_SERIAL(context, *out = device, open, name);
+
 	// Open the device in non-blocking mode, to return immediately
 	// without waiting for the modem connection to complete.
 	device->fd = open (name, O_RDWR | O_NOCTTY | O_NONBLOCK);
@@ -217,6 +219,8 @@ dc_serial_close (dc_serial_t *device)
 	if (device == NULL)
 		return DC_STATUS_SUCCESS;
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, free(device), close);
+
 	// Restore the initial terminal attributes.
 	if (tcsetattr (device->fd, TCSANOW, &device->tty) != 0) {
 		int errcode = errno;
@@ -250,6 +254,8 @@ dc_serial_configure (dc_serial_t *device, unsigned int baudrate, unsigned int da
 
 	INFO (device->context, "Configure: baudrate=%i, databits=%i, parity=%i, stopbits=%i, flowcontrol=%i",
 		baudrate, databits, parity, stopbits, flowcontrol);
+
+	RETURN_IF_CUSTOM_SERIAL(device->context, , configure, baudrate, databits, parity, stopbits, flowcontrol);
 
 	// Retrieve the current settings.
 	struct termios tty;
@@ -505,6 +511,8 @@ dc_serial_set_timeout (dc_serial_t *device, int timeout)
 
 	INFO (device->context, "Timeout: value=%i", timeout);
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_timeout, timeout);
+
 	device->timeout = timeout;
 
 	return DC_STATUS_SUCCESS;
@@ -515,6 +523,8 @@ dc_serial_set_halfduplex (dc_serial_t *device, unsigned int value)
 {
 	if (device == NULL)
 		return DC_STATUS_INVALIDARGS;
+
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_halfduplex, value);
 
 	device->halfduplex = value;
 
@@ -574,6 +584,14 @@ dc_serial_read (dc_serial_t *device, void *data, size_t size, size_t *actual)
 		status = DC_STATUS_INVALIDARGS;
 		goto out;
 	}
+
+	RETURN_IF_CUSTOM_SERIAL(device->context,
+			{
+				HEXDUMP (device->context, DC_LOGLEVEL_INFO, "Custom Read", (unsigned char *) data, nbytes);
+				if (actual)
+					*actual = nbytes;
+			},
+			read, data, size, &nbytes);
 
 	// The total timeout.
 	int timeout = device->timeout;
@@ -665,6 +683,14 @@ dc_serial_write (dc_serial_t *device, const void *data, size_t size, size_t *act
 		status = DC_STATUS_INVALIDARGS;
 		goto out;
 	}
+
+	RETURN_IF_CUSTOM_SERIAL(device->context,
+			{
+				HEXDUMP (device->context, DC_LOGLEVEL_INFO, "Custom Write", (unsigned char *) data, nbytes);
+				if (actual)
+					*actual = nbytes;
+			},
+			write, data, size, actual);
 
 	struct timeval tve, tvb;
 	if (device->halfduplex) {
@@ -770,6 +796,8 @@ dc_serial_purge (dc_serial_t *device, dc_direction_t direction)
 
 	INFO (device->context, "Purge: direction=%u", direction);
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , purge, direction);
+
 	int flags = 0;
 
 	switch (direction) {
@@ -814,6 +842,8 @@ dc_serial_set_break (dc_serial_t *device, unsigned int level)
 
 	INFO (device->context, "Break: value=%i", level);
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_break, level);
+
 	unsigned long action = (level ? TIOCSBRK : TIOCCBRK);
 
 	if (ioctl (device->fd, action, NULL) != 0 && NOPTY) {
@@ -832,6 +862,8 @@ dc_serial_set_dtr (dc_serial_t *device, unsigned int level)
 		return DC_STATUS_INVALIDARGS;
 
 	INFO (device->context, "DTR: value=%i", level);
+
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_dtr, level);
 
 	unsigned long action = (level ? TIOCMBIS : TIOCMBIC);
 
@@ -853,6 +885,8 @@ dc_serial_set_rts (dc_serial_t *device, unsigned int level)
 
 	INFO (device->context, "RTS: value=%i", level);
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_rts, level);
+
 	unsigned long action = (level ? TIOCMBIS : TIOCMBIC);
 
 	int value = TIOCM_RTS;
@@ -870,6 +904,8 @@ dc_serial_get_available (dc_serial_t *device, size_t *value)
 {
 	if (device == NULL)
 		return DC_STATUS_INVALIDARGS;
+
+	RETURN_IF_CUSTOM_SERIAL(device->context, , get_available, value);
 
 	int bytes = 0;
 	if (ioctl (device->fd, TIOCINQ, &bytes) != 0) {

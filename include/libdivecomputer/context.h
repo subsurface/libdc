@@ -23,6 +23,7 @@
 #define DC_CONTEXT_H
 
 #include "common.h"
+#include "custom_serial.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,6 +47,9 @@ dc_context_new (dc_context_t **context);
 
 dc_status_t
 dc_context_free (dc_context_t *context);
+
+dc_status_t
+dc_context_set_custom_serial (dc_context_t *context, dc_custom_serial_t *custom_serial);
 
 dc_status_t
 dc_context_set_loglevel (dc_context_t *context, dc_loglevel_t loglevel);

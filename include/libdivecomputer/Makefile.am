@@ -3,6 +3,7 @@ libdivecomputer_HEADERS = 	\
 	version.h \
 	common.h \
 	context.h \
+	custom_serial.h \
 	buffer.h \
 	descriptor.h \
 	iterator.h \

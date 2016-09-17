@@ -157,6 +157,8 @@ dc_serial_open (dc_serial_t **out, dc_context_t *context, const char *name)
 	device->baudrate = 0;
 	device->nbits = 0;
 
+	RETURN_IF_CUSTOM_SERIAL(context, *out = device, open, name);
+
 	// Open the device.
 	device->hFile = CreateFileA (devname,
 			GENERIC_READ | GENERIC_WRITE, 0,
@@ -202,6 +204,8 @@ dc_serial_close (dc_serial_t *device)
 	if (device == NULL)
 		return DC_STATUS_SUCCESS;
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, free(device), close);
+
 	// Restore the initial communication settings and timeouts.
 	if (!SetCommState (device->hFile, &device->dcb) ||
 		!SetCommTimeouts (device->hFile, &device->timeouts)) {
@@ -231,6 +235,8 @@ dc_serial_configure (dc_serial_t *device, unsigned int baudrate, unsigned int da
 
 	INFO (device->context, "Configure: baudrate=%i, databits=%i, parity=%i, stopbits=%i, flowcontrol=%i",
 		baudrate, databits, parity, stopbits, flowcontrol);
+
+	RETURN_IF_CUSTOM_SERIAL(device->context, , configure, baudrate, databits, parity, stopbits, flowcontrol);
 
 	// Retrieve the current settings.
 	DCB dcb;
@@ -344,6 +350,8 @@ dc_serial_set_timeout (dc_serial_t *device, int timeout)
 
 	INFO (device->context, "Timeout: value=%i", timeout);
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_timeout, timeout);
+
 	// Retrieve the current timeouts.
 	COMMTIMEOUTS timeouts;
 	if (!GetCommTimeouts (device->hFile, &timeouts)) {
@@ -392,6 +400,8 @@ dc_serial_set_halfduplex (dc_serial_t *device, unsigned int value)
 	if (device == NULL)
 		return DC_STATUS_INVALIDARGS;
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_halfduplex, value);
+
 	device->halfduplex = value;
 
 	return DC_STATUS_SUCCESS;
@@ -416,6 +426,14 @@ dc_serial_read (dc_serial_t *device, void *data, size_t size, size_t *actual)
 		status = DC_STATUS_INVALIDARGS;
 		goto out;
 	}
+
+	RETURN_IF_CUSTOM_SERIAL(device->context,
+			{
+				HEXDUMP (device->context, DC_LOGLEVEL_INFO, "Custom Read", (unsigned char *) data, nbytes);
+				if (actual)
+					*actual = nbytes;
+			},
+			read, data, size, &nbytes);
 
 	if (!ReadFile (device->hFile, data, size, &dwRead, NULL)) {
 		DWORD errcode = GetLastError ();
@@ -447,6 +465,14 @@ dc_serial_write (dc_serial_t *device, const void *data, size_t size, size_t *act
 		status = DC_STATUS_INVALIDARGS;
 		goto out;
 	}
+
+	RETURN_IF_CUSTOM_SERIAL(device->context,
+			{
+				HEXDUMP (device->context, DC_LOGLEVEL_INFO, "Custom Write", (unsigned char *) data, nbytes);
+				if (actual)
+					*actual = nbytes;
+			},
+			write, data, size, actual);
 
 	LARGE_INTEGER begin, end, freq;
 	if (device->halfduplex) {
@@ -515,6 +541,8 @@ dc_serial_purge (dc_serial_t *device, dc_direction_t direction)
 
 	INFO (device->context, "Purge: direction=%u", direction);
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , purge, direction);
+
 	DWORD flags = 0;
 
 	switch (direction) {
@@ -565,6 +593,8 @@ dc_serial_set_break (dc_serial_t *device, unsigned int level)
 
 	INFO (device->context, "Break: value=%i", level);
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_break, level);
+
 	if (level) {
 		if (!SetCommBreak (device->hFile)) {
 			DWORD errcode = GetLastError ();
@@ -590,6 +620,8 @@ dc_serial_set_dtr (dc_serial_t *device, unsigned int level)
 
 	INFO (device->context, "DTR: value=%i", level);
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_dtr, level);
+
 	int status = (level ? SETDTR : CLRDTR);
 
 	if (!EscapeCommFunction (device->hFile, status)) {
@@ -609,6 +641,8 @@ dc_serial_set_rts (dc_serial_t *device, unsigned int level)
 
 	INFO (device->context, "RTS: value=%i", level);
 
+	RETURN_IF_CUSTOM_SERIAL(device->context, , set_rts, level);
+
 	int status = (level ? SETRTS : CLRRTS);
 
 	if (!EscapeCommFunction (device->hFile, status)) {
@@ -625,6 +659,8 @@ dc_serial_get_available (dc_serial_t *device, size_t *value)
 {
 	if (device == NULL)
 		return DC_STATUS_INVALIDARGS;
+
+	RETURN_IF_CUSTOM_SERIAL(device->context, , get_available, value);
 
 	COMSTAT stats;
 

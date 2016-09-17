@@ -34,6 +34,8 @@ extern "C" {
  */
 typedef struct dc_serial_t dc_serial_t;
 
+#ifndef __SERIAL_TYPES__
+#define __SERIAL_TYPES__
 /**
  * The parity checking scheme.
  */
@@ -81,6 +83,7 @@ typedef enum dc_line_t {
 	DC_LINE_DSR = 0x04, /**< Data set ready */
 	DC_LINE_RNG = 0x08, /**< Ring indicator */
 } dc_line_t;
+#endif /* __SERIAL_TYPES__ */
 
 /**
  * Serial enumeration callback.

@@ -32,6 +32,7 @@
 #endif
 
 #include "context-private.h"
+#include <libdivecomputer/custom_serial.h>
 
 struct dc_context_t {
 	dc_loglevel_t loglevel;
@@ -45,6 +46,7 @@ struct dc_context_t {
 	struct timeval timestamp;
 #endif
 #endif
+	dc_custom_serial_t *custom_serial;
 };
 
 #ifdef ENABLE_LOGGING
@@ -195,6 +197,8 @@ dc_context_new (dc_context_t **out)
 #endif
 #endif
 
+	context->custom_serial = NULL;
+
 	*out = context;
 
 	return DC_STATUS_SUCCESS;
@@ -206,6 +210,23 @@ dc_context_free (dc_context_t *context)
 	free (context);
 
 	return DC_STATUS_SUCCESS;
+}
+
+dc_status_t
+dc_context_set_custom_serial (dc_context_t *context, dc_custom_serial_t *custom_serial)
+{
+	if (context == NULL)
+		return DC_STATUS_INVALIDARGS;
+
+	context->custom_serial = custom_serial;
+
+	return DC_STATUS_SUCCESS;
+}
+
+dc_custom_serial_t*
+_dc_context_custom_serial (dc_context_t *context)
+{
+	return context->custom_serial;
 }
 
 dc_status_t
