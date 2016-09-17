@@ -198,34 +198,6 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 	return rc;
 }
 
-dc_status_t
-dc_device_custom_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descriptor, dc_serial_t *serial)
-{
-	dc_status_t rc = DC_STATUS_SUCCESS;
-	dc_device_t *device = NULL;
-
-	if (out == NULL || descriptor == NULL || serial == NULL)
-		return DC_STATUS_INVALIDARGS;
-
-	switch (dc_descriptor_get_type (descriptor)) {
-	case DC_FAMILY_HW_OSTC3:
-		rc = hw_ostc3_device_custom_open (&device, context, serial);
-		break;
-	case DC_FAMILY_SHEARWATER_PREDATOR:
-		rc = shearwater_predator_device_custom_open (&device, context, serial);
-		break;
-	case DC_FAMILY_SHEARWATER_PETREL:
-		rc = shearwater_petrel_device_custom_open (&device, context, serial);
-		break;
-	default:
-		return DC_STATUS_INVALIDARGS;
-	}
-
-	*out = device;
-
-	return rc;
-}
-
 int
 dc_device_isinstance (dc_device_t *device, const dc_device_vtable_t *vtable)
 {

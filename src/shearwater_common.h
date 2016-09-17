@@ -42,9 +42,6 @@ dc_status_t
 shearwater_common_open (shearwater_common_device_t *device, dc_context_t *context, const char *name);
 
 dc_status_t
-shearwater_common_custom_open (shearwater_common_device_t *device, dc_context_t *context, dc_serial_t *serial);
-
-dc_status_t
 shearwater_common_close (shearwater_common_device_t *device);
 
 dc_status_t

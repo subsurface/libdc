@@ -113,41 +113,6 @@ error_free:
 }
 
 
-dc_status_t
-shearwater_petrel_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial_t *port)
-{
-	dc_status_t status = DC_STATUS_SUCCESS;
-	shearwater_petrel_device_t *device = NULL;
-
-	if (out == NULL || port == NULL)
-		return DC_STATUS_INVALIDARGS;
-
-	// Allocate memory.
-	device = (shearwater_petrel_device_t *) dc_device_allocate (context, &shearwater_petrel_device_vtable);
-	if (device == NULL) {
-		ERROR (context, "Failed to allocate memory.");
-		return DC_STATUS_NOMEMORY;
-	}
-
-	// Set the default values.
-	memset (device->fingerprint, 0, sizeof (device->fingerprint));
-
-	// Open the device.
-	status = shearwater_common_custom_open (&device->base, context, port);
-	if (status != DC_STATUS_SUCCESS) {
-		goto error_free;
-	}
-
-	*out = (dc_device_t *) device;
-
-	return DC_STATUS_SUCCESS;
-
-error_free:
-	dc_device_deallocate ((dc_device_t *) device);
-	return status;
-}
-
-
 static dc_status_t
 shearwater_petrel_device_close (dc_device_t *abstract)
 {

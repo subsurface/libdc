@@ -76,43 +76,6 @@ error_close:
 
 
 dc_status_t
-shearwater_common_custom_open (shearwater_common_device_t *device, dc_context_t *context, dc_serial_t *port)
-{
-	dc_status_t status = DC_STATUS_SUCCESS;
-
-	// Set the serial reference
-	device->port = port;
-
-//	if (port->type == DC_TRANSPORT_SERIAL) {
-	if (1) {
-		// Set the serial communication protocol (115200 8N1).
-		status = dc_serial_configure (device->port, 115200, 8, DC_PARITY_NONE, 1, DC_FLOWCONTROL_NONE);
-		if (status != DC_STATUS_SUCCESS) {
-			ERROR (context, "Failed to set the terminal attributes.");
-			goto error_close;
-		}
-	}
-
-	// Set the timeout for receiving data (3000ms).
-	status = dc_serial_set_timeout (device->port, 3000);
-	if (status != DC_STATUS_SUCCESS) {
-		ERROR (context, "Failed to set the timeout.");
-		goto error_close;
-	}
-
-	// Make sure everything is in a sane state.
-	dc_serial_sleep (device->port, 300);
-	dc_serial_purge (device->port, DC_DIRECTION_ALL);
-
-	return DC_STATUS_SUCCESS;
-
-error_close:
-	dc_serial_close (device->port);
-	return status;
-}
-
-
-dc_status_t
 shearwater_common_close (shearwater_common_device_t *device)
 {
 	// Close the device.

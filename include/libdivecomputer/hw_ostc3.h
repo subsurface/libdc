@@ -39,9 +39,6 @@ dc_status_t
 hw_ostc3_device_open (dc_device_t **device, dc_context_t *context, const char *name);
 
 dc_status_t
-hw_ostc3_device_custom_open (dc_device_t **device, dc_context_t *context, dc_serial_t *serial);
-
-dc_status_t
 hw_ostc3_device_version (dc_device_t *device, unsigned char data[], unsigned int size);
 
 dc_status_t

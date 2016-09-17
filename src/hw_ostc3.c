@@ -379,65 +379,6 @@ error_free:
 }
 
 
-dc_status_t
-hw_ostc3_device_custom_open (dc_device_t **out, dc_context_t *context, dc_serial_t *port)
-{
-	dc_status_t status = DC_STATUS_SUCCESS;
-	hw_ostc3_device_t *device = NULL;
-
-	if (out == NULL || port == NULL)
-		return DC_STATUS_INVALIDARGS;
-
-	// Allocate memory.
-	device = (hw_ostc3_device_t *) dc_device_allocate (context, &hw_ostc3_device_vtable);
-	if (device == NULL) {
-		ERROR (context, "Failed to allocate memory.");
-		return DC_STATUS_NOMEMORY;
-	}
-
-	// Set the default values.
-	device->hardware = INVALID;
-	memset (device->fingerprint, 0, sizeof (device->fingerprint));
-
-	// Set the serial reference
-	device->port = port;
-
-	if (1) {
-//	if (port->type == DC_TRANSPORT_SERIAL) {
-		// Set the serial communication protocol (115200 8N1).
-		status = dc_serial_configure (device->port, 115200, 8, DC_PARITY_NONE, 1, DC_FLOWCONTROL_NONE);
-		if (status == DC_STATUS_SUCCESS) {
-			ERROR (context, "Failed to set the terminal attributes.");
-			status = DC_STATUS_IO;
-			goto error_close;
-		}
-	}
-
-	// Set the timeout for receiving data (3000ms).
-	status = dc_serial_set_timeout (device->port, 3000);
-	if (status != DC_STATUS_SUCCESS) {
-		ERROR (context, "Failed to set the timeout.");
-		goto error_close;
-	}
-
-	// Make sure everything is in a sane state.
-	dc_serial_sleep (device->port, 300);
-	dc_serial_purge (device->port, DC_DIRECTION_ALL);
-
-	device->state = OPEN;
-
-	*out = (dc_device_t *) device;
-
-	return DC_STATUS_SUCCESS;
-
-error_close:
-	dc_serial_close (device->port);
-error_free:
-	dc_device_deallocate ((dc_device_t *) device);
-	return status;
-}
-
-
 static dc_status_t
 hw_ostc3_device_id (hw_ostc3_device_t *device, unsigned char data[], unsigned int size)
 {
