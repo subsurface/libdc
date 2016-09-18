@@ -419,6 +419,7 @@ dc_serial_set_latency (dc_serial_t *device, unsigned int value)
 dc_status_t
 dc_serial_read (dc_serial_t *device, void *data, size_t size, size_t *actual)
 {
+	size_t nbytes = 0;
 	dc_status_t status = DC_STATUS_SUCCESS;
 	DWORD dwRead = 0;
 
@@ -458,6 +459,7 @@ out:
 dc_status_t
 dc_serial_write (dc_serial_t *device, const void *data, size_t size, size_t *actual)
 {
+	size_t nbytes = 0;
 	dc_status_t status = DC_STATUS_SUCCESS;
 	DWORD dwWritten = 0;
 
