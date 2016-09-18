@@ -197,6 +197,7 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 	return rc;
 }
 
+
 int
 dc_device_isinstance (dc_device_t *device, const dc_device_vtable_t *vtable)
 {
