@@ -527,6 +527,7 @@ hw_ostc3_device_close (dc_device_t *abstract)
 		rc = hw_ostc3_transfer (device, NULL, EXIT, NULL, 0, NULL, 0, NODELAY);
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to send the command.");
+			dc_status_set_error(&status, rc);
 		}
 	}
 
