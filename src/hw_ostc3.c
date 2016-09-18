@@ -356,7 +356,6 @@ hw_ostc3_device_open (dc_device_t **out, dc_context_t *context, const char *name
 	status = dc_serial_set_timeout (device->port, 3000);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the timeout.");
-		status = DC_STATUS_IO;
 		goto error_close;
 	}
 
