@@ -2,7 +2,6 @@
  * libdivecomputer
  *
  * Copyright (C) 2008 Jef Driesen
- * Copyright (C) 2015 Claudiu Olteanu
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -42,7 +41,6 @@ typedef enum dc_event_type_t {
 } dc_event_type_t;
 
 typedef struct dc_device_t dc_device_t;
-typedef struct dc_serial_t dc_serial_t;
 
 typedef struct dc_event_progress_t {
 	unsigned int current;

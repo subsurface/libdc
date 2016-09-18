@@ -3,7 +3,6 @@
  *
  * Copyright (C) 2013 Jef Driesen
  * Copyright (C) 2014 Anton Lundin
- * Copyright (C) 2015 Claudiu Olteanu
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
