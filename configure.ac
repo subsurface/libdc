@@ -49,8 +49,8 @@ AS_IF([test "x$enable_pty" = "xyes"], [
 # Example applications.
 AC_ARG_ENABLE([examples],
 	[AS_HELP_STRING([--enable-examples=@<:@yes/no@:>@],
-		[Build example applications @<:@default=no@:>@])],
-	[], [enable_examples=no])
+		[Build example applications @<:@default=yes@:>@])],
+	[], [enable_examples=yes])
 AM_CONDITIONAL([ENABLE_EXAMPLES], [test "x$enable_examples" = "xyes"])
 
 # Checks for programs.
