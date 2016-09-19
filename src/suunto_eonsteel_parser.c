@@ -706,8 +706,6 @@ static void sample_event_notify_type(const struct type_desc *desc, struct sample
 	info->notify_type = lookup_enum(desc, type);
 }
 
-
-// FIXME! This needs to parse the actual type descriptor enum
 static void sample_event_notify_value(const struct type_desc *desc, struct sample_data *info, unsigned char value)
 {
 	dc_sample_value_t sample = {0};
@@ -754,7 +752,6 @@ static void sample_event_alarm_type(const struct type_desc *desc, struct sample_
 }
 
 
-// FIXME! This needs to parse the actual type descriptor enum
 static void sample_event_alarm_value(const struct type_desc *desc, struct sample_data *info, unsigned char value)
 {
 	const char *name;

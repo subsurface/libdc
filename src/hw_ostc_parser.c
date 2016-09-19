@@ -159,7 +159,7 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	19, /* temperature */
 	34, /* battery volt after dive */
 	23, /* desat */
-	32, /* firmware */ /* 32 or 34??? Anton says 32 (34 == battery), Jef says 34 */
+	32, /* firmware */
 	49, /* deco_info1 */
 	50, /* deco_info2 */
 	51, /* decomode */
