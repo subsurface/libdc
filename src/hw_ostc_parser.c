@@ -28,6 +28,7 @@
 #endif
 
 #include <libdivecomputer/hw_ostc.h>
+#include <libdivecomputer/hw_ostc3.h>
 #include "libdivecomputer/units.h"
 
 #include "context-private.h"
