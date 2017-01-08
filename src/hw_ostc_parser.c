@@ -595,7 +595,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
 						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
 					strncpy(buf, "ZH-L16", BUFLEN);
-				if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16_GF) ||
+				else if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16_GF) ||
 						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
 						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
 					strncpy(buf, "ZH-L16-GF", BUFLEN);
@@ -610,7 +610,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
 						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
 					snprintf(buf, BUFLEN, "Saturation %u, Desaturation %u", layout->deco_info1, layout->deco_info2);
-				if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16_GF) ||
+				else if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16_GF) ||
 						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
 						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
 					snprintf(buf, BUFLEN, "GF %u/%u", data[layout->deco_info1], data[layout->deco_info2]);
