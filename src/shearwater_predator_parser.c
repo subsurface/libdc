@@ -409,7 +409,7 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 					snprintf(buf, BUFLEN, "VPM-B +%u", data[68]);
 					break;
 				case 2:
-					snprintf(buf, BUFLEN, "VPM-B/GFS +%u %%%u", data[68], data[85]);
+					snprintf(buf, BUFLEN, "VPM-B/GFS +%u %u%%", data[68], data[85]);
 					break;
 				default:
 					return DC_STATUS_DATAFORMAT;
