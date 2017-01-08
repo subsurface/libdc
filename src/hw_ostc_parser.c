@@ -68,6 +68,7 @@
 
 #define OSTC3_ZHL16    0
 #define OSTC3_ZHL16_GF 1
+#define OSTC4_VPM      2
 
 #define OSTC4      0x3B
 
@@ -598,6 +599,8 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
 						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
 					strncpy(buf, "ZH-L16-GF", BUFLEN);
+				else if (((version == 0x24) && data[layout->decomode] == OSTC4_VPM))
+					strncpy(buf, "VPM", BUFLEN);
 				else
 					return DC_STATUS_DATAFORMAT;
 				break;
