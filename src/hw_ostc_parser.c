@@ -570,7 +570,19 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				break;
 			case 2: /* firmware */
 				string->desc = "FW Version";
-				snprintf(buf, BUFLEN, "%0u.%02u", data[layout->firmware], data[layout->firmware + 1]);
+				/* OSTC4 stores firmware as XXXX XYYY YYZZ ZZZB, -> X.Y.Z beta? */
+				if (parser->model == OSTC4) {
+					int firmwareOnDevice = array_uint16_le (data + layout->firmware);
+					unsigned char X = 0, Y = 0, Z = 0, beta = 0;
+					X = (firmwareOnDevice & 0xF800) >> 11;
+					Y = (firmwareOnDevice & 0x07C0) >> 6;
+					Z = (firmwareOnDevice & 0x003E) >> 1;
+					beta = firmwareOnDevice & 0x0001;
+
+					snprintf(buf, BUFLEN, "%u.%u.%u%s\n", X, Y, Z, beta? "beta": "");
+				} else {
+					snprintf(buf, BUFLEN, "%0u.%02u", data[layout->firmware], data[layout->firmware + 1]);
+				}
 				break;
 			case 3: /* serial */
 				string->desc = "Serial";
