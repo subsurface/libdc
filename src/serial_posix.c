@@ -690,7 +690,7 @@ dc_serial_write (dc_serial_t *device, const void *data, size_t size, size_t *act
 				if (actual)
 					*actual = nbytes;
 			},
-			write, data, size, actual);
+			write, data, size, &nbytes);
 
 	struct timeval tve, tvb;
 	if (device->halfduplex) {
