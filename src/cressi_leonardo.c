@@ -45,6 +45,9 @@
 #define RB_PROFILE_END   SZ_MEMORY
 #define RB_PROFILE_DISTANCE(a,b) ringbuffer_distance (a, b, 0, RB_PROFILE_BEGIN, RB_PROFILE_END)
 
+#define MAXRETRIES 4
+#define PACKETSIZE 32
+
 typedef struct cressi_leonardo_device_t {
 	dc_device_t base;
 	dc_serial_t *port;
@@ -52,6 +55,7 @@ typedef struct cressi_leonardo_device_t {
 } cressi_leonardo_device_t;
 
 static dc_status_t cressi_leonardo_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
+static dc_status_t cressi_leonardo_device_read (dc_device_t *abstract, unsigned int address, unsigned char data[], unsigned int size);
 static dc_status_t cressi_leonardo_device_dump (dc_device_t *abstract, dc_buffer_t *buffer);
 static dc_status_t cressi_leonardo_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
 static dc_status_t cressi_leonardo_device_close (dc_device_t *abstract);
@@ -60,12 +64,101 @@ static const dc_device_vtable_t cressi_leonardo_device_vtable = {
 	sizeof(cressi_leonardo_device_t),
 	DC_FAMILY_CRESSI_LEONARDO,
 	cressi_leonardo_device_set_fingerprint, /* set_fingerprint */
-	NULL, /* read */
+	cressi_leonardo_device_read, /* read */
 	NULL, /* write */
 	cressi_leonardo_device_dump, /* dump */
 	cressi_leonardo_device_foreach, /* foreach */
 	cressi_leonardo_device_close /* close */
 };
+
+static void
+cressi_leonardo_make_ascii (const unsigned char raw[], unsigned int rsize, unsigned char ascii[], unsigned int asize)
+{
+	assert (asize == 2 * (rsize + 3));
+
+	// Header
+	ascii[0] = '{';
+
+	// Data
+	array_convert_bin2hex (raw, rsize, ascii + 1, 2 * rsize);
+
+	// Checksum
+	unsigned short crc = checksum_crc_ccitt_uint16 (ascii + 1, 2 * rsize);
+	unsigned char checksum[] = {
+			(crc >> 8) & 0xFF,  // High
+			(crc     ) & 0xFF}; // Low
+	array_convert_bin2hex (checksum, sizeof(checksum), ascii + 1 + 2 * rsize, 4);
+
+	// Trailer
+	ascii[asize - 1] = '}';
+}
+
+static dc_status_t
+cressi_leonardo_packet (cressi_leonardo_device_t *device, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+	dc_device_t *abstract = (dc_device_t *) device;
+
+	if (device_is_cancelled (abstract))
+		return DC_STATUS_CANCELLED;
+
+	// Send the command to the device.
+	status = dc_serial_write (device->port, command, csize, NULL);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to send the command.");
+		return status;
+	}
+
+	// Receive the answer of the device.
+	status = dc_serial_read (device->port, answer, asize, NULL);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to receive the answer.");
+		return status;
+	}
+
+	// Verify the header and trailer of the packet.
+	if (answer[0] != '{' || answer[asize - 1] != '}') {
+		ERROR (abstract->context, "Unexpected answer header/trailer byte.");
+		return DC_STATUS_PROTOCOL;
+	}
+
+	// Convert the checksum of the packet.
+	unsigned char checksum[2] = {0};
+	array_convert_hex2bin (answer + asize - 5, 4, checksum, sizeof(checksum));
+
+	// Verify the checksum of the packet.
+	unsigned short crc = array_uint16_be (checksum);
+	unsigned short ccrc = checksum_crc_ccitt_uint16 (answer + 1, asize - 6);
+	if (crc != ccrc) {
+		ERROR (abstract->context, "Unexpected answer checksum.");
+		return DC_STATUS_PROTOCOL;
+	}
+
+	return DC_STATUS_SUCCESS;
+}
+
+static dc_status_t
+cressi_leonardo_transfer (cressi_leonardo_device_t *device, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize)
+{
+	unsigned int nretries = 0;
+	dc_status_t rc = DC_STATUS_SUCCESS;
+	while ((rc = cressi_leonardo_packet (device, command, csize, answer, asize)) != DC_STATUS_SUCCESS) {
+		// Automatically discard a corrupted packet,
+		// and request a new one.
+		if (rc != DC_STATUS_PROTOCOL && rc != DC_STATUS_TIMEOUT)
+			return rc;
+
+		// Abort if the maximum number of retries is reached.
+		if (nretries++ >= MAXRETRIES)
+			return rc;
+
+		// Discard any garbage bytes.
+		dc_serial_sleep (device->port, 100);
+		dc_serial_purge (device->port, DC_DIRECTION_INPUT);
+	}
+
+	return rc;
+}
 
 dc_status_t
 cressi_leonardo_device_open (dc_device_t **out, dc_context_t *context, const char *name)
@@ -108,17 +201,26 @@ cressi_leonardo_device_open (dc_device_t **out, dc_context_t *context, const cha
 		goto error_close;
 	}
 
-	// Clear the DTR line.
-	status = dc_serial_set_dtr (device->port, 0);
-	if (status != DC_STATUS_SUCCESS) {
-		ERROR (context, "Failed to clear the DTR line.");
-		goto error_close;
-	}
-
 	// Set the RTS line.
 	status = dc_serial_set_rts (device->port, 1);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the RTS line.");
+		goto error_close;
+	}
+
+	// Set the DTR line.
+	status = dc_serial_set_dtr (device->port, 1);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (context, "Failed to set the DTR line.");
+		goto error_close;
+	}
+
+	dc_serial_sleep (device->port, 200);
+
+	// Clear the DTR line.
+	status = dc_serial_set_dtr (device->port, 0);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (context, "Failed to clear the DTR line.");
 		goto error_close;
 	}
 
@@ -166,6 +268,47 @@ cressi_leonardo_device_set_fingerprint (dc_device_t *abstract, const unsigned ch
 		memset (device->fingerprint, 0, sizeof (device->fingerprint));
 
 	return DC_STATUS_SUCCESS;
+}
+
+static dc_status_t
+cressi_leonardo_device_read (dc_device_t *abstract, unsigned int address, unsigned char data[], unsigned int size)
+{
+	dc_status_t rc = DC_STATUS_SUCCESS;
+	cressi_leonardo_device_t *device = (cressi_leonardo_device_t *) abstract;
+
+	unsigned int nbytes = 0;
+	while (nbytes < size) {
+		// Calculate the packet size.
+		unsigned int len = size - nbytes;
+		if (len > PACKETSIZE)
+			len = PACKETSIZE;
+
+		// Build the raw command.
+		unsigned char raw[] = {
+			(address >> 8) & 0xFF, // High
+			(address     ) & 0xFF, // Low
+			(len >> 8) & 0xFF, // High
+			(len     ) & 0xFF}; // Low
+
+		// Build the ascii command.
+		unsigned char command[2 * (sizeof (raw) + 3)] = {0};
+		cressi_leonardo_make_ascii (raw, sizeof (raw), command, sizeof (command));
+
+		// Send the command and receive the answer.
+		unsigned char answer[2 * (PACKETSIZE + 3)] = {0};
+		rc = cressi_leonardo_transfer (device, command, sizeof (command), answer, 2 * (len + 3));
+		if (rc != DC_STATUS_SUCCESS)
+			return rc;
+
+		// Extract the raw data from the packet.
+		array_convert_hex2bin (answer + 1, 2 * len, data, len);
+
+		nbytes += len;
+		address += len;
+		data += len;
+	}
+
+	return rc;
 }
 
 static dc_status_t
@@ -337,6 +480,8 @@ cressi_leonardo_extract_dives (dc_device_t *abstract, const unsigned char data[]
 		return DC_STATUS_NOMEMORY;
 	}
 
+	unsigned int previous = 0;
+	unsigned int remaining = RB_PROFILE_END - RB_PROFILE_BEGIN;
 	for (unsigned int i = 0; i < count; ++i) {
 		unsigned int idx = (latest + RB_LOGBOOK_COUNT - i) % RB_LOGBOOK_COUNT;
 		unsigned int offset = RB_LOGBOOK_BEGIN + idx * RB_LOGBOOK_SIZE;
@@ -352,18 +497,11 @@ cressi_leonardo_extract_dives (dc_device_t *abstract, const unsigned char data[]
 			return DC_STATUS_DATAFORMAT;
 		}
 
-		// Get the same pointers from the profile.
-		unsigned int header2 = array_uint16_le (data + footer);
-		unsigned int footer2 = array_uint16_le (data + header);
-		if (header2 != header || footer2 != footer) {
-			ERROR (context, "Invalid ringbuffer pointer detected (0x%04x 0x%04x).", header2, footer2);
+		if (previous && previous != footer + 2) {
+			ERROR (abstract->context, "Profiles are not continuous (0x%04x 0x%04x 0x%04x).", header, footer, previous);
 			free (buffer);
 			return DC_STATUS_DATAFORMAT;
 		}
-
-		// Calculate the profile address and length.
-		unsigned int address = header + 2;
-		unsigned int length = RB_PROFILE_DISTANCE (header, footer) - 2;
 
 		// Check the fingerprint data.
 		if (device && memcmp (data + offset + 8, device->fingerprint, sizeof (device->fingerprint)) == 0)
@@ -372,19 +510,42 @@ cressi_leonardo_extract_dives (dc_device_t *abstract, const unsigned char data[]
 		// Copy the logbook entry.
 		memcpy (buffer, data + offset, RB_LOGBOOK_SIZE);
 
-		// Copy the profile data.
-		if (address + length > RB_PROFILE_END) {
-			unsigned int len_a = RB_PROFILE_END - address;
-			unsigned int len_b = length - len_a;
-			memcpy (buffer + RB_LOGBOOK_SIZE, data + address, len_a);
-			memcpy (buffer + RB_LOGBOOK_SIZE + len_a, data + RB_PROFILE_BEGIN, len_b);
+		// Calculate the profile address and length.
+		unsigned int address = header + 2;
+		unsigned int length = RB_PROFILE_DISTANCE (header, footer) - 2;
+
+		if (remaining && remaining >= length + 4) {
+			// Get the same pointers from the profile.
+			unsigned int header2 = array_uint16_le (data + footer);
+			unsigned int footer2 = array_uint16_le (data + header);
+			if (header2 != header || footer2 != footer) {
+				ERROR (context, "Invalid ringbuffer pointer detected (0x%04x 0x%04x).", header2, footer2);
+				free (buffer);
+				return DC_STATUS_DATAFORMAT;
+			}
+
+			// Copy the profile data.
+			if (address + length > RB_PROFILE_END) {
+				unsigned int len_a = RB_PROFILE_END - address;
+				unsigned int len_b = length - len_a;
+				memcpy (buffer + RB_LOGBOOK_SIZE, data + address, len_a);
+				memcpy (buffer + RB_LOGBOOK_SIZE + len_a, data + RB_PROFILE_BEGIN, len_b);
+			} else {
+				memcpy (buffer + RB_LOGBOOK_SIZE, data + address, length);
+			}
+
+			remaining -= length + 4;
 		} else {
-			memcpy (buffer + RB_LOGBOOK_SIZE, data + address, length);
+			// No more profile data available!
+			remaining = 0;
+			length = 0;
 		}
 
 		if (callback && !callback (buffer, RB_LOGBOOK_SIZE + length, buffer + 8, sizeof (device->fingerprint), userdata)) {
 			break;
 		}
+
+		previous = header;
 	}
 
 	free (buffer);

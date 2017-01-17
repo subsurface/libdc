@@ -1,5 +1,5 @@
 AM_CPPFLAGS = -I$(top_builddir)/include -I$(top_srcdir)/include
-AM_CFLAGS = $(LIBUSB_CFLAGS) $(HIDAPI_CFLAGS) -DENABLE_DEPRECATED
+AM_CFLAGS = $(LIBUSB_CFLAGS) $(HIDAPI_CFLAGS)
 
 lib_LTLIBRARIES = libdivecomputer.la
 
@@ -95,7 +95,7 @@ libdivecomputer.exp: libdivecomputer.symbols
 	$(AM_V_GEN) sed -e '/^$$/d' $< > $@
 
 .rc.lo:
-	$(AM_V_GEN) $(LIBTOOL) --silent --tag=RC --mode=compile $(RC) $< -o $@
+	$(AM_V_GEN) $(LIBTOOL) --silent --tag=CC --mode=compile $(RC) $(DEFS) $(DEFAULT_INCLUDES) $< -o $@
 
 libdivecomputer.lo: revision.h
 

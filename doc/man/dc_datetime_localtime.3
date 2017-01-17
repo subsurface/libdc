@@ -1,0 +1,94 @@
+.\"
+.\" libdivecomputer
+.\"
+.\" Copyright (C) 2017 Kristaps Dzonsons <kristaps@bsd.lv>
+.\"
+.\" This library is free software; you can redistribute it and/or
+.\" modify it under the terms of the GNU Lesser General Public
+.\" License as published by the Free Software Foundation; either
+.\" version 2.1 of the License, or (at your option) any later version.
+.\"
+.\" This library is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+.\" Lesser General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU Lesser General Public
+.\" License along with this library; if not, write to the Free Software
+.\" Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+.\" MA 02110-1301 USA
+.\"
+.Dd January 11, 2017
+.Dt DC_DATETIME_LOCALTIME 3
+.Os
+.Sh NAME
+.Nm dc_datetime_localtime
+.Nd convert an timestamp to local date and time
+.Sh LIBRARY
+.Lb libdivecomputer
+.Sh SYNOPSIS
+.In libdivecomputer/datetime.h
+.Ft dc_datetime_t *
+.Fo dc_datetime_localtime
+.Fa "dc_datetime_t *result"
+.Fa "dc_ticks_t ticks"
+.Fc
+.Sh DESCRIPTION
+Convert an integral timestamp
+.Fa ticks
+created with
+.Xr dc_datetime_now 3
+or
+.Xr dc_datetime_mktime 3
+into a broken-down local-time representation in
+.Fa result .
+The filled-in value consists of the
+.Va year ,
+.Va month ,
+.Va day ,
+.Va hour ,
+.Va minute ,
+and
+.Va second
+fields.
+.Pp
+.Em Note :
+unlike in
+.Vt "struct tm" ,
+the value for
+.Va year
+is normalised, not less 1900; moreover, the value for
+.Va month
+is from one, not zero.
+.Pp
+The
+.Nm
+function may internally invoke libc's
+.Xr localtime 3 ,
+or if available,
+.Xr localtime_r 3 .
+.Sh RETURN VALUES
+This returns the
+.Fa result
+pointer on success.
+It returns
+.Dv NULL
+if
+.Fa ticks
+cannot be sanely converted or if
+.Fa result
+is
+.Dv NULL .
+.Sh SEE ALSO
+.Xr dc_datetime_gmtime 3 ,
+.Xr dc_datetime_mktime 3 ,
+.Xr dc_datetime_new 3
+.Sh AUTHORS
+The
+.Lb libdivecomputer
+library was written by
+.An Jef Driesen ,
+.Mt jef@libdivecomputer.org .
+The manpages were written by
+.An Kristaps Dzonsons ,
+.Mt kristaps@bsd.lv .
