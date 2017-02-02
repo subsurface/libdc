@@ -85,7 +85,7 @@
 #define I300        0x4559
 #define I750TC      0x455A
 #define I450T       0x4641
-#define I550T       0x4642
+#define I550        0x4642
 
 #define NORMAL   0
 #define GAUGE    1
@@ -157,7 +157,7 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		model == OCS || model == PROPLUS3 ||
 		model == A300 || model == MANTA ||
 		model == INSIGHT2 || model == ZEN ||
-		model == I300 || model == I550T) {
+		model == I300 || model == I550) {
 		parser->headersize -= PAGESIZE;
 	} else if (model == VT4 || model == VT41) {
 		parser->headersize += PAGESIZE;
@@ -249,7 +249,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case ATOM31:
 		case A300AI:
 		case OCI:
-		case I550T:
+		case I550:
 		case VISION:
 		case XPAIR:
 			datetime->year   = ((p[5] & 0xE0) >> 5) + ((p[7] & 0xE0) >> 2) + 2000;
@@ -576,6 +576,41 @@ oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 	return DC_STATUS_SUCCESS;
 }
 
+static void
+oceanic_atom2_parser_vendor (oceanic_atom2_parser_t *parser, const unsigned char *data, unsigned int size, unsigned int samplesize, dc_sample_callback_t callback, void *userdata)
+{
+	unsigned int offset = 0;
+	while (offset + samplesize <= size) {
+		dc_sample_value_t sample = {0};
+
+		// Ignore empty samples.
+		if ((parser->mode != FREEDIVE &&
+			array_isequal (data + offset, samplesize, 0x00)) ||
+			array_isequal (data + offset, samplesize, 0xFF)) {
+			offset += samplesize;
+			continue;
+		}
+
+		// Get the sample type.
+		unsigned int sampletype = data[offset + 0];
+		if (parser->mode == FREEDIVE)
+			sampletype = 0;
+
+		// Get the sample size.
+		unsigned int length = samplesize;
+		if (sampletype == 0xBB) {
+			length = PAGESIZE;
+		}
+
+		// Vendor specific data
+		sample.vendor.type = SAMPLE_VENDOR_OCEANIC_ATOM2;
+		sample.vendor.size = length;
+		sample.vendor.data = data + offset;
+		if (callback) callback (DC_SAMPLE_VENDOR, sample, userdata);
+
+		offset += length;
+	}
+}
 
 static dc_status_t
 oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
@@ -591,6 +626,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 	if (status != DC_STATUS_SUCCESS)
 		return status;
 
+	unsigned int extratime = 0;
 	unsigned int time = 0;
 	unsigned int interval = 1;
 	unsigned int samplerate = 1;
@@ -690,7 +726,9 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 	// Initial gas mix.
 	unsigned int gasmix_previous = 0xFFFFFFFF;
 
+	unsigned int count = 0;
 	unsigned int complete = 1;
+	unsigned int previous = 0;
 	unsigned int offset = parser->headersize;
 	while (offset + samplesize <= size - parser->footersize) {
 		dc_sample_value_t sample = {0};
@@ -703,12 +741,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			continue;
 		}
 
-		// Time.
 		if (complete) {
-			time += interval;
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
-
+			previous = offset;
 			complete = 0;
 		}
 
@@ -719,18 +753,14 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 
 		// The sample size is usually fixed, but some sample types have a
 		// larger size. Check whether we have that many bytes available.
-		unsigned int length = samplesize * samplerate;
+		unsigned int length = samplesize;
 		if (sampletype == 0xBB) {
 			length = PAGESIZE;
-			if (offset + length > size - PAGESIZE)
+			if (offset + length > size - parser->footersize) {
+				ERROR (abstract->context, "Buffer overflow detected!");
 				return DC_STATUS_DATAFORMAT;
+			}
 		}
-
-		// Vendor specific data
-		sample.vendor.type = SAMPLE_VENDOR_OCEANIC_ATOM2;
-		sample.vendor.size = length;
-		sample.vendor.data = data + offset;
-		if (callback) callback (DC_SAMPLE_VENDOR, sample, userdata);
 
 		// Check for a tank switch sample.
 		if (sampletype == 0xAA) {
@@ -759,17 +789,61 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			unsigned int nsamples = surftime / interval;
 
 			for (unsigned int i = 0; i < nsamples; ++i) {
-				if (complete) {
-					time += interval;
-					sample.time = time;
-					if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+				// Time
+				time += interval;
+				sample.time = time;
+				if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+
+				// Vendor specific data
+				if (i == 0) {
+					oceanic_atom2_parser_vendor (parser,
+						data + previous,
+						(offset - previous) + length,
+						samplesize, callback, userdata);
 				}
 
+				// Depth
 				sample.depth = 0.0;
 				if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
 				complete = 1;
 			}
+
+			extratime += surftime;
 		} else {
+			// Skip the extra samples.
+			if ((count % samplerate) != 0) {
+				offset += samplesize;
+				count++;
+				continue;
+			}
+
+			// Time.
+			if (parser->model == I450T) {
+				unsigned int minute = bcd2dec(data[offset + 0]);
+				unsigned int hour   = bcd2dec(data[offset + 1] & 0x0F);
+				unsigned int second = bcd2dec(data[offset + 2]);
+				unsigned int timestamp = (hour * 3600) + (minute * 60 ) + second + extratime;
+				if (timestamp < time) {
+					ERROR (abstract->context, "Timestamp moved backwards.");
+					return DC_STATUS_DATAFORMAT;
+				} else 	if (timestamp == time) {
+					WARNING (abstract->context, "Unexpected sample with the same timestamp ignored.");
+					offset += length;
+					continue;
+				}
+				time = timestamp;
+			} else {
+				time += interval;
+			}
+			sample.time = time;
+			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+
+			// Vendor specific data
+			oceanic_atom2_parser_vendor (parser,
+				data + previous,
+				(offset - previous) + length,
+				samplesize, callback, userdata);
+
 			// Temperature (°F)
 			if (have_temperature) {
 				if (parser->model == GEO || parser->model == ATOM1 ||
@@ -795,7 +869,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				} else {
 					unsigned int sign;
 					if (parser->model == DG03 || parser->model == PROPLUS3 ||
-						parser->model == I550T)
+						parser->model == I550)
 						sign = (~data[offset + 5] & 0x04) >> 2;
 					else if (parser->model == VOYAGER2G || parser->model == AMPHOS ||
 						parser->model == AMPHOSAIR || parser->model == ZENAIR)
@@ -826,7 +900,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 					parser->model == ATOM3 || parser->model == ATOM31 ||
 					parser->model == ZENAIR ||parser->model == A300AI ||
 					parser->model == DG03 || parser->model == PROPLUS3 ||
-					parser->model == AMPHOSAIR || parser->model == I550T ||
+					parser->model == AMPHOSAIR || parser->model == I550 ||
 					parser->model == VISION || parser->model == XPAIR)
 					pressure = (((data[offset + 0] & 0x03) << 8) + data[offset + 1]) * 5;
 				else if (parser->model == TX1 || parser->model == A300CS ||
@@ -881,7 +955,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				decostop = (data[offset + 15] & 0x70) >> 4;
 				decotime = array_uint16_le(data + offset + 6) & 0x03FF;
 				have_deco = 1;
-			} else if (parser->model == ZEN) {
+			} else if (parser->model == ZEN || parser->model == DG03) {
 				decostop = (data[offset + 5] & 0xF0) >> 4;
 				decotime = array_uint16_le(data + offset + 4) & 0x0FFF;
 				have_deco = 1;
@@ -890,13 +964,9 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				decotime = array_uint16_le(data + offset + 6);
 				have_deco = 1;
 			} else if (parser->model == ATOM31 || parser->model == VISION ||
-				parser->model == XPAIR) {
+				parser->model == XPAIR || parser->model == I550) {
 				decostop = (data[offset + 5] & 0xF0) >> 4;
 				decotime = array_uint16_le(data + offset + 4) & 0x03FF;
-				have_deco = 1;
-			} else if (parser->model == I550T) {
-				decostop = (data[offset + 7] & 0xF0) >> 4;
-				decotime = array_uint16_le(data + offset + 6) & 0x03FF;
 				have_deco = 1;
 			}
 			if (have_deco) {
@@ -919,10 +989,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			} else if (parser->model == I450T) {
 				rbt = array_uint16_le(data + offset + 8) & 0x01FF;
 				have_rbt = 1;
-			} else if (parser->model == I550T) {
-				rbt = array_uint16_le(data + offset + 4) & 0x03FF;
-				have_rbt = 1;
-			} else if (parser->model == VISION || parser->model == XPAIR) {
+			} else if (parser->model == VISION || parser->model == XPAIR ||
+				parser->model == I550) {
 				rbt = array_uint16_le(data + offset + 6) & 0x03FF;
 				have_rbt = 1;
 			}
@@ -931,6 +999,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				if (callback) callback (DC_SAMPLE_RBT, sample, userdata);
 			}
 
+			count++;
 			complete = 1;
 		}
 
