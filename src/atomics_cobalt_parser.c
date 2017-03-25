@@ -27,9 +27,9 @@
 #define snprintf _snprintf
 #endif
 
-#include <libdivecomputer/atomics_cobalt.h>
 #include <libdivecomputer/units.h>
 
+#include "atomics_cobalt.h"
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"

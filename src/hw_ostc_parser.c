@@ -27,10 +27,10 @@
 #define snprintf _snprintf
 #endif
 
-#include <libdivecomputer/hw_ostc.h>
-#include <libdivecomputer/hw_ostc3.h>
 #include "libdivecomputer/units.h"
 
+#include "hw_ostc.h"
+#include "hw_ostc3.h"
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"

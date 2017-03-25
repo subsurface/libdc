@@ -23,8 +23,7 @@
 #include <string.h>	// memcmp, strdup
 #include <stdio.h>	// snprintf
 
-#include <libdivecomputer/suunto_d9.h>
-
+#include "suunto_d9.h"
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"

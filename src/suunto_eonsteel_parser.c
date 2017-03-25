@@ -32,8 +32,7 @@
 #define vsnprintf _vsnprintf
 #endif
 
-#include <libdivecomputer/suunto_eonsteel.h>
-
+#include "suunto_eonsteel.h"
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"

@@ -27,10 +27,10 @@
 #define snprintf _snprintf
 #endif
 
-#include <libdivecomputer/shearwater_predator.h>
-#include <libdivecomputer/shearwater_petrel.h>
 #include <libdivecomputer/units.h>
 
+#include "shearwater_predator.h"
+#include "shearwater_petrel.h"
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"
