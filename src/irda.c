@@ -36,6 +36,7 @@
 	#include <linux/irda.h>		// irda
 	#include <sys/select.h>		// select
 	#include <sys/ioctl.h>		// ioctl
+	#include <sys/time.h>
 #endif
 
 #include "irda.h"
@@ -47,6 +48,7 @@
 typedef int s_ssize_t;
 typedef DWORD s_errcode_t;
 #define S_ERRNO WSAGetLastError ()
+#define S_EINTR WSAEINTR
 #define S_EAGAIN WSAEWOULDBLOCK
 #define S_ENOMEM WSA_NOT_ENOUGH_MEMORY
 #define S_EINVAL WSAEINVAL
@@ -59,6 +61,7 @@ typedef DWORD s_errcode_t;
 typedef ssize_t s_ssize_t;
 typedef int s_errcode_t;
 #define S_ERRNO errno
+#define S_EINTR EINTR
 #define S_EAGAIN EAGAIN
 #define S_ENOMEM ENOMEM
 #define S_EINVAL EINVAL
@@ -405,23 +408,27 @@ dc_irda_read (dc_irda_t *device, void *data, size_t size, size_t *actual)
 
 	if (device == NULL) {
 		status = DC_STATUS_INVALIDARGS;
-		goto out;
+		goto out_invalidargs;
 	}
-
-	struct timeval tv;
-	if (device->timeout >= 0) {
-		tv.tv_sec  = (device->timeout / 1000);
-		tv.tv_usec = (device->timeout % 1000) * 1000;
-	}
-
-	fd_set fds;
-	FD_ZERO (&fds);
-	FD_SET (device->fd, &fds);
 
 	while (nbytes < size) {
-		int rc = select (device->fd + 1, &fds, NULL, NULL, (device->timeout >= 0 ? &tv : NULL));
+		fd_set fds;
+		FD_ZERO (&fds);
+		FD_SET (device->fd, &fds);
+
+		struct timeval tvt;
+		if (device->timeout > 0) {
+			tvt.tv_sec  = (device->timeout / 1000);
+			tvt.tv_usec = (device->timeout % 1000) * 1000;
+		} else if (device->timeout == 0) {
+			timerclear (&tvt);
+		}
+
+		int rc = select (device->fd + 1, &fds, NULL, NULL, device->timeout >= 0 ? &tvt : NULL);
 		if (rc < 0) {
 			s_errcode_t errcode = S_ERRNO;
+			if (errcode == S_EINTR)
+				continue; // Retry.
 			SYSERROR (device->context, errcode);
 			status = syserror(errcode);
 			goto out;
@@ -432,6 +439,8 @@ dc_irda_read (dc_irda_t *device, void *data, size_t size, size_t *actual)
 		s_ssize_t n = recv (device->fd, (char*) data + nbytes, size - nbytes, 0);
 		if (n < 0) {
 			s_errcode_t errcode = S_ERRNO;
+			if (errcode == S_EINTR || errcode == S_EAGAIN)
+				continue; // Retry.
 			SYSERROR (device->context, errcode);
 			status = syserror(errcode);
 			goto out;
@@ -449,6 +458,7 @@ dc_irda_read (dc_irda_t *device, void *data, size_t size, size_t *actual)
 out:
 	HEXDUMP (device->context, DC_LOGLEVEL_INFO, "Read", (unsigned char *) data, nbytes);
 
+out_invalidargs:
 	if (actual)
 		*actual = nbytes;
 
@@ -463,16 +473,36 @@ dc_irda_write (dc_irda_t *device, const void *data, size_t size, size_t *actual)
 
 	if (device == NULL) {
 		status = DC_STATUS_INVALIDARGS;
-		goto out;
+		goto out_invalidargs;
 	}
 
 	while (nbytes < size) {
-		s_ssize_t n = send (device->fd, (char*) data + nbytes, size - nbytes, 0);
-		if (n < 0) {
+		fd_set fds;
+		FD_ZERO (&fds);
+		FD_SET (device->fd, &fds);
+
+		int rc = select (device->fd + 1, NULL, &fds, NULL, NULL);
+		if (rc < 0) {
 			s_errcode_t errcode = S_ERRNO;
+			if (errcode == S_EINTR)
+				continue; // Retry.
 			SYSERROR (device->context, errcode);
 			status = syserror(errcode);
 			goto out;
+		} else if (rc == 0) {
+			break; // Timeout.
+		}
+
+		s_ssize_t n = send (device->fd, (char*) data + nbytes, size - nbytes, 0);
+		if (n < 0) {
+			s_errcode_t errcode = S_ERRNO;
+			if (errcode == S_EINTR || errcode == S_EAGAIN)
+				continue; // Retry.
+			SYSERROR (device->context, errcode);
+			status = syserror(errcode);
+			goto out;
+		} else if (n == 0) {
+			break; // EOF.
 		}
 
 		nbytes += n;
@@ -485,6 +515,7 @@ dc_irda_write (dc_irda_t *device, const void *data, size_t size, size_t *actual)
 out:
 	HEXDUMP (device->context, DC_LOGLEVEL_INFO, "Write", (unsigned char *) data, nbytes);
 
+out_invalidargs:
 	if (actual)
 		*actual = nbytes;
 
