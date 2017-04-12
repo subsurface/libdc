@@ -214,7 +214,7 @@ shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *d
 }
 
 
-#define BUFLEN 16
+#define BUFLEN 32
 
 static dc_status_t
 shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
