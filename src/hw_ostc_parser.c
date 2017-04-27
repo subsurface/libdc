@@ -95,6 +95,7 @@ typedef struct hw_ostc_layout_t {
 	unsigned int deco_info1;
 	unsigned int deco_info2;
 	unsigned int decomode;
+        unsigned int battery_percentage;
 } hw_ostc_layout_t;
 
 typedef struct hw_ostc_gasmix_t {
@@ -149,6 +150,7 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	49, /* deco_info1 */
 	50, /* deco_info1 */
 	51, /* decomode */
+        0,  /* battery percentage TBD */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_frog = {
@@ -166,6 +168,7 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	49, /* deco_info1 */
 	50, /* deco_info2 */
 	51, /* decomode */
+        0,  /* battery percentage TBD */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
@@ -183,6 +186,7 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	77, /* deco_info1 */
 	78, /* deco_info2 */
 	79, /* decomode */
+        59,  /* battery percentage */
 };
 
 static unsigned int
@@ -278,7 +282,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 			}
 		}
 		// The first fixed setpoint is the initial setpoint in CCR mode.
-		if (data[82] == OSTC3_CC) {
+                if (data[82] == OSTC3_CC) {
 			initial_setpoint = data[60];
 		}
 	} else {
@@ -446,7 +450,7 @@ hw_ostc_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 	return DC_STATUS_SUCCESS;
 }
 
-#define BUFLEN 16
+#define BUFLEN 32
 
 static dc_status_t
 hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
@@ -570,16 +574,28 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			break;
 		case DC_FIELD_STRING:
 			switch(flags) {
-			case 0: /* battery */
+                        case 0: /* serial */
+                                string->desc = "Serial";
+                                snprintf(buf, BUFLEN, "%u", parser->serial);
+                                break;
+                        case 1: /* battery */
 				string->desc = "Battery at end";
-				snprintf(buf, BUFLEN, "%.2f", array_uint16_le (data + layout->battery) / 1000.0);
-				break;
-			case 1: /* desat */
-				string->desc = "Desat time";
+                                unsigned int percentage = (unsigned int) data[layout->battery_percentage];
+                                if (percentage != 0xFF && (version == 0x23 || version == 0x24)) {
+                                    percentage = percentage>100? 100: percentage;
+                                    snprintf(buf, BUFLEN, "%.2fV, %u%% remaining",
+                                             array_uint16_le (data + layout->battery) / 1000.0,
+                                             percentage);
+                                } else {
+                                    snprintf(buf, BUFLEN, "%.2fV", array_uint16_le (data + layout->battery) / 1000.0);
+                                }
+                                break;
+                        case 2: /* desat */
+                                string->desc = "Desat time";
 				snprintf(buf, BUFLEN, "%0u:%02u", array_uint16_le (data + layout->desat) / 60,
 						 array_uint16_le (data + layout->desat) % 60);
 				break;
-			case 2: /* firmware */
+                        case 3: /* firmware */
 				string->desc = "FW Version";
 				/* OSTC4 stores firmware as XXXX XYYY YYZZ ZZZB, -> X.Y.Z beta? */
 				if (parser->model == OSTC4) {
@@ -595,11 +611,8 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 					snprintf(buf, BUFLEN, "%0u.%02u", data[layout->firmware], data[layout->firmware + 1]);
 				}
 				break;
-			case 3: /* serial */
-				string->desc = "Serial";
-				snprintf(buf, BUFLEN, "%u", parser->serial);
-				break;
-			case 4: /* Deco model */
+
+                        case 4: /* Deco model */
 				string->desc = "Deco model";
 				if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16) ||
 						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
@@ -614,7 +627,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				else
 					return DC_STATUS_DATAFORMAT;
 				break;
-			case 5: /* Deco model info */
+                        case 5: /* Deco model info */
 				string->desc = "Deco model info";
 				if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16) ||
 						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
