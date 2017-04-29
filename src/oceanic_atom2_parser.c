@@ -23,9 +23,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <libdivecomputer/oceanic_atom2.h>
 #include <libdivecomputer/units.h>
 
+#include "oceanic_atom2.h"
 #include "oceanic_common.h"
 #include "context-private.h"
 #include "parser-private.h"
