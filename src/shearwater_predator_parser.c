@@ -54,10 +54,14 @@
 
 #define NGASMIXES 10
 
+#define PREDATOR 2
+#define PETREL   3
+
 typedef struct shearwater_predator_parser_t shearwater_predator_parser_t;
 
 struct shearwater_predator_parser_t {
 	dc_parser_t base;
+	unsigned int model;
 	unsigned int petrel;
 	unsigned int samplesize;
 	// Cached fields.
@@ -68,6 +72,7 @@ struct shearwater_predator_parser_t {
 	unsigned int oxygen[NGASMIXES];
 	unsigned int helium[NGASMIXES];
 	unsigned int serial;
+	double calibration[3];
 	dc_divemode_t mode;
 };
 
@@ -112,7 +117,7 @@ shearwater_predator_find_gasmix (shearwater_predator_parser_t *parser, unsigned 
 
 
 static dc_status_t
-shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int petrel)
+shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int model, unsigned int petrel)
 {
 	shearwater_predator_parser_t *parser = NULL;
 	const dc_parser_vtable_t *vtable = NULL;
@@ -136,7 +141,8 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 		return DC_STATUS_NOMEMORY;
 	}
 
-	// Initialize the base class.
+	// Set the default values.
+	parser->model = model;
 	parser->petrel = petrel;
 	parser->serial = serial;
 	if (petrel) {
@@ -163,16 +169,16 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 
 
 dc_status_t
-shearwater_predator_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
+shearwater_predator_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int model)
 {
-	return shearwater_common_parser_create (out, context, serial, 0);
+	return shearwater_common_parser_create (out, context, serial, model, 0);
 }
 
 
 dc_status_t
-shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
+shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int model)
 {
-	return shearwater_common_parser_create (out, context, serial, 1);
+	return shearwater_common_parser_create (out, context, serial, model, 1);
 }
 
 
@@ -295,6 +301,20 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		}
 
 		offset += parser->samplesize;
+	}
+
+	// Cache sensor calibration for later use
+	parser->calibration[0] = array_uint16_be(data + 87) / 100000.0;
+	parser->calibration[1] = array_uint16_be(data + 89) / 100000.0;
+	parser->calibration[2] = array_uint16_be(data + 91) / 100000.0;
+	// The Predator expects the mV output of the cells to be within 30mV
+	// to 70mV in 100% O2 at 1 atmosphere.
+	// If the calibration value is scaled with a factor 2.2, then the
+	// sensors lines up and matches the average.
+	if (parser->model == PREDATOR) {
+		for (size_t i = 0; i < 3; ++i) {
+			parser->calibration[i] *= 2.2;
+		}
 	}
 
 	// Cache the data for later use.
@@ -492,9 +512,22 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		unsigned int status = data[offset + 11];
 
 		if ((status & OC) == 0) {
-			// PPO2 -- only return PPO2 if we are in closed circuit mode
+			// PPO2
+#ifdef SENSOR_AVERAGE
 			sample.ppo2 = data[offset + 6] / 100.0;
 			if (callback) callback (DC_SAMPLE_PPO2, sample, userdata);
+#else
+			if ((status & PPO2_EXTERNAL) == 0) {
+				sample.ppo2 = data[offset + 12] * parser->calibration[0];
+				if (callback && (data[86] & 0x01)) callback (DC_SAMPLE_PPO2, sample, userdata);
+
+				sample.ppo2 = data[offset + 14] * parser->calibration[1];
+				if (callback && (data[86] & 0x02)) callback (DC_SAMPLE_PPO2, sample, userdata);
+
+				sample.ppo2 = data[offset + 15] * parser->calibration[2];
+				if (callback && (data[86] & 0x04)) callback (DC_SAMPLE_PPO2, sample, userdata);
+			}
+#endif
 
 			// Setpoint
 			if (parser->petrel) {
