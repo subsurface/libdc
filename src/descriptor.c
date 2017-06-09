@@ -89,6 +89,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Suunto EON Steel */
 #ifdef USBHID
 	{"Suunto", "EON Steel", DC_FAMILY_SUUNTO_EONSTEEL, 0},
+	{"Scubapro", "G2", DC_FAMILY_SCUBAPRO_G2, 0x11},
 #endif
 	/* Uwatec Aladin */
 	{"Uwatec", "Aladin Air Twin",     DC_FAMILY_UWATEC_ALADIN, 0x1C},
@@ -428,6 +429,8 @@ dc_descriptor_get_transport (dc_descriptor_t *descriptor)
 	if (descriptor->type == DC_FAMILY_ATOMICS_COBALT)
 		return DC_TRANSPORT_USB;
 	else if (descriptor->type == DC_FAMILY_SUUNTO_EONSTEEL)
+		return DC_TRANSPORT_USB;
+	else if (descriptor->type == DC_FAMILY_SCUBAPRO_G2)
 		return DC_TRANSPORT_USB;
 	else if (descriptor->type == DC_FAMILY_UWATEC_SMART)
 		return DC_TRANSPORT_IRDA;

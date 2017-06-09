@@ -50,6 +50,7 @@
 #include "cressi_leonardo.h"
 #include "zeagle_n2ition3.h"
 #include "atomics_cobalt.h"
+#include "scubapro_g2.h"
 #include "shearwater_petrel.h"
 #include "shearwater_predator.h"
 #include "diverite_nitekq.h"
@@ -125,6 +126,9 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 		break;
 	case DC_FAMILY_SUUNTO_EONSTEEL:
 		rc = suunto_eonsteel_device_open (&device, context);
+		break;
+	case DC_FAMILY_SCUBAPRO_G2:
+		rc = scubapro_g2_device_open (&device, context);
 		break;
 	case DC_FAMILY_UWATEC_ALADIN:
 		rc = uwatec_aladin_device_open (&device, context, name);
