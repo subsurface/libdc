@@ -105,6 +105,8 @@ scubapro_g2_transfer(scubapro_g2_device_t *g2, const unsigned char command[], un
 		return DC_STATUS_INVALIDARGS;
 	}
 
+	HEXDUMP (g2->base.context, DC_LOGLEVEL_DEBUG, "cmd", command, csize);
+
 	buf[0] = csize;
 	memcpy(buf+1, command, csize);
 	status = dc_usbhid_write(g2->usbhid, buf, csize+1, &transferred);
