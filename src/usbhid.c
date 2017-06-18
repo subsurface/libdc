@@ -80,6 +80,67 @@ syserror(int errcode)
 }
 #endif
 
+static dc_status_t
+usbhid_packet_close(dc_custom_io_t *io)
+{
+	dc_usbhid_t *usbhid = (dc_usbhid_t *)io->userdata;
+	return dc_usbhid_close(usbhid);
+}
+
+static dc_status_t
+usbhid_packet_read(dc_custom_io_t *io, void* data, size_t size, size_t *actual)
+{
+	dc_usbhid_t *usbhid = (dc_usbhid_t *)io->userdata;
+	return dc_usbhid_read(usbhid, data, size, actual);
+}
+
+static dc_status_t
+usbhid_packet_write(dc_custom_io_t *io, const void* data, size_t size, size_t *actual)
+{
+	dc_usbhid_t *usbhid = (dc_usbhid_t *)io->userdata;
+	return dc_usbhid_write(usbhid, data, size, actual);
+}
+
+dc_status_t
+dc_usbhid_custom_io (dc_context_t *context, unsigned int vid, unsigned int pid)
+{
+	dc_usbhid_t *usbhid;
+	dc_status_t status;
+
+	static dc_custom_io_t custom = {
+		.packet_size = 64,
+		.packet_close = usbhid_packet_close,
+		.packet_read  = usbhid_packet_read,
+		.packet_write = usbhid_packet_write,
+	};
+
+	status = dc_usbhid_open(&usbhid, context, vid, pid);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	custom.userdata = (void *)usbhid;
+	dc_context_set_custom_io(context, &custom);
+
+	dc_usbhid_set_timeout(usbhid, 10);
+
+	/* Get rid of any pending stale input first */
+	/* NOTE! This will cause an annoying warning from dc_usbhid_read() */
+	for (;;) {
+		size_t transferred = 0;
+		unsigned char buf[64];
+
+		dc_status_t rc = dc_usbhid_read(usbhid, buf, sizeof(buf), &transferred);
+		if (rc != DC_STATUS_SUCCESS)
+			break;
+		if (!transferred)
+			break;
+	}
+
+	dc_usbhid_set_timeout(usbhid, 5000);
+
+	return DC_STATUS_SUCCESS;
+}
+
 dc_status_t
 dc_usbhid_open (dc_usbhid_t **out, dc_context_t *context, unsigned int vid, unsigned int pid)
 {

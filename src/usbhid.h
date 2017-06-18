@@ -116,6 +116,10 @@ dc_usbhid_read (dc_usbhid_t *usbhid, void *data, size_t size, size_t *actual);
 dc_status_t
 dc_usbhid_write (dc_usbhid_t *usbhid, const void *data, size_t size, size_t *actual);
 
+/* Create a dc_custom_io_t that uses usbhid for packet transfer */
+dc_status_t
+dc_usbhid_custom_io(dc_context_t *context, unsigned int vid, unsigned int pid);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
