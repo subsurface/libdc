@@ -35,7 +35,6 @@
 
 typedef struct suunto_eonsteel_device_t {
 	dc_device_t base;
-	dc_usbhid_t *usbhid;
 	unsigned int magic;
 	unsigned short seq;
 	unsigned char version[0x30];
@@ -130,10 +129,11 @@ static int receive_packet(suunto_eonsteel_device_t *eon, unsigned char *buffer, 
 {
 	unsigned char buf[64];
 	dc_status_t rc = DC_STATUS_SUCCESS;
+	dc_custom_io_t *io = _dc_context_custom_io(eon->base.context);
 	size_t transferred = 0;
 	int len;
 
-	rc = dc_usbhid_read(eon->usbhid, buf, PACKET_SIZE, &transferred);
+	rc = io->packet_read(io, buf, PACKET_SIZE, &transferred);
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR(eon->base.context, "read interrupt transfer failed");
 		return -1;
@@ -168,6 +168,7 @@ static int send_cmd(suunto_eonsteel_device_t *eon,
 	unsigned char buf[64];
 	unsigned short seq = eon->seq;
 	unsigned int magic = eon->magic;
+	dc_custom_io_t *io = _dc_context_custom_io(eon->base.context);
 	dc_status_t rc = DC_STATUS_SUCCESS;
 	size_t transferred = 0;
 
@@ -199,7 +200,7 @@ static int send_cmd(suunto_eonsteel_device_t *eon,
 		memcpy(buf+14, buffer, len);
 	}
 
-	rc = dc_usbhid_write(eon->usbhid, buf, sizeof(buf), &transferred);
+	rc = io->packet_write(io, buf, sizeof(buf), &transferred);
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR(eon->base.context, "write interrupt transfer failed");
 		return -1;
@@ -462,7 +463,6 @@ static int get_file_list(suunto_eonsteel_device_t *eon, struct directory_entry *
 	unsigned char result[2048];
 	int rc, cmdlen;
 
-
 	*res = NULL;
 	put_le32(0, cmd);
 	memcpy(cmd + 4, dive_directory, sizeof(dive_directory));
@@ -512,24 +512,7 @@ static int get_file_list(suunto_eonsteel_device_t *eon, struct directory_entry *
 static int initialize_eonsteel(suunto_eonsteel_device_t *eon)
 {
 	const unsigned char init[] = {0x02, 0x00, 0x2a, 0x00};
-	unsigned char buf[64];
 	struct eon_hdr hdr;
-
-	dc_usbhid_set_timeout(eon->usbhid, 10);
-
-	/* Get rid of any pending stale input first */
-	/* NOTE! This will cause an annoying warning from dc_usbhid_read() */
-	for (;;) {
-		size_t transferred = 0;
-
-		dc_status_t rc = dc_usbhid_read(eon->usbhid, buf, sizeof(buf), &transferred);
-		if (rc != DC_STATUS_SUCCESS)
-			break;
-		if (!transferred)
-			break;
-	}
-
-	dc_usbhid_set_timeout(eon->usbhid, 5000);
 
 	if (send_cmd(eon, INIT_CMD, sizeof(init), init)) {
 		ERROR(eon->base.context, "Failed to send initialization command");
@@ -548,7 +531,7 @@ static int initialize_eonsteel(suunto_eonsteel_device_t *eon)
 }
 
 dc_status_t
-suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context)
+suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char *name)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	suunto_eonsteel_device_t *eon = NULL;
@@ -566,7 +549,12 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context)
 	memset (eon->version, 0, sizeof (eon->version));
 	memset (eon->fingerprint, 0, sizeof (eon->fingerprint));
 
-	status = dc_usbhid_open(&eon->usbhid, context, 0x1493, 0x0030);
+	dc_custom_io_t *io = _dc_context_custom_io(eon->base.context);
+	if (io && io->packet_open)
+		status = io->packet_open(io, context, name);
+	else
+		status = dc_usbhid_custom_io(context, 0x1493, 0x0030);
+
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR(context, "unable to open device");
 		goto error_free;
@@ -583,7 +571,7 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context)
 	return DC_STATUS_SUCCESS;
 
 error_close:
-	dc_usbhid_close(eon->usbhid);
+	io->packet_close(io);
 error_free:
 	free(eon);
 	return status;
@@ -705,9 +693,7 @@ suunto_eonsteel_device_foreach(dc_device_t *abstract, dc_dive_callback_t callbac
 static dc_status_t
 suunto_eonsteel_device_close(dc_device_t *abstract)
 {
-	suunto_eonsteel_device_t *eon = (suunto_eonsteel_device_t *) abstract;
+	dc_custom_io_t *io = _dc_context_custom_io(abstract->context);
 
-	dc_usbhid_close(eon->usbhid);
-
-	return DC_STATUS_SUCCESS;
+	return io->packet_close(io);
 }

@@ -33,7 +33,6 @@
 
 typedef struct scubapro_g2_device_t {
 	dc_device_t base;
-	dc_usbhid_t *usbhid;
 	unsigned int timestamp;
 	unsigned int devtime;
 	dc_ticks_t systime;
@@ -61,13 +60,14 @@ scubapro_g2_extract_dives (dc_device_t *device, const unsigned char data[], unsi
 #define PACKET_SIZE 64
 static int receive_data(scubapro_g2_device_t *g2, unsigned char *buffer, int size)
 {
+	dc_custom_io_t *io = _dc_context_custom_io(g2->base.context);
 	while (size) {
 		unsigned char buf[PACKET_SIZE];
 		size_t transferred = 0;
 		dc_status_t rc;
 		int len;
 
-		rc = dc_usbhid_read(g2->usbhid, buf, PACKET_SIZE, &transferred);
+		rc = io->packet_read(io, buf, PACKET_SIZE, &transferred);
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR(g2->base.context, "read interrupt transfer failed");
 			return -1;
@@ -96,6 +96,7 @@ static int receive_data(scubapro_g2_device_t *g2, unsigned char *buffer, int siz
 static dc_status_t
 scubapro_g2_transfer(scubapro_g2_device_t *g2, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize)
 {
+	dc_custom_io_t *io = _dc_context_custom_io(g2->base.context);
 	unsigned char buf[PACKET_SIZE];
 	dc_status_t status = DC_STATUS_SUCCESS;
 	size_t transferred = 0;
@@ -109,7 +110,7 @@ scubapro_g2_transfer(scubapro_g2_device_t *g2, const unsigned char command[], un
 
 	buf[0] = csize;
 	memcpy(buf+1, command, csize);
-	status = dc_usbhid_write(g2->usbhid, buf, csize+1, &transferred);
+	status = io->packet_write(io, buf, csize+1, &transferred);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR(g2->base.context, "Failed to send the command.");
 		return status;
@@ -162,7 +163,7 @@ scubapro_g2_handshake (scubapro_g2_device_t *device)
 
 
 dc_status_t
-scubapro_g2_device_open(dc_device_t **out, dc_context_t *context)
+scubapro_g2_device_open(dc_device_t **out, dc_context_t *context, const char *name)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	scubapro_g2_device_t *device = NULL;
@@ -177,16 +178,20 @@ scubapro_g2_device_open(dc_device_t **out, dc_context_t *context)
 		return DC_STATUS_NOMEMORY;
 	}
 
+
 	// Set the default values.
-	device->usbhid = NULL;
 	device->timestamp = 0;
 	device->systime = (dc_ticks_t) -1;
 	device->devtime = 0;
 
-	// Open the irda socket.
-	status = dc_usbhid_open(&device->usbhid, context, 0x2e6c, 0x3201);
+	dc_custom_io_t *io = _dc_context_custom_io(context);
+	if (io && io->packet_open)
+		status = io->packet_open(io, context, name);
+	else
+		status = dc_usbhid_custom_io(context, 0x2e6c, 0x3201);
+
 	if (status != DC_STATUS_SUCCESS) {
-		ERROR (context, "Failed to open USB device");
+		ERROR (context, "Failed to open Scubapro G2 device");
 		goto error_free;
 	}
 
@@ -202,7 +207,7 @@ scubapro_g2_device_open(dc_device_t **out, dc_context_t *context)
 	return DC_STATUS_SUCCESS;
 
 error_close:
-	dc_usbhid_close(device->usbhid);
+	scubapro_g2_device_close((dc_device_t *) device);
 error_free:
 	dc_device_deallocate ((dc_device_t *) device);
 	return status;
@@ -212,11 +217,9 @@ error_free:
 static dc_status_t
 scubapro_g2_device_close (dc_device_t *abstract)
 {
-	scubapro_g2_device_t *device = (scubapro_g2_device_t*) abstract;
+	dc_custom_io_t *io = _dc_context_custom_io(abstract->context);
 
-	dc_usbhid_close(device->usbhid);
-
-	return DC_STATUS_SUCCESS;
+	return io->packet_close(io);
 }
 
 
