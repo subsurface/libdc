@@ -27,7 +27,7 @@
 #endif
 
 #include <libdivecomputer/context.h>
-#include <libdivecomputer/custom_serial.h>
+#include <libdivecomputer/custom_io.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,16 +72,16 @@ dc_context_syserror (dc_context_t *context, dc_loglevel_t loglevel, const char *
 dc_status_t
 dc_context_hexdump (dc_context_t *context, dc_loglevel_t loglevel, const char *file, unsigned int line, const char *function, const char *prefix, const unsigned char data[], unsigned int size);
 
-dc_custom_serial_t*
-_dc_context_custom_serial (dc_context_t *context);
+dc_custom_io_t*
+_dc_context_custom_io (dc_context_t *context);
 
 #define RETURN_IF_CUSTOM_SERIAL(context, block, function, ...)	\
 	do { \
-		dc_custom_serial_t *c = _dc_context_custom_serial(context); \
+		dc_custom_io_t *c = _dc_context_custom_io(context); \
 		dc_status_t _rc; \
 		if (c) { \
-			if (c->function) \
-				_rc = c->function(&c->userdata, ##__VA_ARGS__); \
+			if (c->serial_##function) \
+				_rc = c->serial_##function(&c->userdata, ##__VA_ARGS__); \
 			else \
 				_rc = DC_STATUS_SUCCESS; \
 			block ;\

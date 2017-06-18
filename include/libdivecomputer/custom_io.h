@@ -1,5 +1,5 @@
-#ifndef CUSTOM_SERIAL_H
-#define CUSTOM_SERIAL_H
+#ifndef CUSTOM_IO_H
+#define CUSTOM_IO_H
 
 #include "common.h"
 
@@ -62,29 +62,40 @@ typedef enum dc_line_t {
 
 #endif /* __SERIAL_TYPES__ */
 
-typedef struct dc_custom_serial_t
+struct dc_context_t;
+
+typedef struct dc_custom_io_t
 {
 	void *userdata;
-	dc_status_t (*open) (void **userdata, const char *name);
-	dc_status_t (*close) (void **userdata);
-	dc_status_t (*read) (void **userdata, void* data, size_t size, size_t *actual);
-	dc_status_t (*write) (void **userdata, const void* data, size_t size, size_t *actual);
-	dc_status_t (*purge) (void **userdata, dc_direction_t);
-	dc_status_t (*get_available) (void **userdata, size_t *value);
-	dc_status_t (*set_timeout) (void **userdata, long timeout);
-	dc_status_t (*configure) (void **userdata, unsigned int baudrate, unsigned int databits, dc_parity_t parity, dc_stopbits_t stopbits, dc_flowcontrol_t flowcontrol);
-	dc_status_t (*set_dtr) (void **userdata, int level);
-	dc_status_t (*set_rts) (void **userdata, int level);
-	dc_status_t (*set_halfduplex) (void **userdata, unsigned int value);
-	dc_status_t (*set_break) (void **userdata, unsigned int level);
+
+	// Custom serial (generally BT rfcomm)
+	dc_status_t (*serial_open) (void **userdata, const char *name);
+	dc_status_t (*serial_close) (void **userdata);
+	dc_status_t (*serial_read) (void **userdata, void* data, size_t size, size_t *actual);
+	dc_status_t (*serial_write) (void **userdata, const void* data, size_t size, size_t *actual);
+	dc_status_t (*serial_purge) (void **userdata, dc_direction_t);
+	dc_status_t (*serial_get_available) (void **userdata, size_t *value);
+	dc_status_t (*serial_set_timeout) (void **userdata, long timeout);
+	dc_status_t (*serial_configure) (void **userdata, unsigned int baudrate, unsigned int databits, dc_parity_t parity, dc_stopbits_t stopbits, dc_flowcontrol_t flowcontrol);
+	dc_status_t (*serial_set_dtr) (void **userdata, int level);
+	dc_status_t (*serial_set_rts) (void **userdata, int level);
+	dc_status_t (*serial_set_halfduplex) (void **userdata, unsigned int value);
+	dc_status_t (*serial_set_break) (void **userdata, unsigned int level);
 	//dc_serial_set_latency (dc_serial_t *device, unsigned int milliseconds) - Unused
 	//dc_serial_get_lines (dc_serial_t *device, unsigned int *value) - Unused
 	//dc_serial_flush (dc_serial_t *device) - No device interaction
 	//dc_serial_sleep (dc_serial_t *device, unsigned int timeout) - No device interaction
-} dc_custom_serial_t;
+
+	// Custom packet transfer (generally BLE GATT)
+	int packet_size;
+	dc_status_t (*packet_open) (struct dc_custom_io_t *, struct dc_context_t *, const char *);
+	dc_status_t (*packet_close) (struct dc_custom_io_t *);
+	dc_status_t (*packet_read) (struct dc_custom_io_t *, void* data, size_t size, size_t *actual);
+	dc_status_t (*packet_write) (struct dc_custom_io_t *, const void* data, size_t size, size_t *actual);
+} dc_custom_io_t;
 
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
-#endif /* CUSTOM_SERIAL_H */
+#endif /* CUSTOM_IO_H */
