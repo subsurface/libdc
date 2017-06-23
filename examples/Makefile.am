@@ -1,5 +1,5 @@
 AM_CPPFLAGS = -I$(top_builddir)/include -I$(top_srcdir)/include
-LDADD = $(top_builddir)/src/libdivecomputer.la
+LDADD = $(top_builddir)/src/libdivecomputer.la -lz
 
 bin_PROGRAMS = \
 	dctool

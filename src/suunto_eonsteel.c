@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>	/* For crc32() */
 
 #include "suunto_eonsteel.h"
 #include "context-private.h"
@@ -160,6 +161,42 @@ static int receive_packet(suunto_eonsteel_device_t *eon, unsigned char *buffer, 
 	return len;
 }
 
+static int add_hdlc(unsigned char *dst, unsigned char val)
+{
+	int chars = 1;
+	switch (val) {
+	case 0x7e: case 0x7d:
+		*dst++ = 0x7d;
+		val ^= 0x20;
+		chars++;
+		/* fallthrough */
+	default:
+		*dst = val;
+	}
+	return chars;
+}
+
+static int hdlc_reencode(unsigned char *dst, unsigned char *src, int len)
+{
+	unsigned int crc = crc32(0, src, len);
+	int result = 0, i;
+
+	*dst++ = 0x7e; result++;
+	for (i = 0; i < len; i++) {
+		int chars = add_hdlc(dst, src[i]);
+		dst += chars;
+		result += chars;
+	}
+	for (i = 0; i < 4; i++) {
+		int chars = add_hdlc(dst, crc & 255);
+		dst += chars;
+		result += chars;
+		crc >>= 8;
+	}
+	*dst++ = 0x7e; result++;
+	return result;
+}
+
 static int send_cmd(suunto_eonsteel_device_t *eon,
 	unsigned short cmd,
 	unsigned int len,
@@ -200,7 +237,29 @@ static int send_cmd(suunto_eonsteel_device_t *eon,
 		memcpy(buf+14, buffer, len);
 	}
 
-	rc = io->packet_write(io, buf, sizeof(buf), &transferred);
+	// BLE GATT protocol?
+	if (io->packet_size < 64) {
+		int hdlc_len;
+		unsigned char hdlc[2+2*(62+4)]; /* start/stop + escaping*(maxbuf+crc32) */
+		unsigned char *ptr;
+
+		hdlc_len = hdlc_reencode(hdlc, buf+2, buf[1]);
+
+		ptr = hdlc;
+		do {
+			int len = hdlc_len;
+
+			if (len > io->packet_size)
+				len = io->packet_size;
+			rc = io->packet_write(io, ptr, len, &transferred);
+			if (rc != DC_STATUS_SUCCESS)
+				break;
+			ptr += len;
+			hdlc_len -= len;
+		} while (hdlc_len);
+	} else {
+		rc = io->packet_write(io, buf, sizeof(buf), &transferred);
+	}
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR(eon->base.context, "write interrupt transfer failed");
 		return -1;
