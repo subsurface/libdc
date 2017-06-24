@@ -58,11 +58,11 @@ static dc_status_t
 scubapro_g2_extract_dives (dc_device_t *device, const unsigned char data[], unsigned int size, dc_dive_callback_t callback, void *userdata);
 
 #define PACKET_SIZE 64
-static int receive_data(scubapro_g2_device_t *g2, unsigned char *buffer, int size)
+static int receive_data(scubapro_g2_device_t *g2, unsigned char *buffer, int size, dc_event_progress_t *progress)
 {
 	dc_custom_io_t *io = _dc_context_custom_io(g2->base.context);
 	while (size) {
-		unsigned char buf[PACKET_SIZE];
+		unsigned char buf[PACKET_SIZE] = { 0 };
 		size_t transferred = 0;
 		dc_status_t rc;
 		int len;
@@ -72,11 +72,15 @@ static int receive_data(scubapro_g2_device_t *g2, unsigned char *buffer, int siz
 			ERROR(g2->base.context, "read interrupt transfer failed");
 			return -1;
 		}
-		if (transferred != PACKET_SIZE) {
+		if (io->packet_size == PACKET_SIZE && transferred != PACKET_SIZE) {
 			ERROR(g2->base.context, "incomplete read interrupt transfer (got %zu, expected %d)", transferred, PACKET_SIZE);
 			return -1;
 		}
 		len = buf[0];
+		if (transferred < len + 1) {
+			ERROR(g2->base.context, "small packet read (got %zu, expected at least %d)", transferred, len + 1);
+			return -1;
+		}
 		if (len >= PACKET_SIZE) {
 			ERROR(g2->base.context, "read interrupt transfer returns impossible packet size (%d)", len);
 			return -1;
@@ -89,6 +93,12 @@ static int receive_data(scubapro_g2_device_t *g2, unsigned char *buffer, int siz
 		memcpy(buffer, buf+1, len);
 		size -= len;
 		buffer += len;
+
+		// Update and emit a progress event?
+		if (progress) {
+			progress->current += len;
+			device_event_emit(&g2->base, DC_EVENT_PROGRESS, progress);
+		}
 	}
 	return 0;
 }
@@ -116,7 +126,7 @@ scubapro_g2_transfer(scubapro_g2_device_t *g2, const unsigned char command[], un
 		return status;
 	}
 
-	if (receive_data(g2, answer, asize) < 0) {
+	if (receive_data(g2, answer, asize, NULL) < 0) {
 		ERROR(g2->base.context, "Failed to receive the answer.");
 		return DC_STATUS_IO;
 	}
@@ -351,14 +361,10 @@ scubapro_g2_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 		return DC_STATUS_PROTOCOL;
 	}
 
-	if (receive_data(device, data, length)) {
+	if (receive_data(device, data, length, &progress)) {
 		ERROR (abstract->context, "Received an unexpected size.");
 		return DC_STATUS_IO;
 	}
-
-	// Update and emit a progress event.
-	progress.current += length;
-	device_event_emit (&device->base, DC_EVENT_PROGRESS, &progress);
 
 	return DC_STATUS_SUCCESS;
 }

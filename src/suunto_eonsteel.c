@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>	/* For crc32() */
 
 #include "suunto_eonsteel.h"
 #include "context-private.h"
@@ -125,11 +126,10 @@ static void put_le32(unsigned int val, unsigned char *p)
  * The maximum payload is 62 bytes.
  */
 #define PACKET_SIZE 64
-static int receive_packet(suunto_eonsteel_device_t *eon, unsigned char *buffer, int size)
+static int receive_usbhid_packet(dc_custom_io_t *io, suunto_eonsteel_device_t *eon, unsigned char *buffer, int size)
 {
 	unsigned char buf[64];
 	dc_status_t rc = DC_STATUS_SUCCESS;
-	dc_custom_io_t *io = _dc_context_custom_io(eon->base.context);
 	size_t transferred = 0;
 	int len;
 
@@ -158,6 +158,159 @@ static int receive_packet(suunto_eonsteel_device_t *eon, unsigned char *buffer, 
 	HEXDUMP (eon->base.context, DC_LOGLEVEL_DEBUG, "rcv", buf+2, len);
 	memcpy(buffer, buf+2, len);
 	return len;
+}
+
+static int fill_ble_buffer(dc_custom_io_t *io, suunto_eonsteel_device_t *eon, unsigned char *buffer, int size)
+{
+	int state = 0;
+	int bytes = 0;
+	unsigned int crc;
+
+	for (;;) {
+		unsigned char packet[32];
+		dc_status_t rc = DC_STATUS_SUCCESS;
+		size_t transferred = 0;
+		int i;
+
+		rc = io->packet_read(io, packet, sizeof(packet), &transferred);
+		if (rc != DC_STATUS_SUCCESS) {
+			ERROR(eon->base.context, "BLE GATT read transfer failed");
+			return -1;
+		}
+		for (i = 0; i < transferred; i++) {
+			unsigned char c = packet[i];
+
+			if (c == 0x7e) {
+				if (state == 1)
+					goto done;
+				if (state == 2) {
+					ERROR(eon->base.context, "BLE GATT stream has escaped 7e character");
+					return -1;
+				}
+				/* Initial 7e character - good */
+				state = 1;
+				continue;
+			}
+
+			if (!state) {
+				ERROR(eon->base.context, "BLE GATT stream did not start with 7e");
+				return -1;
+			}
+
+			if (c == 0x7d) {
+				if (state == 2) {
+					ERROR(eon->base.context, "BLE GATT stream has escaped 7d character");
+					return -1;
+				}
+				state = 2;
+				continue;
+			}
+
+			if (state == 2) {
+				c ^= 0x20;
+				state = 1;
+			}
+			if (bytes < size)
+				buffer[bytes] = c;
+			bytes++;
+		}
+	}
+done:
+	if (bytes < 4) {
+		ERROR(eon->base.context, "did not receive BLE CRC32 data");
+		return -1;
+	}
+	if (bytes > size) {
+		ERROR(eon->base.context, "BLE GATT stream too long (%d bytes, buffer is %d)", bytes, size);
+		return -1;
+	}
+
+	/* Remove and check CRC */
+	bytes -= 4;
+	crc = crc32(0, buffer, bytes);
+	if (crc != array_uint32_le(buffer + bytes)) {
+		ERROR(eon->base.context, "incorrect BLE CRC32 data");
+		return -1;
+	}
+	HEXDUMP (eon->base.context, DC_LOGLEVEL_DEBUG, "rcv", buffer, bytes);
+	return bytes;
+}
+
+#define HDRSIZE 12
+#define MAXDATA 2048
+#define CRCSIZE 4
+
+static struct {
+	unsigned int len, offset;
+	unsigned char buffer[HDRSIZE + MAXDATA + CRCSIZE];
+} ble_data;
+
+static void fill_ble_data(dc_custom_io_t *io, suunto_eonsteel_device_t *eon)
+{
+	int received;
+
+	received = fill_ble_buffer(io, eon, ble_data.buffer, sizeof(ble_data.buffer));
+	if (received < 0)
+		received = 0;
+	ble_data.offset = 0;
+	ble_data.len = received;
+}
+
+static int receive_ble_packet(dc_custom_io_t *io, suunto_eonsteel_device_t *eon, unsigned char *buffer, int size)
+{
+	int maxsize;
+
+	if (ble_data.offset >= ble_data.len)
+		return 0;
+	maxsize = ble_data.len - ble_data.offset;
+	if (size > maxsize)
+		size = maxsize;
+	memcpy(buffer, ble_data.buffer + ble_data.offset, size);
+	ble_data.offset += size;
+	return size;
+}
+
+static int receive_packet(dc_custom_io_t *io, suunto_eonsteel_device_t *eon, unsigned char *buffer, int size)
+{
+	if (io->packet_size < 64)
+		return receive_ble_packet(io, eon, buffer, size);
+	return receive_usbhid_packet(io, eon, buffer, size);
+}
+
+static int add_hdlc(unsigned char *dst, unsigned char val)
+{
+	int chars = 1;
+	switch (val) {
+	case 0x7e: case 0x7d:
+		*dst++ = 0x7d;
+		val ^= 0x20;
+		chars++;
+		/* fallthrough */
+	default:
+		*dst = val;
+	}
+	return chars;
+}
+
+static int hdlc_reencode(unsigned char *dst, unsigned char *src, int len)
+{
+	unsigned int crc = crc32(0, src, len);
+	int result = 0, i;
+
+	*dst++ = 0x7e; result++;
+	for (i = 0; i < len; i++) {
+		int chars = add_hdlc(dst, src[i]);
+		dst += chars;
+		result += chars;
+	}
+	for (i = 0; i < 4; i++) {
+		int chars = add_hdlc(dst, crc & 255);
+		dst += chars;
+		result += chars;
+		crc >>= 8;
+	}
+	*dst++ = 0x7e; result++;
+	return result;
 }
 
 static int send_cmd(suunto_eonsteel_device_t *eon,
@@ -200,7 +353,29 @@ static int send_cmd(suunto_eonsteel_device_t *eon,
 		memcpy(buf+14, buffer, len);
 	}
 
-	rc = io->packet_write(io, buf, sizeof(buf), &transferred);
+	// BLE GATT protocol?
+	if (io->packet_size < 64) {
+		int hdlc_len;
+		unsigned char hdlc[2+2*(62+4)]; /* start/stop + escaping*(maxbuf+crc32) */
+		unsigned char *ptr;
+
+		hdlc_len = hdlc_reencode(hdlc, buf+2, buf[1]);
+
+		ptr = hdlc;
+		do {
+			int len = hdlc_len;
+
+			if (len > io->packet_size)
+				len = io->packet_size;
+			rc = io->packet_write(io, ptr, len, &transferred);
+			if (rc != DC_STATUS_SUCCESS)
+				break;
+			ptr += len;
+			hdlc_len -= len;
+		} while (hdlc_len);
+	} else {
+		rc = io->packet_write(io, buf, sizeof(buf), &transferred);
+	}
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR(eon->base.context, "write interrupt transfer failed");
 		return -1;
@@ -222,8 +397,11 @@ static int receive_header(suunto_eonsteel_device_t *eon, struct eon_hdr *hdr, un
 {
 	int ret;
 	unsigned char header[64];
+	dc_custom_io_t *io = _dc_context_custom_io(eon->base.context);
 
-	ret = receive_packet(eon, header, sizeof(header));
+	if (io->packet_size < 64)
+		fill_ble_data(io, eon);
+	ret = receive_packet(io, eon, header, sizeof(header));
 	if (ret < 0)
 		return -1;
 	if (ret < 12) {
@@ -249,11 +427,12 @@ static int receive_header(suunto_eonsteel_device_t *eon, struct eon_hdr *hdr, un
 static int receive_data(suunto_eonsteel_device_t *eon, unsigned char *buffer, int size)
 {
 	int ret = 0;
+	dc_custom_io_t *io = _dc_context_custom_io(eon->base.context);
 
 	while (size > 0) {
 		int len;
 
-		len = receive_packet(eon, buffer + ret, size);
+		len = receive_packet(io, eon, buffer + ret, size);
 		if (len < 0)
 			return -1;
 
@@ -438,7 +617,7 @@ static struct directory_entry *parse_dirent(suunto_eonsteel_device_t *eon, int n
 		struct directory_entry *entry;
 
 		if (namelen + 8 + 1 > len || name[namelen] != 0) {
-			ERROR(eon->base.context, "corrupt dirent entry");
+			ERROR(eon->base.context, "corrupt dirent entry: len=%d namelen=%d name='%s'", len, namelen, name);
 			break;
 		}
 		HEXDUMP(eon->base.context, DC_LOGLEVEL_DEBUG, "dir entry", p, 8);
@@ -571,7 +750,7 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char
 	return DC_STATUS_SUCCESS;
 
 error_close:
-	io->packet_close(io);
+	suunto_eonsteel_device_close((dc_device_t *) eon);
 error_free:
 	free(eon);
 	return status;
