@@ -31,6 +31,9 @@ extern "C" {
 
 typedef struct dc_context_t dc_context_t;
 
+/* Opaque libdivecomputer *user* data structure */
+typedef struct dc_user_device_t dc_user_device_t;
+
 typedef enum dc_loglevel_t {
 	DC_LOGLEVEL_NONE,
 	DC_LOGLEVEL_ERROR,
@@ -49,7 +52,7 @@ dc_status_t
 dc_context_free (dc_context_t *context);
 
 dc_status_t
-dc_context_set_custom_io (dc_context_t *context, dc_custom_io_t *custom_io);
+dc_context_set_custom_io (dc_context_t *context, dc_custom_io_t *custom_io, dc_user_device_t *);
 
 dc_status_t
 dc_context_set_loglevel (dc_context_t *context, dc_loglevel_t loglevel);

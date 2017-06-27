@@ -28,7 +28,7 @@ extern "C" {
 
 /* use these defines to detect Subsurface specific features */
 #define SSRF_LIBDC_VERSION 2
-#define SSRF_CUSTOM_IO 1
+#define SSRF_CUSTOM_IO 2
 
 #define DC_VERSION "@DC_VERSION@"
 #define DC_VERSION_MAJOR @DC_VERSION_MAJOR@
