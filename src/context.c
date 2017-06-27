@@ -47,6 +47,7 @@ struct dc_context_t {
 #endif
 #endif
 	dc_custom_io_t *custom_io;
+	dc_user_device_t *user_device;
 };
 
 #ifdef ENABLE_LOGGING
@@ -213,12 +214,13 @@ dc_context_free (dc_context_t *context)
 }
 
 dc_status_t
-dc_context_set_custom_io (dc_context_t *context, dc_custom_io_t *custom_io)
+dc_context_set_custom_io (dc_context_t *context, dc_custom_io_t *custom_io, dc_user_device_t *user_device)
 {
 	if (context == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	context->custom_io = custom_io;
+	custom_io->user_device = user_device;
 
 	return DC_STATUS_SUCCESS;
 }

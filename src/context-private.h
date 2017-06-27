@@ -81,7 +81,7 @@ _dc_context_custom_io (dc_context_t *context);
 		dc_status_t _rc; \
 		if (c) { \
 			if (c->serial_##function) \
-				_rc = c->serial_##function(&c->userdata, ##__VA_ARGS__); \
+				_rc = c->serial_##function(c, ##__VA_ARGS__); \
 			else \
 				_rc = DC_STATUS_SUCCESS; \
 			block ;\

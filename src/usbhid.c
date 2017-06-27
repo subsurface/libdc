@@ -119,7 +119,7 @@ dc_usbhid_custom_io (dc_context_t *context, unsigned int vid, unsigned int pid)
 		return status;
 
 	custom.userdata = (void *)usbhid;
-	dc_context_set_custom_io(context, &custom);
+	dc_context_set_custom_io(context, &custom, NULL);
 
 	dc_usbhid_set_timeout(usbhid, 10);
 

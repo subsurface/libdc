@@ -157,7 +157,7 @@ dc_serial_open (dc_serial_t **out, dc_context_t *context, const char *name)
 	device->baudrate = 0;
 	device->nbits = 0;
 
-	RETURN_IF_CUSTOM_SERIAL(context, *out = device, open, name);
+	RETURN_IF_CUSTOM_SERIAL(context, *out = device, open, context, name);
 
 	// Open the device.
 	device->hFile = CreateFileA (devname,
