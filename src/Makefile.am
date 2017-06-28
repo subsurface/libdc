@@ -3,7 +3,7 @@ AM_CFLAGS = $(LIBUSB_CFLAGS) $(HIDAPI_CFLAGS)
 
 lib_LTLIBRARIES = libdivecomputer.la
 
-libdivecomputer_la_LIBADD = $(LIBUSB_LIBS) $(HIDAPI_LIBS) -lm
+libdivecomputer_la_LIBADD = $(LIBUSB_LIBS) $(HIDAPI_LIBS) -lm -lz
 libdivecomputer_la_LDFLAGS = \
 	-version-info $(DC_VERSION_LIBTOOL) \
 	-no-undefined \
