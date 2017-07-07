@@ -74,6 +74,7 @@ struct shearwater_predator_parser_t {
 	double calibration[3];
 	unsigned int serial;
 	dc_divemode_t mode;
+	unsigned char logversion;
 };
 
 static dc_status_t shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -235,6 +236,13 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		ERROR (abstract->context, "Invalid data length.");
 		return DC_STATUS_DATAFORMAT;
 	}
+
+	// Log versions before 6 weren't reliably stored in the data, but
+	// 6 is also the oldest version that we assume in our code
+	parser->logversion = 6;
+	if (data[127] > 6)
+		parser->logversion = data[127];
+	INFO(abstract->context, "Shearwater log version %u\n", parser->logversion);
 
 	// Adjust the footersize for the final block.
 	if (parser->petrel || array_uint16_be (data + size - footersize) == 0xFFFD) {
