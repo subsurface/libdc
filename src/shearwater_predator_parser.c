@@ -75,6 +75,7 @@ struct shearwater_predator_parser_t {
 	unsigned int serial;
 	dc_divemode_t mode;
 	unsigned char logversion;
+	unsigned char tstate[2];
 };
 
 static dc_status_t shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -501,8 +502,12 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 	unsigned int time = 0;
 	unsigned int offset = parser->headersize;
 	unsigned int length = size - parser->footersize;
+
+	// initialize sensors as not paired
+	parser->tstate[1] = parser->tstate[0] = 0xF;
+
+	dc_sample_value_t sample = {0};
 	while (offset < length) {
-		dc_sample_value_t sample = {0};
 
 		// Ignore empty samples.
 		if (array_isequal (data + offset, parser->samplesize, 0x00)) {
@@ -618,6 +623,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 			// top 4 bits battery level:
 			// 0 - normal, 1 - critical, 2 - warning
 			unsigned int pressure = array_uint16_be (data + offset + 27);
+			parser->tstate[0] = pressure >> 12;
 			if ((pressure & 0xFFF0) != 0xFFF0) {
 				pressure &= 0x0FFF;
 				sample.pressure.tank = 0;
@@ -625,6 +631,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
 			}
 			pressure = array_uint16_be (data + offset + 19);
+			parser->tstate[1] = pressure >> 12;
 			if ((pressure & 0xFFF0) != 0xFFF0) {
 				pressure &= 0x0FFF;
 				sample.pressure.tank = 1;
@@ -640,6 +647,11 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 
 		offset += parser->samplesize;
 	}
-
+	if (parser->logversion >= 7 && (parser->tstate[0] != 0xf || parser->tstate[1] != 0xf)) {
+		sample.vendor.type = SAMPLE_VENDOR_SHEARWATER_TRANSMITTERDATA;
+		sample.vendor.size = 2;
+		sample.vendor.data = parser->tstate;
+		if (callback) callback (DC_SAMPLE_VENDOR, sample, userdata);
+	}
 	return DC_STATUS_SUCCESS;
 }
