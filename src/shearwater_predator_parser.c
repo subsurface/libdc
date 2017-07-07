@@ -583,6 +583,30 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		sample.deco.time = data[offset + 9] * 60;
 		if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
 
+		// for logversion 7 and newer (introduced for Perdix AI)
+		// detect tank pressure
+		if (parser->logversion >= 7) {
+			// Pressure (2 psi).
+			// 0xFFFF is not paired / no coms for 90 seconds
+			// 0xFFFE no coms for 30 seconds
+			// top 4 bits battery level:
+			// 0 - normal, 1 - critical, 2 - warning
+			unsigned int pressure = array_uint16_be (data + offset + 27);
+			if ((pressure & 0xFFF0) != 0xFFF0) {
+				pressure &= 0x0FFF;
+				sample.pressure.tank = 0;
+				sample.pressure.value = pressure * 2 * PSI / BAR;
+				if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+			}
+			pressure = array_uint16_be (data + offset + 19);
+			if ((pressure & 0xFFF0) != 0xFFF0) {
+				pressure &= 0x0FFF;
+				sample.pressure.tank = 1;
+				sample.pressure.value = pressure * 2 * PSI / BAR;
+				if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+			}
+		}
+
 		offset += parser->samplesize;
 	}
 
