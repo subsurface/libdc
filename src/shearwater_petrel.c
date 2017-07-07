@@ -199,9 +199,53 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	// Convert to a number.
 	unsigned int firmware = str2num (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer), 1);
 
+	// get the product information
+	rc = shearwater_common_identifier (&device->base, buffer, ID_HARDWARE_TYPE);
+	if (rc != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to read the hardware type.");
+		dc_buffer_free (buffer);
+		dc_buffer_free (manifests);
+		return rc;
+	}
+
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
-	devinfo.model = 3;
+	if (dc_buffer_get_size (buffer) == 2) {
+		unsigned short model_code = array_uint16_be(dc_buffer_get_data (buffer));
+		switch (model_code) {
+		case 0x0101:
+		case 0x0202:
+			devinfo.model = PREDATOR;
+			break;
+		case 0x0606:
+		case 0x0A0A:
+			devinfo.model = NERD;
+			break;
+		case 0x0404:
+		case 0x0909:
+		case 0x0B0B:
+			devinfo.model = PETREL;
+			break;
+		case 0x0505:
+		case 0x0808:
+			devinfo.model = PETREL2;
+			break;
+		case 0x0707: // documentation list 0C0D for both Perdix and Perdix AI :-(
+			devinfo.model = PERDIX;
+			break;
+		case 0x0C0C:
+		case 0x0C0D:
+		case 0x0D0D:
+			devinfo.model = PERDIXAI;
+			break;
+		default:
+			devinfo.model = PETREL;
+			ERROR (abstract->context, "Unknown model code - assuming Petrel.");
+		}
+	} else {
+		devinfo.model = PERDIX;
+		ERROR (abstract->context, "Failed to read hardware type - assuming Petrel.");
+	}
 	devinfo.firmware = firmware;
 	devinfo.serial = array_uint32_be (serial);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);

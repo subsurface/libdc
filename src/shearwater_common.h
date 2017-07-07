@@ -31,6 +31,14 @@ extern "C" {
 
 #define ID_SERIAL   0x8010
 #define ID_FIRMWARE 0x8011
+#define ID_HARDWARE_TYPE 0x8050
+
+#define PREDATOR 2
+#define PETREL   3
+#define PETREL2  4
+#define NERD     5
+#define PERDIX   6
+#define PERDIXAI 7
 
 typedef struct shearwater_common_device_t {
 	dc_device_t base;
