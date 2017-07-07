@@ -605,6 +605,11 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				sample.pressure.value = pressure * 2 * PSI / BAR;
 				if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
 			}
+			// Gas time remaining in minutes
+			if (data[offset + 21] < 0xFBu) {
+				sample.rbt = data[offset + 21];
+				if (callback) callback (DC_SAMPLE_RBT, sample, userdata);
+			}
 		}
 
 		offset += parser->samplesize;
