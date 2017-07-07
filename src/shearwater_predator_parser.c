@@ -439,6 +439,32 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 					return DC_STATUS_DATAFORMAT;
 				}
 				break;
+			case 5: /* battery type */
+				if (parser->logversion >= 7) {
+					string->desc = "Battery type";
+					switch (data[120]) {
+					case 1:
+						strncpy(buf, "1.5V Alkaline", BUFLEN);
+						break;
+					case 2:
+						strncpy(buf, "1.5V Lithium", BUFLEN);
+						break;
+					case 3:
+						strncpy(buf, "1.2V NiMH", BUFLEN);
+						break;
+					case 4:
+						strncpy(buf, "3.6V Saft", BUFLEN);
+						break;
+					case 5:
+						strncpy(buf, "3.7V Li-Ion", BUFLEN);
+						break;
+					default:
+						strncpy(buf, "unknown", BUFLEN);
+						break;
+					}
+					break;
+				}
+				/* fall through as logversion < 7 */
 			default:
 				return DC_STATUS_UNSUPPORTED;
 			}
