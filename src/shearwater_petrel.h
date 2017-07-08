@@ -34,7 +34,7 @@ dc_status_t
 shearwater_petrel_device_open (dc_device_t **device, dc_context_t *context, const char *name);
 
 dc_status_t
-shearwater_petrel_parser_create (dc_parser_t **parser, dc_context_t *context, unsigned int model, unsigned int serial);
+shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial);
 
 #ifdef __cplusplus
 }

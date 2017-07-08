@@ -31,6 +31,7 @@
 
 #include "shearwater_predator.h"
 #include "shearwater_petrel.h"
+#include "shearwater_common.h"
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"
@@ -54,15 +55,11 @@
 
 #define NGASMIXES 10
 
-#define PREDATOR 2
-#define PETREL   3
-
 typedef struct shearwater_predator_parser_t shearwater_predator_parser_t;
 
 struct shearwater_predator_parser_t {
 	dc_parser_t base;
 	unsigned int model;
-	unsigned int petrel;
 	unsigned int samplesize;
 	// Cached fields.
 	unsigned int cached;
@@ -118,8 +115,8 @@ shearwater_predator_find_gasmix (shearwater_predator_parser_t *parser, unsigned 
 }
 
 
-static dc_status_t
-shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial, unsigned int petrel)
+dc_status_t
+shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
 {
 	shearwater_predator_parser_t *parser = NULL;
 	const dc_parser_vtable_t *vtable = NULL;
@@ -128,7 +125,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
-	if (petrel) {
+	if (model != PREDATOR) {
 		vtable = &shearwater_petrel_parser_vtable;
 		samplesize = SZ_SAMPLE_PETREL;
 	} else {
@@ -145,7 +142,6 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 
 	// Set the default values.
 	parser->model = model;
-	parser->petrel = petrel;
 	parser->samplesize = samplesize;
 	parser->serial = serial;
 
@@ -163,20 +159,6 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 	*out = (dc_parser_t *) parser;
 
 	return DC_STATUS_SUCCESS;
-}
-
-
-dc_status_t
-shearwater_predator_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
-{
-	return shearwater_common_parser_create (out, context, model, serial, 0);
-}
-
-
-dc_status_t
-shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
-{
-	return shearwater_common_parser_create (out, context, model, serial, 1);
 }
 
 
@@ -246,7 +228,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	INFO(abstract->context, "Shearwater log version %u\n", parser->logversion);
 
 	// Adjust the footersize for the final block.
-	if (parser->petrel || array_uint16_be (data + size - footersize) == 0xFFFD) {
+	if (parser->model > PREDATOR || array_uint16_be (data + size - footersize) == 0xFFFD) {
 		footersize += SZ_BLOCK;
 		if (size < headersize + footersize) {
 			ERROR (abstract->context, "Invalid data length.");
@@ -565,7 +547,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 #endif
 
 			// Setpoint
-			if (parser->petrel) {
+			if (parser->model > PREDATOR) {
 				sample.setpoint = data[offset + 18] / 100.0;
 			} else {
 				if (status & SETPOINT_HIGH) {
@@ -578,7 +560,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		}
 
 		// CNS
-		if (parser->petrel) {
+		if (parser->model > PREDATOR) {
 			sample.cns = data[offset + 22] / 100.0;
 			if (callback) callback (DC_SAMPLE_CNS, sample, userdata);
 		}
