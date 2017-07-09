@@ -121,11 +121,7 @@ typedef enum parser_sample_vendor_t {
 	SAMPLE_VENDOR_OCEANIC_VTPRO,
 	SAMPLE_VENDOR_OCEANIC_VEO250,
 	SAMPLE_VENDOR_OCEANIC_ATOM2,
-	SAMPLE_VENDOR_SHEARWATER_TRANSMITTERDATA
 } parser_sample_vendor_t;
-
-// allow to check at compile time for this feature
-#define SAMPLE_VENDOR_SHEARWATER_TRANSMITTERDATA SAMPLE_VENDOR_SHEARWATER_TRANSMITTERDATA
 
 typedef enum dc_water_t {
 	DC_WATER_FRESH,

@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 
 #ifdef _MSC_VER
 #define snprintf _snprintf
@@ -54,6 +55,7 @@
 #define IMPERIAL 1
 
 #define NGASMIXES 10
+#define MAXSTRINGS 32
 
 typedef struct shearwater_predator_parser_t shearwater_predator_parser_t;
 
@@ -72,7 +74,9 @@ struct shearwater_predator_parser_t {
 	unsigned int serial;
 	dc_divemode_t mode;
 	unsigned char logversion;
-	unsigned char tstate[2];
+
+	/* String fields */
+	dc_field_string_t strings[MAXSTRINGS];
 };
 
 static dc_status_t shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -199,8 +203,146 @@ shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *d
 	return DC_STATUS_SUCCESS;
 }
 
+/*
+ * These string cache interfaces should be some generic
+ * library rather than copied for all the dive computers.
+ *
+ * This is just copied from the EON Steel code.
+ */
+static void
+add_string(shearwater_predator_parser_t *parser, const char *desc, const char *value)
+{
+	int i;
 
-#define BUFLEN 32
+	for (i = 0; i < MAXSTRINGS; i++) {
+		dc_field_string_t *str = parser->strings+i;
+		if (str->desc)
+			continue;
+		str->desc = desc;
+		str->value = strdup(value);
+		break;
+	}
+}
+
+static void
+add_string_fmt(shearwater_predator_parser_t *parser, const char *desc, const char *fmt, ...)
+{
+	char buffer[256];
+	va_list ap;
+
+	/*
+	 * We ignore the return value from vsnprintf, and we
+	 * always NUL-terminate the destination buffer ourselves.
+	 *
+	 * That way we don't have to worry about random bad legacy
+	 * implementations.
+	 */
+	va_start(ap, fmt);
+	buffer[sizeof(buffer)-1] = 0;
+	(void) vsnprintf(buffer, sizeof(buffer)-1, fmt, ap);
+	va_end(ap);
+
+	return add_string(parser, desc, buffer);
+}
+
+// The Battery state is a big-endian word:
+//
+//  ffff = not paired / no comms for 90 s
+//  fffe = no comms for 30 s
+//
+// Otherwise:
+//   - top four bits are battery state (0 - normal, 1 - critical, 2 - warning)
+//   - bottom 12 bits are pressure in 2 psi increments (0..8k psi)
+//
+// This returns the state as a bitmask (so you can see all states it had
+// during the dive). Note that we currently do not report pairing and
+// communication lapses. Todo?
+static unsigned int
+battery_state(const unsigned char *data)
+{
+	unsigned int pressure = array_uint16_be(data);
+	unsigned int state;
+
+	if ((pressure & 0xFFF0) == 0xFFF0)
+		return 0;
+	state = pressure >> 12;
+	if (state > 2)
+		return 0;
+	return 1u << state;
+}
+
+// Show the battery state
+//
+// NOTE! Right now it only shows the most serious bit
+// but the code is set up so that we could perhaps
+// indicate that the battery is on the edge (ie it
+// reported both "normal" _and_ "warning" during the
+// dive - maybe that would be a "starting to warn")
+//
+// We could also report unpaired and comm errors.
+static void
+add_battery_info(shearwater_predator_parser_t *parser, const char *desc, unsigned int state)
+{
+	if (state >= 1 && state <= 7) {
+		static const char *states[8] = {
+			"",		// 000 - No state bits, not used
+			"normal",	// 001 - only normal
+			"critical",	// 010 - only critical
+			"critical",	// 011 - both normal and critical
+			"warning",	// 100 - only warning
+			"warning",	// 101 - normal and warning
+			"critical",	// 110 - warning and critical
+			"critical",	// 111 - normal, warning and critical
+		};
+		add_string(parser, desc, states[state]);
+	}
+}
+
+static void
+add_deco_model(shearwater_predator_parser_t *parser, const unsigned char *data)
+{
+	switch	(data[67]) {
+	case 0:
+		add_string_fmt(parser, "Deco model", "GF %u/%u", data[4], data[5]);
+		break;
+	case 1:
+		add_string_fmt(parser, "Deco model", "VPM-B +%u", data[68]);
+		break;
+	case 2:
+		add_string_fmt(parser, "Deco model", "VPM-B/GFS +%u %u%%", data[68], data[85]);
+		break;
+	default:
+		add_string_fmt(parser, "Deco model", "Unknown model %d", data[67]);
+	}
+}
+
+static void
+add_battery_type(shearwater_predator_parser_t *parser, const unsigned char *data)
+{
+	if (parser->logversion < 7)
+		return;
+
+	switch (data[120]) {
+	case 1:
+		add_string(parser, "Battery type", "1.5V Alkaline");
+		break;
+	case 2:
+		add_string(parser, "Battery type", "1.5V Lithium");
+		break;
+	case 3:
+		add_string(parser, "Battery type", "1.2V NiMH");
+		break;
+	case 4:
+		add_string(parser, "Battery type", "3.6V Saft");
+		break;
+	case 5:
+		add_string(parser, "Battery type", "3.7V Li-Ion");
+		break;
+	default:
+		add_string_fmt(parser, "Battery type", "unknown type %d", data[120]);
+		break;
+	}
+}
 
 static dc_status_t
 shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
@@ -227,6 +369,8 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		parser->logversion = data[127];
 	INFO(abstract->context, "Shearwater log version %u\n", parser->logversion);
 
+	memset(parser->strings, 0, sizeof(parser->strings));
+
 	// Adjust the footersize for the final block.
 	if (parser->model > PREDATOR || array_uint16_be (data + size - footersize) == 0xFFFD) {
 		footersize += SZ_BLOCK;
@@ -244,6 +388,9 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	unsigned int oxygen[NGASMIXES] = {0};
 	unsigned int helium[NGASMIXES] = {0};
 	unsigned int o2_previous = 0, he_previous = 0;
+
+	// Transmitter battery levels
+	unsigned int t1_battery = 0, t2_battery = 0;
 
 	unsigned int offset = headersize;
 	unsigned int length = size - footersize;
@@ -287,6 +434,13 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			he_previous = he;
 		}
 
+		// Transmitter battery levels
+		if (parser->logversion >= 7) {
+			// T1 at offset 27, T2 at offset 19
+			t1_battery |= battery_state(data + offset + 27);
+			t2_battery |= battery_state(data + offset + 19);
+		}
+
 		offset += parser->samplesize;
 	}
 
@@ -313,6 +467,13 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		parser->helium[i] = helium[i];
 	}
 	parser->mode = mode;
+	add_string_fmt(parser, "Serial", "%08x", parser->serial);
+	add_string_fmt(parser, "FW Version", "%2x", data[19]);
+	add_deco_model(parser, data);
+	add_battery_type(parser, data);
+	add_string_fmt(parser, "Battery at end", "%.1f V", data[9] / 10.0);
+	add_battery_info(parser, "T1 battery", t1_battery);
+	add_battery_info(parser, "T2 battery", t2_battery);
 	parser->cached = 1;
 
 	return DC_STATUS_SUCCESS;
@@ -341,7 +502,6 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 	dc_salinity_t *water = (dc_salinity_t *) value;
 	dc_field_string_t *string = (dc_field_string_t *) value;
 	unsigned int density = 0;
-	char buf[BUFLEN];
 
 	if (value) {
 		switch (type) {
@@ -377,82 +537,14 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			*((dc_divemode_t *) value) = parser->mode;
 			break;
 		case DC_FIELD_STRING:
-			switch(flags) {
-			case 0: // Battery
-				string->desc = "Battery at end";
-				snprintf(buf, BUFLEN, "%.1f", data[9] / 10.0);
-				break;
-			case 1: // Serial
-				string->desc = "Serial";
-				snprintf(buf, BUFLEN, "%08x", parser->serial);
-				break;
-			case 2: // FW Version
-				string->desc = "FW Version";
-				snprintf(buf, BUFLEN, "%2x", data[19]);
-				break;
-			case 3: /* Deco model */
-				string->desc = "Deco model";
-				switch (data[67]) {
-				case 0:
-					strncpy(buf, "GF", BUFLEN);
-					break;
-				case 1:
-					strncpy(buf, "VPM-B", BUFLEN);
-					break;
-				case 2:
-					strncpy(buf, "VPM-B/GFS", BUFLEN);
-					break;
-				default:
-					return DC_STATUS_DATAFORMAT;
-				}
-				break;
-			case 4: /* Deco model info */
-				string->desc = "Deco model info";
-				switch (data[67]) {
-				case 0:
-					snprintf(buf, BUFLEN, "GF %u/%u", data[4], data[5]);
-					break;
-				case 1:
-					snprintf(buf, BUFLEN, "VPM-B +%u", data[68]);
-					break;
-				case 2:
-					snprintf(buf, BUFLEN, "VPM-B/GFS +%u %u%%", data[68], data[85]);
-					break;
-				default:
-					return DC_STATUS_DATAFORMAT;
-				}
-				break;
-			case 5: /* battery type */
-				if (parser->logversion >= 7) {
-					string->desc = "Battery type";
-					switch (data[120]) {
-					case 1:
-						strncpy(buf, "1.5V Alkaline", BUFLEN);
-						break;
-					case 2:
-						strncpy(buf, "1.5V Lithium", BUFLEN);
-						break;
-					case 3:
-						strncpy(buf, "1.2V NiMH", BUFLEN);
-						break;
-					case 4:
-						strncpy(buf, "3.6V Saft", BUFLEN);
-						break;
-					case 5:
-						strncpy(buf, "3.7V Li-Ion", BUFLEN);
-						break;
-					default:
-						strncpy(buf, "unknown", BUFLEN);
-						break;
-					}
+			if (flags < MAXSTRINGS) {
+				dc_field_string_t *p = parser->strings + flags;
+				if (p->desc) {
+					*string = *p;
 					break;
 				}
-				/* fall through as logversion < 7 */
-			default:
-				return DC_STATUS_UNSUPPORTED;
 			}
-			string->value = strdup(buf);
-			break;
+			return DC_STATUS_UNSUPPORTED;
 		default:
 			return DC_STATUS_UNSUPPORTED;
 		}
@@ -485,11 +577,8 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 	unsigned int offset = parser->headersize;
 	unsigned int length = size - parser->footersize;
 
-	// initialize sensors as not paired
-	parser->tstate[1] = parser->tstate[0] = 0xF;
-
-	dc_sample_value_t sample = {0};
 	while (offset < length) {
+		dc_sample_value_t sample = {0};
 
 		// Ignore empty samples.
 		if (array_isequal (data + offset, parser->samplesize, 0x00)) {
@@ -605,7 +694,6 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 			// top 4 bits battery level:
 			// 0 - normal, 1 - critical, 2 - warning
 			unsigned int pressure = array_uint16_be (data + offset + 27);
-			parser->tstate[0] = pressure >> 12;
 			if ((pressure & 0xFFF0) != 0xFFF0) {
 				pressure &= 0x0FFF;
 				sample.pressure.tank = 0;
@@ -613,7 +701,6 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
 			}
 			pressure = array_uint16_be (data + offset + 19);
-			parser->tstate[1] = pressure >> 12;
 			if ((pressure & 0xFFF0) != 0xFFF0) {
 				pressure &= 0x0FFF;
 				sample.pressure.tank = 1;
@@ -628,12 +715,6 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		}
 
 		offset += parser->samplesize;
-	}
-	if (parser->logversion >= 7 && (parser->tstate[0] != 0xf || parser->tstate[1] != 0xf)) {
-		sample.vendor.type = SAMPLE_VENDOR_SHEARWATER_TRANSMITTERDATA;
-		sample.vendor.size = 2;
-		sample.vendor.data = parser->tstate;
-		if (callback) callback (DC_SAMPLE_VENDOR, sample, userdata);
 	}
 	return DC_STATUS_SUCCESS;
 }
