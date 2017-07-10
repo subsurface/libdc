@@ -59,8 +59,7 @@ typedef enum dc_family_t {
 	DC_FAMILY_UWATEC_MEMOMOUSE,
 	DC_FAMILY_UWATEC_SMART,
 	DC_FAMILY_UWATEC_MERIDIAN,
-	/* We'll enumerate the Scubapro G2 under Uwatec */
-	DC_FAMILY_SCUBAPRO_G2,
+	DC_FAMILY_UWATEC_G2,
 	/* Oceanic */
 	DC_FAMILY_OCEANIC_VTPRO = (4 << 16),
 	DC_FAMILY_OCEANIC_VEO250,

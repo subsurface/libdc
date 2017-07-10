@@ -95,11 +95,9 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 	case DC_FAMILY_UWATEC_MEMOMOUSE:
 		rc = uwatec_memomouse_parser_create (&parser, context, devtime, systime);
 		break;
-	case DC_FAMILY_SCUBAPRO_G2:
-		rc = uwatec_smart_parser_create (&parser, context, 0x11, devtime, systime);
-		break;
 	case DC_FAMILY_UWATEC_SMART:
 	case DC_FAMILY_UWATEC_MERIDIAN:
+	case DC_FAMILY_UWATEC_G2:
 		rc = uwatec_smart_parser_create (&parser, context, model, devtime, systime);
 		break;
 	case DC_FAMILY_REEFNET_SENSUS:

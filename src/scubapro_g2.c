@@ -45,7 +45,7 @@ static dc_status_t scubapro_g2_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t scubapro_g2_device_vtable = {
 	sizeof(scubapro_g2_device_t),
-	DC_FAMILY_SCUBAPRO_G2,
+	DC_FAMILY_UWATEC_G2,
 	scubapro_g2_device_set_fingerprint, /* set_fingerprint */
 	NULL, /* read */
 	NULL, /* write */

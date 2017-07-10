@@ -127,9 +127,6 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 	case DC_FAMILY_SUUNTO_EONSTEEL:
 		rc = suunto_eonsteel_device_open (&device, context, name);
 		break;
-	case DC_FAMILY_SCUBAPRO_G2:
-		rc = scubapro_g2_device_open (&device, context, name);
-		break;
 	case DC_FAMILY_UWATEC_ALADIN:
 		rc = uwatec_aladin_device_open (&device, context, name);
 		break;
@@ -141,6 +138,9 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 		break;
 	case DC_FAMILY_UWATEC_MERIDIAN:
 		rc = uwatec_meridian_device_open (&device, context, name);
+		break;
+	case DC_FAMILY_UWATEC_G2:
+		rc = scubapro_g2_device_open (&device, context, name);
 		break;
 	case DC_FAMILY_REEFNET_SENSUS:
 		rc = reefnet_sensus_device_open (&device, context, name);

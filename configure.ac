@@ -111,16 +111,36 @@ AS_IF([test "x$with_hidapi" != "xno"], [
 	])
 ])
 
+# Checks for BlueZ (bluetooth) support.
+AC_ARG_WITH([bluez],
+	[AS_HELP_STRING([--without-bluez],
+		[Build without the BlueZ library])],
+	[], [with_bluez=auto])
+AS_IF([test "x$with_bluez" != "xno"], [
+	PKG_CHECK_MODULES([BLUEZ], [bluez], [have_bluez=yes], [have_bluez=no])
+	AS_IF([test "x$have_bluez" = "xyes"], [
+		AC_DEFINE([HAVE_BLUEZ], [1], [BlueZ library])
+		DEPENDENCIES="$DEPENDENCIES bluez"
+	])
+])
+
 AC_SUBST([DEPENDENCIES])
 
-# Checks for IrDA support.
-AC_CHECK_HEADERS([winsock2.h af_irda.h], [irda_win32=yes], [irda_win32=no], [
+# Checks for Windows bluetooth support.
+AC_CHECK_HEADERS([winsock2.h ws2bth.h], , , [
 #if HAVE_WINSOCK2_H
 #   include <winsock2.h>
 # endif
 ])
 
-AC_CHECK_HEADERS([sys/socket.h linux/types.h linux/irda.h], [irda_linux=yes], [irda_linux=no], [
+# Checks for IrDA support.
+AC_CHECK_HEADERS([winsock2.h af_irda.h], , , [
+#if HAVE_WINSOCK2_H
+#   include <winsock2.h>
+# endif
+])
+
+AC_CHECK_HEADERS([sys/socket.h linux/types.h linux/irda.h], , , [
 #if HAVE_SYS_SOCKET_H
 #   include <sys/socket.h>
 # endif
@@ -128,12 +148,6 @@ AC_CHECK_HEADERS([sys/socket.h linux/types.h linux/irda.h], [irda_linux=yes], [i
 #   include <linux/types.h>
 # endif
 ])
-
-if test "$irda_win32" = "yes" || test "$irda_linux" = "yes"; then
-	AC_DEFINE([HAVE_IRDA], [1], [IrDA support])
-fi
-
-AM_CONDITIONAL([IRDA], [test "$irda_win32" = "yes" || test "$irda_linux" = "yes"])
 
 # Checks for header files.
 AC_CHECK_HEADERS([linux/serial.h])

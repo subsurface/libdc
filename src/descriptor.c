@@ -29,6 +29,16 @@
 #define USBHID
 #endif
 
+#ifdef _WIN32
+#ifdef HAVE_AF_IRDA_H
+#define IRDA
+#endif
+#else
+#ifdef HAVE_LINUX_IRDA_H
+#define IRDA
+#endif
+#endif
+
 #include <stddef.h>
 #include <stdlib.h>
 
@@ -89,7 +99,6 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Suunto EON Steel */
 #ifdef USBHID
 	{"Suunto", "EON Steel", DC_FAMILY_SUUNTO_EONSTEEL, 0},  // BLE
-	{"Scubapro", "G2", DC_FAMILY_SCUBAPRO_G2, 0x11},        // BLE
 #endif
 	/* Uwatec Aladin */
 	{"Uwatec", "Aladin Air Twin",     DC_FAMILY_UWATEC_ALADIN, 0x1C},  // FTDI
@@ -102,7 +111,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Uwatec Memomouse */
 	{"Uwatec", "Memomouse", DC_FAMILY_UWATEC_MEMOMOUSE, 0},  // FTDI
 	/* Uwatec Smart */
-#ifdef HAVE_IRDA
+#ifdef IRDA
 	{"Uwatec", "Smart Pro",     DC_FAMILY_UWATEC_SMART, 0x10},
 	{"Uwatec", "Galileo Sol",   DC_FAMILY_UWATEC_SMART, 0x11},
 	{"Uwatec", "Galileo Luna",  DC_FAMILY_UWATEC_SMART, 0x11},
@@ -127,6 +136,10 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Scubapro", "Mantis",      DC_FAMILY_UWATEC_MERIDIAN, 0x20},
 	{"Scubapro", "Chromis",     DC_FAMILY_UWATEC_MERIDIAN, 0x24},
 	{"Scubapro", "Mantis 2",    DC_FAMILY_UWATEC_MERIDIAN, 0x26},
+	/* Scubapro G2 */
+#ifdef USBHID
+	{"Scubapro", "G2",          DC_FAMILY_UWATEC_G2, 0x32},	// BLE
+#endif
 	/* Reefnet */
 	{"Reefnet", "Sensus",       DC_FAMILY_REEFNET_SENSUS, 1},
 	{"Reefnet", "Sensus Pro",   DC_FAMILY_REEFNET_SENSUSPRO, 2},
@@ -302,10 +315,12 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"DiveSystem", "iDive2 Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x42},
 	{"DiveSystem", "iDive2 Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x44},
 	{"DiveSystem", "iDive2 Tech+",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x45},
-	{"Cochran", "Commander",	DC_FAMILY_COCHRAN_COMMANDER, 0},
-	{"Cochran", "EMC-14",		DC_FAMILY_COCHRAN_COMMANDER, 1},
-	{"Cochran", "EMC-16",		DC_FAMILY_COCHRAN_COMMANDER, 2},
-	{"Cochran", "EMC-20H",		DC_FAMILY_COCHRAN_COMMANDER, 3},
+	/* Cochran Commander */
+	{"Cochran", "Commander I",	DC_FAMILY_COCHRAN_COMMANDER, 0},
+	{"Cochran", "Commander II",	DC_FAMILY_COCHRAN_COMMANDER, 1},
+	{"Cochran", "EMC-14",		DC_FAMILY_COCHRAN_COMMANDER, 2},
+	{"Cochran", "EMC-16",		DC_FAMILY_COCHRAN_COMMANDER, 3},
+	{"Cochran", "EMC-20H",		DC_FAMILY_COCHRAN_COMMANDER, 4},
 };
 
 typedef struct dc_descriptor_iterator_t {
@@ -430,9 +445,9 @@ dc_descriptor_get_transport (dc_descriptor_t *descriptor)
 	if (descriptor->type == DC_FAMILY_ATOMICS_COBALT)
 		return DC_TRANSPORT_USB;
 	else if (descriptor->type == DC_FAMILY_SUUNTO_EONSTEEL)
-		return DC_TRANSPORT_USB;
-	else if (descriptor->type == DC_FAMILY_SCUBAPRO_G2)
-		return DC_TRANSPORT_USB;
+		return DC_TRANSPORT_USBHID;
+	else if (descriptor->type == DC_FAMILY_UWATEC_G2)
+		return DC_TRANSPORT_USBHID;
 	else if (descriptor->type == DC_FAMILY_UWATEC_SMART)
 		return DC_TRANSPORT_IRDA;
 	else

@@ -1,7 +1,7 @@
 /*
  * libdivecomputer
  *
- * Copyright (C) 2008 Jef Driesen
+ * Copyright (C) 2013 Jef Driesen
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -24,35 +24,35 @@
 #endif
 
 #include <stdlib.h> // malloc, free
-#include <stdio.h>	// snprintf
+
 #ifdef _WIN32
-	#define NOGDI
-	#include <winsock2.h>
-	#include <windows.h>
-	#ifdef HAVE_AF_IRDA_H
-	#define IRDA
-	#include <af_irda.h>
-	#endif
+#define NOGDI
+#include <winsock2.h>
+#include <windows.h>
+#ifdef HAVE_WS2BTH_H
+#define BLUETOOTH
+#include <ws2bth.h>
+#endif
 #else
-	#include <string.h>			// strerror
-	#include <errno.h>			// errno
-	#include <unistd.h>			// close
-	#include <sys/types.h>		// socket, getsockopt
-	#include <sys/socket.h>		// socket, getsockopt
-	#ifdef HAVE_LINUX_IRDA_H
-	#define IRDA
-	#include <linux/types.h>	// irda
-	#include <linux/irda.h>		// irda
-	#endif
-	#include <sys/select.h>		// select
-	#include <sys/ioctl.h>		// ioctl
-	#include <sys/time.h>
+#include <errno.h>      // errno
+#include <unistd.h>     // close
+#include <sys/types.h>  // socket, getsockopt
+#include <sys/socket.h> // socket, getsockopt
+#include <sys/select.h> // select
+#include <sys/ioctl.h>  // ioctl
+#include <sys/time.h>
+#ifdef HAVE_BLUEZ
+#define BLUETOOTH
+#include <bluetooth/bluetooth.h>
+#include <bluetooth/rfcomm.h>
+#include <bluetooth/hci.h>
+#include <bluetooth/hci_lib.h>
+#endif
 #endif
 
-#include "irda.h"
+#include "bluetooth.h"
 #include "common-private.h"
 #include "context-private.h"
-#include "array.h"
 
 #ifdef _WIN32
 typedef int s_ssize_t;
@@ -82,11 +82,18 @@ typedef int s_errcode_t;
 #define S_CLOSE close
 #endif
 
-#ifdef _MSC_VER
-#define snprintf _snprintf
+#ifdef _WIN32
+#define DC_ADDRESS_FORMAT "%012I64X"
+#else
+#define DC_ADDRESS_FORMAT "%012llX"
 #endif
 
-struct dc_irda_t {
+#define C_ARRAY_SIZE(array) (sizeof (array) / sizeof *(array))
+
+#define MAX_DEVICES 255
+#define MAX_PERIODS 8
+
+struct dc_bluetooth_t {
 	dc_context_t *context;
 #ifdef _WIN32
 	SOCKET fd;
@@ -96,7 +103,7 @@ struct dc_irda_t {
 	int timeout;
 };
 
-#ifdef IRDA
+#ifdef BLUETOOTH
 static dc_status_t
 syserror(s_errcode_t errcode)
 {
@@ -115,18 +122,44 @@ syserror(s_errcode_t errcode)
 }
 #endif
 
-dc_status_t
-dc_irda_open (dc_irda_t **out, dc_context_t *context)
+#ifdef HAVE_BLUEZ
+static dc_bluetooth_address_t
+dc_address_get (const bdaddr_t *ba)
 {
-#ifdef IRDA
+	dc_bluetooth_address_t address = 0;
+
+	size_t shift = 0;
+	for (size_t i = 0; i < C_ARRAY_SIZE(ba->b); ++i) {
+		address |= (dc_bluetooth_address_t) ba->b[i] << shift;
+		shift += 8;
+	}
+
+	return address;
+}
+
+static void
+dc_address_set (bdaddr_t *ba, dc_bluetooth_address_t address)
+{
+	size_t shift = 0;
+	for (size_t i = 0; i < C_ARRAY_SIZE(ba->b); ++i) {
+		ba->b[i] = (address >> shift) & 0xFF;
+		shift += 8;
+	}
+}
+#endif
+
+dc_status_t
+dc_bluetooth_open (dc_bluetooth_t **out, dc_context_t *context)
+{
+#ifdef BLUETOOTH
 	dc_status_t status = DC_STATUS_SUCCESS;
-	dc_irda_t *device = NULL;
+	dc_bluetooth_t *device = NULL;
 
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	device = (dc_irda_t *) malloc (sizeof (dc_irda_t));
+	device = (dc_bluetooth_t *) malloc (sizeof (dc_bluetooth_t));
 	if (device == NULL) {
 		SYSERROR (context, S_ENOMEM);
 		return DC_STATUS_NOMEMORY;
@@ -161,7 +194,11 @@ dc_irda_open (dc_irda_t **out, dc_context_t *context)
 #endif
 
 	// Open the socket.
-	device->fd = socket (AF_IRDA, SOCK_STREAM, 0);
+#ifdef _WIN32
+	device->fd = socket (AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
+#else
+	device->fd = socket (AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
+#endif
 	if (device->fd == S_INVALID) {
 		s_errcode_t errcode = S_ERRNO;
 		SYSERROR (context, errcode);
@@ -171,7 +208,7 @@ dc_irda_open (dc_irda_t **out, dc_context_t *context)
 
 	*out = device;
 
-    return DC_STATUS_SUCCESS;
+	return DC_STATUS_SUCCESS;
 
 error_wsacleanup:
 #ifdef _WIN32
@@ -186,9 +223,9 @@ error_free:
 }
 
 dc_status_t
-dc_irda_close (dc_irda_t *device)
+dc_bluetooth_close (dc_bluetooth_t *device)
 {
-#ifdef IRDA
+#ifdef BLUETOOTH
 	dc_status_t status = DC_STATUS_SUCCESS;
 
 	if (device == NULL)
@@ -223,9 +260,9 @@ dc_irda_close (dc_irda_t *device)
 }
 
 dc_status_t
-dc_irda_set_timeout (dc_irda_t *device, int timeout)
+dc_bluetooth_set_timeout (dc_bluetooth_t *device, int timeout)
 {
-#ifdef IRDA
+#ifdef BLUETOOTH
 	if (device == NULL)
 		return DC_STATUS_INVALIDARGS;
 
@@ -239,131 +276,164 @@ dc_irda_set_timeout (dc_irda_t *device, int timeout)
 #endif
 }
 
-
-#define DISCOVER_MAX_DEVICES 16	// Maximum number of devices.
-#define DISCOVER_MAX_RETRIES 4	// Maximum number of retries.
-
-#ifdef _WIN32
-#define DISCOVER_BUFSIZE sizeof (DEVICELIST) + \
-				sizeof (IRDA_DEVICE_INFO) * (DISCOVER_MAX_DEVICES - 1)
-#else
-#define DISCOVER_BUFSIZE sizeof (struct irda_device_list) + \
-				sizeof (struct irda_device_info) * (DISCOVER_MAX_DEVICES - 1)
-#endif
-
 dc_status_t
-dc_irda_discover (dc_irda_t *device, dc_irda_callback_t callback, void *userdata)
+dc_bluetooth_discover (dc_bluetooth_t *device, dc_bluetooth_callback_t callback, void *userdata)
 {
-#ifdef IRDA
+#ifdef BLUETOOTH
+	dc_status_t status = DC_STATUS_SUCCESS;
+
 	if (device == NULL)
 		return DC_STATUS_INVALIDARGS;
 
-	unsigned char data[DISCOVER_BUFSIZE] = {0};
 #ifdef _WIN32
-	DEVICELIST *list = (DEVICELIST *) data;
-	int size = sizeof (data);
-#else
-	struct irda_device_list *list = (struct irda_device_list *) data;
-	socklen_t size = sizeof (data);
-#endif
+	WSAQUERYSET wsaq;
+	memset(&wsaq, 0, sizeof (wsaq));
+	wsaq.dwSize = sizeof (wsaq);
+	wsaq.dwNameSpace = NS_BTH;
+	wsaq.lpcsaBuffer = NULL;
 
-	int rc = 0;
-	unsigned int nretries = 0;
-	while ((rc = getsockopt (device->fd, SOL_IRLMP, IRLMP_ENUMDEVICES, (char*) data, &size)) != 0 ||
-#ifdef _WIN32
-		list->numDevice == 0)
-#else
-		list->len == 0)
-#endif
-	{
-		// Automatically retry the discovery when no devices were found.
-		// On Linux, getsockopt fails with EAGAIN when no devices are
-		// discovered, while on Windows it succeeds and sets the number
-		// of devices to zero. Both situations are handled the same here.
-		if (rc != 0) {
+	HANDLE hLookup;
+	if (WSALookupServiceBegin(&wsaq, LUP_CONTAINERS | LUP_FLUSHCACHE, &hLookup) != 0) {
+		s_errcode_t errcode = S_ERRNO;
+		if (errcode == WSASERVICE_NOT_FOUND) {
+			// No remote bluetooth devices found.
+			status = DC_STATUS_SUCCESS;
+		} else {
+			SYSERROR (device->context, errcode);
+			status = syserror(errcode);
+		}
+		goto error_exit;
+	}
+
+	unsigned char buf[4096];
+	LPWSAQUERYSET pwsaResults = (LPWSAQUERYSET) buf;
+	memset(pwsaResults, 0, sizeof(WSAQUERYSET));
+	pwsaResults->dwSize = sizeof(WSAQUERYSET);
+	pwsaResults->dwNameSpace = NS_BTH;
+	pwsaResults->lpBlob = NULL;
+
+	while (1) {
+		DWORD dwSize = sizeof(buf);
+		if (WSALookupServiceNext (hLookup, LUP_RETURN_NAME | LUP_RETURN_ADDR, &dwSize, pwsaResults) != 0) {
 			s_errcode_t errcode = S_ERRNO;
-			if (errcode != S_EAGAIN) {
-				SYSERROR (device->context, errcode);
-				return syserror(errcode);
+			if (errcode == WSA_E_NO_MORE || errcode == WSAENOMORE) {
+				break; // No more results.
 			}
+			SYSERROR (device->context, errcode);
+			status = syserror(errcode);
+			goto error_close;
 		}
 
-		// Abort if the maximum number of retries is reached.
-		if (nretries++ >= DISCOVER_MAX_RETRIES)
-			return DC_STATUS_SUCCESS;
-
-		// Restore the size parameter in case it was
-		// modified by the previous getsockopt call.
-		size = sizeof (data);
-
-#ifdef _WIN32
-		Sleep (1000);
-#else
-		sleep (1);
-#endif
-	}
-
-	if (callback) {
-#ifdef _WIN32
-		for (unsigned int i = 0; i < list->numDevice; ++i) {
-			const char *name = list->Device[i].irdaDeviceName;
-			unsigned int address = array_uint32_le (list->Device[i].irdaDeviceID);
-			unsigned int charset = list->Device[i].irdaCharSet;
-			unsigned int hints = (list->Device[i].irdaDeviceHints1 << 8) +
-									list->Device[i].irdaDeviceHints2;
-#else
-		for (unsigned int i = 0; i < list->len; ++i) {
-			const char *name = list->dev[i].info;
-			unsigned int address = list->dev[i].daddr;
-			unsigned int charset = list->dev[i].charset;
-			unsigned int hints = array_uint16_be (list->dev[i].hints);
-#endif
-
-			INFO (device->context,
-				"Discover: address=%08x, name=%s, charset=%02x, hints=%04x",
-				address, name, charset, hints);
-
-			callback (address, name, charset, hints, userdata);
+		if (pwsaResults->dwNumberOfCsAddrs == 0 ||
+			pwsaResults->lpcsaBuffer == NULL ||
+			pwsaResults->lpcsaBuffer->RemoteAddr.lpSockaddr == NULL) {
+			ERROR (device->context, "Invalid results returned");
+			status = DC_STATUS_IO;
+			goto error_close;
 		}
+
+		SOCKADDR_BTH *sa = (SOCKADDR_BTH *) pwsaResults->lpcsaBuffer->RemoteAddr.lpSockaddr;
+		dc_bluetooth_address_t address = sa->btAddr;
+		const char *name = (char *) pwsaResults->lpszServiceInstanceName;
+
+		INFO (device->context, "Discover: address=" DC_ADDRESS_FORMAT ", name=%s", address, name);
+
+		if (callback) callback (address, name, userdata);
+
 	}
 
-	return DC_STATUS_SUCCESS;
+error_close:
+	WSALookupServiceEnd (hLookup);
+#else
+	// Get the resource number for the first available bluetooth adapter.
+	int dev = hci_get_route (NULL);
+	if (dev < 0) {
+		s_errcode_t errcode = S_ERRNO;
+		SYSERROR (device->context, errcode);
+		status = syserror(errcode);
+		goto error_exit;
+	}
+
+	// Open a socket to the bluetooth adapter.
+	int fd = hci_open_dev (dev);
+	if (fd < 0) {
+		s_errcode_t errcode = S_ERRNO;
+		SYSERROR (device->context, errcode);
+		status = syserror(errcode);
+		goto error_exit;
+	}
+
+	// Allocate a buffer to store the results of the discovery.
+	inquiry_info *devices = (inquiry_info *) malloc (MAX_DEVICES * sizeof(inquiry_info));
+	if (devices == NULL) {
+		s_errcode_t errcode = S_ERRNO;
+		SYSERROR (device->context, errcode);
+		status = syserror(errcode);
+		goto error_close;
+	}
+
+	// Perform the bluetooth device discovery. The inquiry lasts for at
+	// most MAX_PERIODS * 1.28 seconds, and at most MAX_DEVICES devices
+	// will be returned.
+	int ndevices = hci_inquiry (dev, MAX_PERIODS, MAX_DEVICES, NULL, &devices, IREQ_CACHE_FLUSH);
+	if (ndevices < 0) {
+		s_errcode_t errcode = S_ERRNO;
+		SYSERROR (device->context, errcode);
+		status = syserror(errcode);
+		goto error_free;
+	}
+
+	for (unsigned int i = 0; i < ndevices; ++i) {
+		dc_bluetooth_address_t address = dc_address_get (&devices[i].bdaddr);
+
+		// Get the user friendly name.
+		char buf[HCI_MAX_NAME_LENGTH], *name = buf;
+		int rc = hci_read_remote_name (fd, &devices[i].bdaddr, sizeof(buf), buf, 0);
+		if (rc < 0) {
+			name = NULL;
+		}
+
+		INFO (device->context, "Discover: address=" DC_ADDRESS_FORMAT ", name=%s", address, name);
+
+		if (callback) callback (address, name, userdata);
+	}
+
+error_free:
+	free(devices);
+error_close:
+	hci_close_dev(fd);
+#endif
+
+error_exit:
+	return status;
 #else
 	return DC_STATUS_UNSUPPORTED;
 #endif
 }
 
 dc_status_t
-dc_irda_connect_name (dc_irda_t *device, unsigned int address, const char *name)
+dc_bluetooth_connect (dc_bluetooth_t *device, dc_bluetooth_address_t address, unsigned int port)
 {
-#ifdef IRDA
+#ifdef BLUETOOTH
 	if (device == NULL)
 		return DC_STATUS_INVALIDARGS;
 
-	INFO (device->context, "Connect: address=%08x, name=%s", address, name ? name : "");
+	INFO (device->context, "Connect: address=" DC_ADDRESS_FORMAT ", port=%d", address, port);
 
 #ifdef _WIN32
-	SOCKADDR_IRDA peer;
-	peer.irdaAddressFamily = AF_IRDA;
-	peer.irdaDeviceID[0] = (address      ) & 0xFF;
-	peer.irdaDeviceID[1] = (address >>  8) & 0xFF;
-	peer.irdaDeviceID[2] = (address >> 16) & 0xFF;
-	peer.irdaDeviceID[3] = (address >> 24) & 0xFF;
-    if (name)
-		strncpy (peer.irdaServiceName, name, 25);
-	else
-		memset (peer.irdaServiceName, 0x00, 25);
+	SOCKADDR_BTH sa;
+	sa.addressFamily = AF_BTH;
+	sa.btAddr = address;
+	sa.port = port;
+	memset(&sa.serviceClassId, 0, sizeof(sa.serviceClassId));
 #else
-	struct sockaddr_irda peer;
-	peer.sir_family = AF_IRDA;
-	peer.sir_addr = address;
-	if (name)
-		strncpy (peer.sir_name, name, 25);
-	else
-		memset (peer.sir_name, 0x00, 25);
+	struct sockaddr_rc sa;
+	sa.rc_family = AF_BLUETOOTH;
+	sa.rc_channel = port;
+	dc_address_set (&sa.rc_bdaddr, address);
 #endif
 
-	if (connect (device->fd, (struct sockaddr *) &peer, sizeof (peer)) != 0) {
+	if (connect (device->fd, (struct sockaddr *) &sa, sizeof (sa)) != 0) {
 		s_errcode_t errcode = S_ERRNO;
 		SYSERROR (device->context, errcode);
 		return syserror(errcode);
@@ -376,46 +446,9 @@ dc_irda_connect_name (dc_irda_t *device, unsigned int address, const char *name)
 }
 
 dc_status_t
-dc_irda_connect_lsap (dc_irda_t *device, unsigned int address, unsigned int lsap)
+dc_bluetooth_get_available (dc_bluetooth_t *device, size_t *value)
 {
-#ifdef IRDA
-	if (device == NULL)
-		return DC_STATUS_INVALIDARGS;
-
-	INFO (device->context, "Connect: address=%08x, lsap=%u", address, lsap);
-
-#ifdef _WIN32
-	SOCKADDR_IRDA peer;
-	peer.irdaAddressFamily = AF_IRDA;
-	peer.irdaDeviceID[0] = (address      ) & 0xFF;
-	peer.irdaDeviceID[1] = (address >>  8) & 0xFF;
-	peer.irdaDeviceID[2] = (address >> 16) & 0xFF;
-	peer.irdaDeviceID[3] = (address >> 24) & 0xFF;
-	snprintf (peer.irdaServiceName, 25, "LSAP-SEL%u", lsap);
-#else
-	struct sockaddr_irda peer;
-	peer.sir_family = AF_IRDA;
-	peer.sir_addr = address;
-	peer.sir_lsap_sel = lsap;
-	memset (peer.sir_name, 0x00, 25);
-#endif
-
-	if (connect (device->fd, (struct sockaddr *) &peer, sizeof (peer)) != 0) {
-		s_errcode_t errcode = S_ERRNO;
-		SYSERROR (device->context, errcode);
-		return syserror(errcode);
-	}
-
-	return DC_STATUS_SUCCESS;
-#else
-	return DC_STATUS_UNSUPPORTED;
-#endif
-}
-
-dc_status_t
-dc_irda_get_available (dc_irda_t *device, size_t *value)
-{
-#ifdef IRDA
+#ifdef BLUETOOTH
 	if (device == NULL)
 		return DC_STATUS_INVALIDARGS;
 
@@ -441,9 +474,9 @@ dc_irda_get_available (dc_irda_t *device, size_t *value)
 }
 
 dc_status_t
-dc_irda_read (dc_irda_t *device, void *data, size_t size, size_t *actual)
+dc_bluetooth_read (dc_bluetooth_t *device, void *data, size_t size, size_t *actual)
 {
-#ifdef IRDA
+#ifdef BLUETOOTH
 	dc_status_t status = DC_STATUS_SUCCESS;
 	size_t nbytes = 0;
 
@@ -510,9 +543,9 @@ out_invalidargs:
 }
 
 dc_status_t
-dc_irda_write (dc_irda_t *device, const void *data, size_t size, size_t *actual)
+dc_bluetooth_write (dc_bluetooth_t *device, const void *data, size_t size, size_t *actual)
 {
-#ifdef IRDA
+#ifdef BLUETOOTH
 	dc_status_t status = DC_STATUS_SUCCESS;
 	size_t nbytes = 0;
 
