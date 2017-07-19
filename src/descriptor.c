@@ -285,10 +285,10 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Shearwater Predator */
 	{"Shearwater", "Predator", DC_FAMILY_SHEARWATER_PREDATOR, 2},  // BT
 	/* Shearwater Petrel family */
-	{"Shearwater", "Petrel",    DC_FAMILY_SHEARWATER_PETREL, 3},  // BT
-	{"Shearwater", "Petrel 2",  DC_FAMILY_SHEARWATER_PETREL, 4},  // BT
+	{"Shearwater", "Petrel",    DC_FAMILY_SHEARWATER_PETREL, 3},  // BT // BLE
+	{"Shearwater", "Petrel 2",  DC_FAMILY_SHEARWATER_PETREL, 4},  // BT // BLE
 	{"Shearwater", "Nerd",      DC_FAMILY_SHEARWATER_PETREL, 5},  // BT
-	{"Shearwater", "Perdix",    DC_FAMILY_SHEARWATER_PETREL, 6},  // BT
+	{"Shearwater", "Perdix",    DC_FAMILY_SHEARWATER_PETREL, 6},  // BT // BLE
 	{"Shearwater", "Perdix AI", DC_FAMILY_SHEARWATER_PETREL, 7},  // BLE
 	/* Dive Rite NiTek Q */
 	{"Dive Rite", "NiTek Q",   DC_FAMILY_DIVERITE_NITEKQ, 0},
