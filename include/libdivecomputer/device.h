@@ -85,9 +85,6 @@ dc_status_t
 dc_device_set_fingerprint (dc_device_t *device, const unsigned char data[], unsigned int size);
 
 dc_status_t
-dc_device_version (dc_device_t *device, unsigned char data[], unsigned int size);
-
-dc_status_t
 dc_device_read (dc_device_t *device, unsigned int address, unsigned char data[], unsigned int size);
 
 dc_status_t
@@ -98,6 +95,9 @@ dc_device_dump (dc_device_t *device, dc_buffer_t *buffer);
 
 dc_status_t
 dc_device_foreach (dc_device_t *device, dc_dive_callback_t callback, void *userdata);
+
+dc_status_t
+dc_device_timesync (dc_device_t *device, const dc_datetime_t *datetime);
 
 dc_status_t
 dc_device_close (dc_device_t *device);

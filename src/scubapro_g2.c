@@ -51,6 +51,7 @@ static const dc_device_vtable_t scubapro_g2_device_vtable = {
 	NULL, /* write */
 	scubapro_g2_device_dump, /* dump */
 	scubapro_g2_device_foreach, /* foreach */
+	NULL, /* timesync */
 	scubapro_g2_device_close /* close */
 };
 

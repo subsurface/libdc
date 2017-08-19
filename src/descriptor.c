@@ -23,9 +23,9 @@
 #include "config.h"
 #endif
 
-#if defined(HAVE_LIBUSB) && !defined(__APPLE__)
+#if defined(HAVE_HIDAPI)
 #define USBHID
-#elif defined(HAVE_HIDAPI)
+#elif defined(HAVE_LIBUSB) && !defined(__APPLE__)
 #define USBHID
 #endif
 
@@ -219,6 +219,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Aqualung", "i750TC",              DC_FAMILY_OCEANIC_ATOM2, 0x455A},  // FTDI
 	{"Aqualung", "i450T",               DC_FAMILY_OCEANIC_ATOM2, 0x4641},  // FTDI
 	{"Aqualung", "i550",                DC_FAMILY_OCEANIC_ATOM2, 0x4642},  // FTDI
+	{"Aqualung", "i200",                DC_FAMILY_OCEANIC_ATOM2, 0x4646},  // FTDI
 	/* Mares Nemo */
 	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0},
 	{"Mares", "Nemo Steel",   DC_FAMILY_MARES_NEMO, 0},
@@ -256,8 +257,8 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x13},  // FTDI
 	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x1B},  // FTDI
 	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A},  // FTDI
-	{"Heinrichs Weikamp", "OSTC 3+",    DC_FAMILY_HW_OSTC3, 0x13},  // FTDI // BT
-	{"Heinrichs Weikamp", "OSTC 3+",    DC_FAMILY_HW_OSTC3, 0x1A},  // FTDI // BT
+	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x13},  // FTDI // BT
+	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x1A},  // FTDI // BT
 	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x3B},  // BT
 	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05},  // FTDI
 	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07},  // FTDI
@@ -316,11 +317,12 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"DiveSystem", "iDive2 Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x44},
 	{"DiveSystem", "iDive2 Tech+",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x45},
 	/* Cochran Commander */
-	{"Cochran", "Commander I",	DC_FAMILY_COCHRAN_COMMANDER, 0},
-	{"Cochran", "Commander II",	DC_FAMILY_COCHRAN_COMMANDER, 1},
-	{"Cochran", "EMC-14",		DC_FAMILY_COCHRAN_COMMANDER, 2},
-	{"Cochran", "EMC-16",		DC_FAMILY_COCHRAN_COMMANDER, 3},
-	{"Cochran", "EMC-20H",		DC_FAMILY_COCHRAN_COMMANDER, 4},
+	{"Cochran", "Commander TM", DC_FAMILY_COCHRAN_COMMANDER, 0},
+	{"Cochran", "Commander I",  DC_FAMILY_COCHRAN_COMMANDER, 1},
+	{"Cochran", "Commander II", DC_FAMILY_COCHRAN_COMMANDER, 2},
+	{"Cochran", "EMC-14",       DC_FAMILY_COCHRAN_COMMANDER, 3},
+	{"Cochran", "EMC-16",       DC_FAMILY_COCHRAN_COMMANDER, 4},
+	{"Cochran", "EMC-20H",      DC_FAMILY_COCHRAN_COMMANDER, 5},
 };
 
 typedef struct dc_descriptor_iterator_t {

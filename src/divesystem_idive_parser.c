@@ -173,6 +173,7 @@ divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 	}
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
+	dc_salinity_t *water = (dc_salinity_t *) value;
 
 	if (value) {
 		switch (type) {
@@ -191,7 +192,15 @@ divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
 			break;
 		case DC_FIELD_ATMOSPHERIC:
-			*((double *) value) = array_uint16_le (data + 11) / 1000.0;
+			if (parser->model >= IX3M_EASY) {
+				*((double *) value) = array_uint16_le (data + 11) / 10000.0;
+			} else {
+				*((double *) value) = array_uint16_le (data + 11) / 1000.0;
+			}
+			break;
+		case DC_FIELD_SALINITY:
+			water->type = data[34] == 0 ? DC_WATER_SALT : DC_WATER_FRESH;
+			water->density = 0.0;
 			break;
 		case DC_FIELD_DIVEMODE:
 			if (parser->divemode == 0xFFFFFFFF)

@@ -74,6 +74,7 @@ static const oceanic_common_device_vtable_t oceanic_atom2_device_vtable = {
 		oceanic_atom2_device_write, /* write */
 		oceanic_common_device_dump, /* dump */
 		oceanic_common_device_foreach, /* foreach */
+		NULL, /* timesync */
 		oceanic_atom2_device_close /* close */
 	},
 	oceanic_common_device_logbook,
@@ -107,6 +108,7 @@ static const oceanic_common_version_t oceanic_atom2a_version[] = {
 	{"PROPLUS2 \0\0 512K"},
 	{"OCEGEO20 \0\0 512K"},
 	{"OCE GEO R\0\0 512K"},
+	{"AQUAI200 \0\0 512K"},
 };
 
 static const oceanic_common_version_t oceanic_atom2b_version[] = {
