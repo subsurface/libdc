@@ -112,16 +112,25 @@ scubapro_g2_transfer(scubapro_g2_device_t *g2, const unsigned char command[], un
 	dc_status_t status = DC_STATUS_SUCCESS;
 	size_t transferred = 0;
 
-	if (csize >= PACKET_SIZE) {
+	if (csize > PACKET_SIZE-2) {
 		ERROR(g2->base.context, "command too big (%d)", csize);
 		return DC_STATUS_INVALIDARGS;
 	}
 
 	HEXDUMP (g2->base.context, DC_LOGLEVEL_DEBUG, "cmd", command, csize);
 
-	buf[0] = csize;
-	memcpy(buf+1, command, csize);
-	status = io->packet_write(io, buf, csize+1, &transferred);
+	buf[0] = 0;			// USBHID report type
+	buf[1] = csize;			// command size
+	memcpy(buf+2, command, csize);	// command bytes
+
+	// BLE GATT protocol?
+	if (io->packet_size < 64) {
+		// No report type byte
+		status = io->packet_write(io, buf+1, csize+1, &transferred);
+	} else {
+		status = io->packet_write(io, buf, csize+2, &transferred);
+	}
+
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR(g2->base.context, "Failed to send the command.");
 		return status;
