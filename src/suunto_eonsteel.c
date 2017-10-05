@@ -29,10 +29,7 @@
 #include "device-private.h"
 #include "array.h"
 #include "usbhid.h"
-
-#ifdef _MSC_VER
-#define snprintf _snprintf
-#endif
+#include "platform.h"
 
 typedef struct suunto_eonsteel_device_t {
 	dc_device_t base;
@@ -146,7 +143,7 @@ static int receive_usbhid_packet(dc_custom_io_t *io, suunto_eonsteel_device_t *e
 		return -1;
 	}
 	if (transferred != PACKET_SIZE) {
-		ERROR(eon->base.context, "incomplete read interrupt transfer (got %zu, expected %d)", transferred, PACKET_SIZE);
+		ERROR(eon->base.context, "incomplete read interrupt transfer (got " DC_PRINTF_SIZE ", expected %d)", transferred, PACKET_SIZE);
 		return -1;
 	}
 	if (buf[0] != 0x3f) {

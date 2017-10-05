@@ -26,10 +26,14 @@
 #include "scubapro_g2.h"
 #include "context-private.h"
 #include "device-private.h"
-#include "array.h"
 #include "usbhid.h"
+#include "array.h"
+#include "platform.h"
 
 #define ISINSTANCE(device) dc_device_isinstance((device), &scubapro_g2_device_vtable)
+
+#define RX_PACKET_SIZE 64
+#define TX_PACKET_SIZE 32
 
 typedef struct scubapro_g2_device_t {
 	dc_device_t base;
@@ -58,23 +62,22 @@ static const dc_device_vtable_t scubapro_g2_device_vtable = {
 static dc_status_t
 scubapro_g2_extract_dives (dc_device_t *device, const unsigned char data[], unsigned int size, dc_dive_callback_t callback, void *userdata);
 
-#define PACKET_SIZE 64
 static int receive_data(scubapro_g2_device_t *g2, unsigned char *buffer, int size, dc_event_progress_t *progress)
 {
 	dc_custom_io_t *io = _dc_context_custom_io(g2->base.context);
 	while (size) {
-		unsigned char buf[PACKET_SIZE] = { 0 };
+		unsigned char buf[RX_PACKET_SIZE] = { 0 };
 		size_t transferred = 0;
 		dc_status_t rc;
 		int len;
 
-		rc = io->packet_read(io, buf, PACKET_SIZE, &transferred);
+		rc = io->packet_read(io, buf, sizeof(buf), &transferred);
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR(g2->base.context, "read interrupt transfer failed");
 			return -1;
 		}
-		if (io->packet_size == PACKET_SIZE && transferred != PACKET_SIZE) {
-			ERROR(g2->base.context, "incomplete read interrupt transfer (got %zu, expected %d)", transferred, PACKET_SIZE);
+		if (transferred < 1) {
+			ERROR(g2->base.context, "incomplete read interrupt transfer (got empty packet)");
 			return -1;
 		}
 		len = buf[0];
@@ -82,7 +85,7 @@ static int receive_data(scubapro_g2_device_t *g2, unsigned char *buffer, int siz
 			ERROR(g2->base.context, "small packet read (got %zu, expected at least %d)", transferred, len + 1);
 			return -1;
 		}
-		if (len >= PACKET_SIZE) {
+		if (len >= sizeof(buf)) {
 			ERROR(g2->base.context, "read interrupt transfer returns impossible packet size (%d)", len);
 			return -1;
 		}
@@ -108,11 +111,11 @@ static dc_status_t
 scubapro_g2_transfer(scubapro_g2_device_t *g2, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize)
 {
 	dc_custom_io_t *io = _dc_context_custom_io(g2->base.context);
-	unsigned char buf[PACKET_SIZE];
+	unsigned char buf[TX_PACKET_SIZE] = { 0 };
 	dc_status_t status = DC_STATUS_SUCCESS;
 	size_t transferred = 0;
 
-	if (csize > PACKET_SIZE-2) {
+	if (csize > sizeof(buf)-2) {
 		ERROR(g2->base.context, "command too big (%d)", csize);
 		return DC_STATUS_INVALIDARGS;
 	}
@@ -128,7 +131,7 @@ scubapro_g2_transfer(scubapro_g2_device_t *g2, const unsigned char command[], un
 		// No report type byte
 		status = io->packet_write(io, buf+1, csize+1, &transferred);
 	} else {
-		status = io->packet_write(io, buf, csize+2, &transferred);
+		status = io->packet_write(io, buf, sizeof(buf), &transferred);
 	}
 
 	if (status != DC_STATUS_SUCCESS) {

@@ -96,6 +96,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Suunto", "DX",   DC_FAMILY_SUUNTO_D9, 0x1C},  // FTDI
 	{"Suunto", "Vyper Novo", DC_FAMILY_SUUNTO_D9, 0x1D},  // FTDI
 	{"Suunto", "Zoop Novo",  DC_FAMILY_SUUNTO_D9, 0x1E},  // FTDI
+	{"Suunto", "D4f",        DC_FAMILY_SUUNTO_D9, 0x20},  // FTDI
 	/* Suunto EON Steel */
 #ifdef USBHID
 	{"Suunto", "EON Steel", DC_FAMILY_SUUNTO_EONSTEEL, 0},  // BLE
@@ -294,7 +295,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Dive Rite", "NiTek Q",   DC_FAMILY_DIVERITE_NITEKQ, 0},
 	/* Citizen Hyper Aqualand */
 	{"Citizen", "Hyper Aqualand", DC_FAMILY_CITIZEN_AQUALAND, 0},
-	/* DiveSystem iDive */
+	/* DiveSystem/Ratio iDive */
 	{"DiveSystem", "Orca",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x02},
 	{"DiveSystem", "iDive Pro",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x03},
 	{"DiveSystem", "iDive DAN",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x04},
@@ -305,17 +306,17 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"DiveSystem", "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x09},
 	{"DiveSystem", "iDive X3M",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x0A},
 	{"DiveSystem", "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x0B},
-	{"DiveSystem", "iX3M Easy",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x22},
-	{"DiveSystem", "iX3M Deep",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x23},
-	{"DiveSystem", "iX3M Tech+",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x24},
-	{"DiveSystem", "iX3M Reb",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x25},
-	{"DiveSystem", "iX3M Pro Easy",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x32},
-	{"DiveSystem", "iX3M Pro Deep",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x34},
-	{"DiveSystem", "iX3M Pro Tech+", DC_FAMILY_DIVESYSTEM_IDIVE, 0x35},
-	{"DiveSystem", "iDive2 Free",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x40},
-	{"DiveSystem", "iDive2 Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x42},
-	{"DiveSystem", "iDive2 Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x44},
-	{"DiveSystem", "iDive2 Tech+",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x45},
+	{"Ratio",      "iX3M Easy",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x22},
+	{"Ratio",      "iX3M Deep",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x23},
+	{"Ratio",      "iX3M Tech+",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x24},
+	{"Ratio",      "iX3M Reb",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x25},
+	{"Ratio",      "iX3M Pro Easy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x32},
+	{"Ratio",      "iX3M Pro Deep", DC_FAMILY_DIVESYSTEM_IDIVE, 0x34},
+	{"Ratio",      "iX3M Pro Tech+",DC_FAMILY_DIVESYSTEM_IDIVE, 0x35},
+	{"Ratio",      "iDive Free",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x40},
+	{"Ratio",      "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x42},
+	{"Ratio",      "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x44},
+	{"Ratio",      "iDive Tech+",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x45},
 	/* Cochran Commander */
 	{"Cochran", "Commander TM", DC_FAMILY_COCHRAN_COMMANDER, 0},  // FTDI
 	{"Cochran", "Commander I",  DC_FAMILY_COCHRAN_COMMANDER, 1},  // FTDI
