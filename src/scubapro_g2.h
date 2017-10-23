@@ -31,7 +31,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 dc_status_t
-scubapro_g2_device_open (dc_device_t **device, dc_context_t *context, const char *name);
+scubapro_g2_device_open (dc_device_t **device, dc_context_t *context, const char *name, unsigned int model);
 
 #ifdef __cplusplus
 }
