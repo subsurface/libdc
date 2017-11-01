@@ -35,7 +35,7 @@
 #define RX_PACKET_SIZE 64
 #define TX_PACKET_SIZE 32
 
-#define ALADINSPORTMATRIX 0xa5
+#define ALADINSPORTMATRIX 0x17
 
 typedef struct scubapro_g2_device_t {
 	dc_device_t base;

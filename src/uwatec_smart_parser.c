@@ -41,6 +41,7 @@
 #define ALADINTEC2G       0x13
 #define SMARTCOM          0x14
 #define ALADIN2G          0x15
+#define ALADINSPORTMATRIX 0x17
 #define SMARTTEC          0x18
 #define GALILEOTRIMIX     0x19
 #define SMARTZ            0x1C
@@ -48,7 +49,6 @@
 #define CHROMIS           0x24
 #define MANTIS2           0x26
 #define G2                0x32
-#define ALADINSPORTMATRIX 0xa5
 
 #define UNSUPPORTED 0xFFFFFFFF
 

@@ -140,7 +140,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Scubapro G2 */
 #ifdef USBHID
 	{"Scubapro", "G2",                  DC_FAMILY_UWATEC_G2, 0x32},  // BLE
-	{"Scubapro", "Aladin Sport Matrix", DC_FAMILY_UWATEC_G2, 0xa5},  // BLE
+	{"Scubapro", "Aladin Sport Matrix", DC_FAMILY_UWATEC_G2, 0x17},  // BLE
 #endif
 	/* Reefnet */
 	{"Reefnet", "Sensus",       DC_FAMILY_REEFNET_SENSUS, 1},
