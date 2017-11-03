@@ -612,6 +612,20 @@ static int read_file(suunto_eonsteel_device_t *eon, const char *filename, dc_buf
  * with the last dirent first. That's intentional: for dives,
  * we will want to look up the last dive first.
  */
+static struct directory_entry *add_dirent(struct directory_entry *new, struct directory_entry *list)
+{
+	struct directory_entry **pp = &list, *p;
+
+	/* Skip any entries that are later than the new one */
+	while ((p = *pp) != NULL && strcmp(p->name, new->name) > 0)
+		pp = &p->next;
+
+	/* Add the new one to that location and return the new list pointer */
+	new->next = p;
+	*pp = new;
+	return list;
+}
+
 static struct directory_entry *parse_dirent(suunto_eonsteel_device_t *eon, int nr, const unsigned char *p, int len, struct directory_entry *old)
 {
 	while (len > 8) {
@@ -633,8 +647,7 @@ static struct directory_entry *parse_dirent(suunto_eonsteel_device_t *eon, int n
 			ERROR(eon->base.context, "out of memory");
 			break;
 		}
-		entry->next = old;
-		old = entry;
+		old = add_dirent(entry, old);
 	}
 	return old;
 }
