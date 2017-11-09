@@ -96,6 +96,7 @@ typedef struct hw_ostc_layout_t {
 	unsigned int deco_info2;
 	unsigned int decomode;
         unsigned int battery_percentage;
+        unsigned int initial_cns;
 } hw_ostc_layout_t;
 
 typedef struct hw_ostc_gasmix_t {
@@ -151,6 +152,7 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	50, /* deco_info1 */
 	51, /* decomode */
         0,  /* battery percentage TBD */
+        0,  /* initial cns TBD */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_frog = {
@@ -169,6 +171,8 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	50, /* deco_info2 */
 	51, /* decomode */
         0,  /* battery percentage TBD */
+        0,  /* initial cns TBD */
+
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
@@ -186,7 +190,9 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	77, /* deco_info1 */
 	78, /* deco_info2 */
 	79, /* decomode */
-        59,  /* battery percentage */
+        59, /* battery percentage */
+        53, /* initial cns */
+
 };
 
 static unsigned int
@@ -515,6 +521,9 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				water->type = DC_WATER_SALT;
 			water->density = salinity * 10.0;
 			break;
+                case DC_FIELD_INIT_CNS:
+                        *((unsigned int *) value) = array_uint16_le (data + layout->initial_cns);
+                        break;
 		case DC_FIELD_ATMOSPHERIC:
 			*((double *) value) = array_uint16_le (data + layout->atmospheric) / 1000.0;
 			break;
