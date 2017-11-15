@@ -113,7 +113,7 @@ static dc_status_t
 scubapro_g2_transfer(scubapro_g2_device_t *g2, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize)
 {
 	dc_custom_io_t *io = _dc_context_custom_io(g2->base.context);
-	unsigned char buf[TX_PACKET_SIZE] = { 0 };
+	unsigned char buf[TX_PACKET_SIZE+1] = { 0 }; // the +1 is for the report type byte
 	dc_status_t status = DC_STATUS_SUCCESS;
 	size_t transferred = 0;
 
