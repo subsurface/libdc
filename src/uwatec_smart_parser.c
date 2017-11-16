@@ -46,7 +46,7 @@
 #define GALILEOTRIMIX     0x19
 #define SMARTZ            0x1C
 #define MERIDIAN          0x20
-#define SQUARE            0x22
+#define ALADINSQUARE      0x22
 #define CHROMIS           0x24
 #define MANTIS2           0x26
 #define G2                0x32
@@ -524,7 +524,7 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 					parser->model == ALADIN2G || parser->model == MERIDIAN ||
 					parser->model == CHROMIS || parser->model == MANTIS2 ||
 					parser->model == G2 || parser->model == ALADINSPORTMATRIX ||
-					parser->model == SQUARE) {
+					parser->model == ALADINSQUARE) {
 					unsigned int offset = header->tankpressure + 2 * i;
 					endpressure   = array_uint16_le(data + offset);
 					beginpressure = array_uint16_le(data + offset + 2 * header->ngases);
@@ -602,7 +602,7 @@ uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 	case MERIDIAN:
 	case CHROMIS:
 	case MANTIS2:
-	case SQUARE:
+	case ALADINSQUARE:
 		parser->headersize = 152;
 		parser->header = &uwatec_smart_galileo_header;
 		parser->samples = uwatec_smart_galileo_samples;
@@ -956,7 +956,7 @@ uwatec_smart_parse (uwatec_smart_parser_t *parser, dc_sample_callback_t callback
 			parser->model == ALADIN2G || parser->model == MERIDIAN ||
 			parser->model == CHROMIS || parser->model == MANTIS2 ||
 			parser->model == G2 || parser->model == ALADINSPORTMATRIX ||
-			parser->model == SQUARE) {
+			parser->model == ALADINSQUARE) {
 			// Uwatec Galileo
 			id = uwatec_galileo_identify (data[offset]);
 		} else {
