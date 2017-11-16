@@ -36,6 +36,8 @@
 #define TX_PACKET_SIZE 32
 
 #define ALADINSPORTMATRIX 0x17
+#define ALADINSQUARE      0x22
+#define G2                0x32
 
 typedef struct scubapro_g2_device_t {
 	dc_device_t base;
@@ -191,6 +193,28 @@ scubapro_g2_handshake (scubapro_g2_device_t *device, unsigned int model)
 	return DC_STATUS_SUCCESS;
 }
 
+struct usb_id {
+	unsigned int model;
+	unsigned short vendor, device;
+};
+#define C_ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
+
+static const struct usb_id *get_usb_id(unsigned int model)
+{
+	int i;
+	static const struct usb_id model_to_usb[] = {
+		{ G2,		0x2e6c, 0x3201 },	// Scubapro G2
+		{ ALADINSQUARE,	0xc251, 0x2006 },	// Scubapro Aladin Square
+	};
+
+	for (i = 0; i < C_ARRAY_SIZE(model_to_usb); i++) {
+		const struct usb_id *id = model_to_usb+i;
+
+		if (id->model == model)
+			return id;
+	}
+	return NULL;
+};
 
 dc_status_t
 scubapro_g2_device_open(dc_device_t **out, dc_context_t *context, const char *name, unsigned int model)
@@ -217,8 +241,14 @@ scubapro_g2_device_open(dc_device_t **out, dc_context_t *context, const char *na
 	dc_custom_io_t *io = _dc_context_custom_io(context);
 	if (io && io->packet_open)
 		status = io->packet_open(io, context, name);
-	else
-		status = dc_usbhid_custom_io(context, 0x2e6c, 0x3201);
+	else {
+		const struct usb_id *id = get_usb_id(model);
+		if (!id) {
+			ERROR(context, "Unknown USB ID for Scubapro model %#04x", model);
+			return DC_STATUS_IO;
+		}
+		status = dc_usbhid_custom_io(context, id->vendor, id->device);
+	}
 
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to open Scubapro G2 device");
