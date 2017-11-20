@@ -727,7 +727,7 @@ static int initialize_eonsteel(suunto_eonsteel_device_t *eon)
 }
 
 dc_status_t
-suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char *name)
+suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char *name, unsigned int model)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	suunto_eonsteel_device_t *eon = NULL;
@@ -748,8 +748,12 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char
 	dc_custom_io_t *io = _dc_context_custom_io(eon->base.context);
 	if (io && io->packet_open)
 		status = io->packet_open(io, context, name);
-	else
-		status = dc_usbhid_custom_io(context, 0x1493, 0x0030);
+	else {
+		/* We really need some way to specify USB ID's in the descriptor */
+		unsigned int vendor_id = 0x1493;
+		unsigned int device_id = model ? 0x0033 : 0x0030;
+		status = dc_usbhid_custom_io(context, vendor_id, device_id);
+	}
 
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR(context, "unable to open device");

@@ -319,7 +319,7 @@ dc_usbhid_open (dc_usbhid_t **out, dc_context_t *context, unsigned int vid, unsi
 	}
 
 	if (device == NULL) {
-		ERROR (context, "No matching USB device found.");
+		ERROR (context, "No matching USB device (%04x:%04x) found.", vid, pid);
 		status = DC_STATUS_NODEVICE;
 		goto error_usb_free_list;
 	}
