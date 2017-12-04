@@ -474,8 +474,7 @@ static int send_receive(suunto_eonsteel_device_t *eon,
 	unsigned int len_out, const unsigned char *out,
 	unsigned int len_in, unsigned char *in)
 {
-	int len, actual, max;
-	unsigned char buf[2048];
+	int len, actual;
 	struct eon_hdr hdr;
 
 	if (send_cmd(eon, cmd, len_out, out) < 0)
