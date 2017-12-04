@@ -182,9 +182,7 @@ AC_CHECK_FUNCS([getopt_long])
 
 # Checks for supported compiler options.
 AX_APPEND_COMPILE_FLAGS([ \
-	-pedantic \
 	-Wall \
-	-Wextra \
 	-Wshadow \
 	-Wrestrict \
 	-Wformat=2 \
