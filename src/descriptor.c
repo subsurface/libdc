@@ -98,7 +98,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Suunto", "Zoop Novo",  DC_FAMILY_SUUNTO_D9, 0x1E},  // FTDI
 	{"Suunto", "D4f",        DC_FAMILY_SUUNTO_D9, 0x20},  // FTDI
 	/* Suunto EON Steel */
-#ifdef USBHID
+#if defined(USBHID) || defined(ENABLE_BLE)
 	{"Suunto", "EON Steel", DC_FAMILY_SUUNTO_EONSTEEL, 0},  // BLE
 	{"Suunto", "EON Core",  DC_FAMILY_SUUNTO_EONSTEEL, 1},  // BLE
 #endif
@@ -139,7 +139,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Scubapro", "Chromis",     DC_FAMILY_UWATEC_MERIDIAN, 0x24},
 	{"Scubapro", "Mantis 2",    DC_FAMILY_UWATEC_MERIDIAN, 0x26},
 	/* Scubapro G2 */
-#ifdef USBHID
+#if defined(USBHID) || defined(ENABLE_BLE)
 	{"Scubapro", "Aladin Sport Matrix", DC_FAMILY_UWATEC_G2, 0x17},  // BLE
 	{"Scubapro", "Aladin Square",       DC_FAMILY_UWATEC_G2, 0x22},
 	{"Scubapro", "G2",                  DC_FAMILY_UWATEC_G2, 0x32},  // BLE
