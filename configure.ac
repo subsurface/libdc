@@ -64,8 +64,10 @@ AM_CONDITIONAL([ENABLE_DOC], [test "x$enable_doc" = "xyes"])
 AC_PROG_CC
 AC_PROG_CC_C99
 AC_CHECK_PROGS([DOXYGEN], [doxygen])
+AC_CHECK_PROGS([MANDOC], [mandoc])
 
 AM_CONDITIONAL([HAVE_DOXYGEN],[test -n "$DOXYGEN"])
+AM_CONDITIONAL([HAVE_MANDOC],[test -n "$MANDOC"])
 
 # Enable automake silent build rules.
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
@@ -168,6 +170,23 @@ AC_CHECK_MEMBERS([struct tm.tm_gmtoff],,,[
 AC_FUNC_STRERROR_R
 AC_CHECK_FUNCS([localtime_r gmtime_r timegm _mkgmtime])
 AC_CHECK_FUNCS([getopt_long])
+
+# Checks for supported compiler options.
+AX_APPEND_COMPILE_FLAGS([ \
+	-pedantic \
+	-Wall \
+	-Wextra \
+	-Wshadow \
+	-Wrestrict \
+	-Wformat=2 \
+	-Wwrite-strings \
+	-Wcast-qual \
+	-Wpointer-arith \
+	-Wstrict-prototypes \
+	-Wmissing-prototypes \
+	-Wmissing-declarations \
+	-Wno-unused-parameter \
+])
 
 # Versioning.
 AC_SUBST([DC_VERSION],[dc_version])

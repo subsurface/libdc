@@ -31,8 +31,12 @@
 #include "usbhid.h"
 #include "platform.h"
 
+#define EONSTEEL 0
+#define EONCORE  1
+
 typedef struct suunto_eonsteel_device_t {
 	dc_device_t base;
+	unsigned int model;
 	unsigned int magic;
 	unsigned short seq;
 	unsigned char version[0x30];
@@ -73,7 +77,7 @@ struct directory_entry {
 
 static dc_status_t suunto_eonsteel_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
 static dc_status_t suunto_eonsteel_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
-static dc_status_t suunto_eonsteel_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
+static dc_status_t suunto_eonsteel_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
 static dc_status_t suunto_eonsteel_device_close(dc_device_t *abstract);
 
 static const dc_device_vtable_t suunto_eonsteel_device_vtable = {
@@ -84,7 +88,7 @@ static const dc_device_vtable_t suunto_eonsteel_device_vtable = {
 	NULL, /* write */
 	NULL, /* dump */
 	suunto_eonsteel_device_foreach, /* foreach */
-	suunto_eonsteel_timesync, /* timesync */
+	suunto_eonsteel_device_timesync, /* timesync */
 	suunto_eonsteel_device_close /* close */
 };
 
@@ -740,6 +744,7 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char
 		return DC_STATUS_NOMEMORY;
 
 	// Set up the magic handshake fields
+	eon->model = model;
 	eon->magic = INIT_MAGIC;
 	eon->seq = INIT_SEQ;
 	memset (eon->version, 0, sizeof (eon->version));
@@ -812,26 +817,24 @@ suunto_eonsteel_device_foreach(dc_device_t *abstract, dc_dive_callback_t callbac
 	dc_buffer_t *file;
 	char pathname[64];
 	unsigned int time;
-	unsigned int count = 0;
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
-
-	if (get_file_list(eon, &de) < 0)
-		return DC_STATUS_IO;
 
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
-	devinfo.model = 0;
+	devinfo.model = eon->model;
 	devinfo.firmware = array_uint32_be (eon->version + 0x20);
 	devinfo.serial = array_convert_str2num(eon->version + 0x10, 16);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
-	count = count_dir_entries(de);
-	if (count == 0)  {
+	if (get_file_list(eon, &de) < 0)
+		return DC_STATUS_IO;
+
+	if (de == NULL) {
 		return DC_STATUS_SUCCESS;
 	}
 
 	file = dc_buffer_new(0);
-	progress.maximum = count;
+	progress.maximum = count_dir_entries(de);
 	progress.current = 0;
 	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 
@@ -890,12 +893,12 @@ suunto_eonsteel_device_foreach(dc_device_t *abstract, dc_dive_callback_t callbac
 	return device_is_cancelled(abstract) ? DC_STATUS_CANCELLED : DC_STATUS_SUCCESS;
 }
 
-static dc_status_t suunto_eonsteel_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
+static dc_status_t suunto_eonsteel_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
 {
 	suunto_eonsteel_device_t *eon = (suunto_eonsteel_device_t *) abstract;
-	unsigned char result[64], cmd[64];
-	int year, month, day;
-	int hour, min, sec, msec;
+	unsigned char result[64], cmd[8];
+	unsigned int year, month, day;
+	unsigned int hour, min, msec;
 	int rc;
 
 	year = datetime->year;
@@ -903,23 +906,23 @@ static dc_status_t suunto_eonsteel_timesync(dc_device_t *abstract, const dc_date
 	day = datetime->day;
 	hour = datetime->hour;
 	min = datetime->minute;
-	sec = datetime->second;
+	msec = datetime->second * 1000;
 
-	INFO(eon->base.context, "SET_TIME: %d/%d/%d %d:%02d:%02d.%03d",
-		year, month, day, hour, min, sec, msec);
-
-	msec = sec * 1000;
-
-	cmd[0] = year & 255;
+	cmd[0] = year & 0xFF;
 	cmd[1] = year >> 8;
 	cmd[2] = month;
 	cmd[3] = day;
 	cmd[4] = hour;
 	cmd[5] = min;
-	cmd[6] = msec & 255;
+	cmd[6] = msec & 0xFF;
 	cmd[7] = msec >> 8;
 
-	return send_receive(eon, CMD_SET_TIME, 8, cmd, sizeof(result), result);
+	rc = send_receive(eon, CMD_SET_TIME, sizeof(cmd), cmd, sizeof(result), result);
+	if (rc < 0) {
+		return DC_STATUS_IO;
+	}
+
+	return DC_STATUS_SUCCESS;
 }
 
 static dc_status_t

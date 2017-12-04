@@ -65,6 +65,7 @@ struct shearwater_predator_parser_t {
 	unsigned int samplesize;
 	// Cached fields.
 	unsigned int cached;
+	unsigned int logversion;
 	unsigned int headersize;
 	unsigned int footersize;
 	unsigned int ngasmixes;
@@ -73,7 +74,6 @@ struct shearwater_predator_parser_t {
 	double calibration[3];
 	unsigned int serial;
 	dc_divemode_t mode;
-	unsigned char logversion;
 
 	/* String fields */
 	dc_field_string_t strings[MAXSTRINGS];
@@ -151,6 +151,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 
 	// Set the default values.
 	parser->cached = 0;
+	parser->logversion = 0;
 	parser->headersize = 0;
 	parser->footersize = 0;
 	parser->ngasmixes = 0;
@@ -173,6 +174,7 @@ shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char 
 
 	// Reset the cache.
 	parser->cached = 0;
+	parser->logversion = 0;
 	parser->headersize = 0;
 	parser->footersize = 0;
 	parser->ngasmixes = 0;
@@ -366,10 +368,10 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 
 	// Log versions before 6 weren't reliably stored in the data, but
 	// 6 is also the oldest version that we assume in our code
-	parser->logversion = 6;
+	unsigned int logversion = 6;
 	if (data[127] > 6)
-		parser->logversion = data[127];
-	INFO(abstract->context, "Shearwater log version %u\n", parser->logversion);
+		logversion = data[127];
+	INFO(abstract->context, "Shearwater log version %u\n", logversion);
 
 	memset(parser->strings, 0, sizeof(parser->strings));
 
@@ -437,7 +439,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		}
 
 		// Transmitter battery levels
-		if (parser->logversion >= 7) {
+		if (logversion >= 7) {
 			// T1 at offset 27, T2 at offset 19
 			t1_battery |= battery_state(data + offset + 27);
 			t2_battery |= battery_state(data + offset + 19);
@@ -461,6 +463,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	}
 
 	// Cache the data for later use.
+	parser->logversion = logversion;
 	parser->headersize = headersize;
 	parser->footersize = footersize;
 	parser->ngasmixes = ngasmixes;
@@ -690,27 +693,38 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		// for logversion 7 and newer (introduced for Perdix AI)
 		// detect tank pressure
 		if (parser->logversion >= 7) {
-			// Pressure (2 psi).
-			// 0xFFFF is not paired / no coms for 90 seconds
-			// 0xFFFE no coms for 30 seconds
-			// top 4 bits battery level:
-			// 0 - normal, 1 - critical, 2 - warning
+			// Tank pressure
+			// Values above 0xFFF0 are special codes:
+			//    0xFFFF AI is off
+			//    0xFFFE No comms for 90 seconds+
+			//    0xFFFD No comms for 30 seconds
+			//    0xFFFC Transmitter not paired
+			// For regular values, the top 4 bits contain the battery
+			// level (0=normal, 1=critical, 2=warning), and the lower 12
+			// bits the tank pressure in units of 2 psi.
 			unsigned int pressure = array_uint16_be (data + offset + 27);
-			if ((pressure & 0xFFF0) != 0xFFF0) {
+			if (pressure < 0xFFF0) {
 				pressure &= 0x0FFF;
 				sample.pressure.tank = 0;
 				sample.pressure.value = pressure * 2 * PSI / BAR;
 				if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
 			}
 			pressure = array_uint16_be (data + offset + 19);
-			if ((pressure & 0xFFF0) != 0xFFF0) {
+			if (pressure < 0xFFF0) {
 				pressure &= 0x0FFF;
 				sample.pressure.tank = 1;
 				sample.pressure.value = pressure * 2 * PSI / BAR;
 				if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
 			}
+
 			// Gas time remaining in minutes
-			if (data[offset + 21] < 0xFBu) {
+			// Values above 0xF0 are special codes:
+			//    0xFF Not paired
+			//    0xFE No communication
+			//    0xFD Not available in current mode
+			//    0xFC Not available because of DECO
+			//    0xFB Tank size or max pressure haven’t been set up
+			if (data[offset + 21] < 0xF0) {
 				sample.rbt = data[offset + 21];
 				if (callback) callback (DC_SAMPLE_RBT, sample, userdata);
 			}

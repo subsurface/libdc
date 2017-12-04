@@ -168,6 +168,11 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		return DC_STATUS_NOMEMORY;
 	}
 
+	// Enable progress notifications.
+	unsigned int current = 0, maximum = 0;
+	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
+	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
+
 	// Read the serial number.
 	rc = shearwater_common_identifier (&device->base, buffer, ID_SERIAL);
 	if (rc != DC_STATUS_SUCCESS) {
@@ -200,8 +205,8 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	// Convert to a number.
 	unsigned int firmware = str2num (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer), 1);
 
-	// get the product information
-	rc = shearwater_common_identifier (&device->base, buffer, ID_HARDWARE_TYPE);
+	// Read the hardware type.
+	rc = shearwater_common_identifier (&device->base, buffer, ID_HARDWARE);
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to read the hardware type.");
 		dc_buffer_free (buffer);
@@ -209,51 +214,59 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		return rc;
 	}
 
+	// Convert and map to the model number.
+	unsigned int hardware = array_uint_be (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer));
+	unsigned int model = 0;
+	switch (hardware) {
+	case 0x0101:
+	case 0x0202:
+		model = PREDATOR;
+		break;
+	case 0x0606:
+	case 0x0A0A: // Nerd 1
+	case 0x0E0D: // Nerd 2
+		model = NERD;
+		break;
+	case 0x0404:
+	case 0x0909: // Petrel 1
+	case 0x0B0B: // Petrel 1 (newer hardware)
+		model = PETREL;
+		break;
+	case 0x0505:
+	case 0x0808: // Petrel 2
+		model = PETREL;
+		break;
+	case 0x0707: // documentation list 0C0D for both Perdix and Perdix AI :-(
+		model = PERDIX;
+		break;
+	case 0x0C0C:
+	case 0x0C0D:
+	case 0x0D0D:
+		model = PERDIXAI;
+		break;
+	default:
+		model = PETREL;
+		WARNING (abstract->context, "Unknown hardware type %04x. Assuming Petrel.", hardware);
+	}
+
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
-	if (dc_buffer_get_size (buffer) == 2) {
-		unsigned short model_code = array_uint16_be(dc_buffer_get_data (buffer));
-		switch (model_code) {
-		case 0x0101:
-		case 0x0202:
-			devinfo.model = PREDATOR;
-			break;
-		case 0x0606:
-		case 0x0A0A:
-			devinfo.model = NERD;
-			break;
-		case 0x0404:
-		case 0x0909:
-		case 0x0B0B:
-			devinfo.model = PETREL;
-			break;
-		case 0x0505:
-		case 0x0808:
-			devinfo.model = PETREL2;
-			break;
-		case 0x0707: // documentation list 0C0D for both Perdix and Perdix AI :-(
-			devinfo.model = PERDIX;
-			break;
-		case 0x0C0C:
-		case 0x0C0D:
-		case 0x0D0D:
-			devinfo.model = PERDIXAI;
-			break;
-		default:
-			devinfo.model = PETREL;
-			ERROR (abstract->context, "Unknown model code - assuming Petrel.");
-		}
-	} else {
-		devinfo.model = PERDIX;
-		ERROR (abstract->context, "Failed to read hardware type - assuming Petrel.");
-	}
+	devinfo.model = model;
 	devinfo.firmware = firmware;
 	devinfo.serial = array_uint32_be (serial);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	while (1) {
+		// Update the progress state.
+		// Assume the worst case scenario of a full manifest, and adjust the
+		// value with the actual number of dives after the manifest has been
+		// processed.
+		maximum += 1 + RECORD_COUNT;
+
 		// Download a manifest.
-		rc = shearwater_common_download (&device->base, buffer, MANIFEST_ADDR, MANIFEST_SIZE, 0);
+		progress.current = NSTEPS * current;
+		progress.maximum = NSTEPS * maximum;
+		rc = shearwater_common_download (&device->base, buffer, MANIFEST_ADDR, MANIFEST_SIZE, 0, &progress);
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to download the manifest.");
 			dc_buffer_free (buffer);
@@ -282,6 +295,10 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 			count++;
 		}
 
+		// Update the progress state.
+		current += 1;
+		maximum -= RECORD_COUNT - count;
+
 		// Append the manifest records to the main buffer.
 		if (!dc_buffer_append (manifests, data, count * RECORD_SIZE)) {
 			ERROR (abstract->context, "Insufficient buffer space available.");
@@ -295,6 +312,11 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 			break;
 	}
 
+	// Update and emit a progress event.
+	progress.current = NSTEPS * current;
+	progress.maximum = NSTEPS * maximum;
+	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
+
 	// Cache the buffer pointer and size.
 	unsigned char *data = dc_buffer_get_data (manifests);
 	unsigned int size = dc_buffer_get_size (manifests);
@@ -305,13 +327,18 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		unsigned int address = array_uint32_be (data + offset + 20);
 
 		// Download the dive.
-		rc = shearwater_common_download (&device->base, buffer, DIVE_ADDR + address, DIVE_SIZE, 1);
+		progress.current = NSTEPS * current;
+		progress.maximum = NSTEPS * maximum;
+		rc = shearwater_common_download (&device->base, buffer, DIVE_ADDR + address, DIVE_SIZE, 1, &progress);
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to download the dive.");
 			dc_buffer_free (buffer);
 			dc_buffer_free (manifests);
 			return rc;
 		}
+
+		// Update the progress state.
+		current += 1;
 
 		unsigned char *buf = dc_buffer_get_data (buffer);
 		unsigned int len = dc_buffer_get_size (buffer);
@@ -320,6 +347,11 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 
 		offset += RECORD_SIZE;
 	}
+
+	// Update and emit a progress event.
+	progress.current = NSTEPS * current;
+	progress.maximum = NSTEPS * maximum;
+	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
 	dc_buffer_free (manifests);
 	dc_buffer_free (buffer);
