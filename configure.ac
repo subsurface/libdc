@@ -60,6 +60,15 @@ AC_ARG_ENABLE([doc],
 	[], [enable_doc=yes])
 AM_CONDITIONAL([ENABLE_DOC], [test "x$enable_doc" = "xyes"])
 
+# BLE support
+AC_ARG_ENABLE([ble],
+	[AS_HELP_STRING([--enable-ble=@<:@yes/no@:>@],
+                [Enable BLE dive computers @<:@default=yes@:>@])],
+        [], [enable_ble=no])
+AS_IF([test "x$enable_ble" = "xyes"], [
+	AC_DEFINE(ENABLE_BLE, [1], [Enable support for BLE dive computers.])
+])
+
 # Checks for programs.
 AC_PROG_CC
 AC_PROG_CC_C99
@@ -173,9 +182,7 @@ AC_CHECK_FUNCS([getopt_long])
 
 # Checks for supported compiler options.
 AX_APPEND_COMPILE_FLAGS([ \
-	-pedantic \
 	-Wall \
-	-Wextra \
 	-Wshadow \
 	-Wrestrict \
 	-Wformat=2 \
