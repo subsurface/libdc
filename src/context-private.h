@@ -75,19 +75,8 @@ dc_context_hexdump (dc_context_t *context, dc_loglevel_t loglevel, const char *f
 dc_custom_io_t*
 _dc_context_custom_io (dc_context_t *context);
 
-#define RETURN_IF_CUSTOM_SERIAL(context, block, function, ...)	\
-	do { \
-		dc_custom_io_t *c = _dc_context_custom_io(context); \
-		dc_status_t _rc; \
-		if (c) { \
-			if (c->serial_##function) \
-				_rc = c->serial_##function(c, ##__VA_ARGS__); \
-			else \
-				_rc = DC_STATUS_SUCCESS; \
-			block ;\
-			return _rc; \
-		} \
-	} while (0)
+dc_status_t
+dc_custom_io_serial_open(dc_iostream_t **out, dc_context_t *context, const char *name);
 
 #ifdef __cplusplus
 }

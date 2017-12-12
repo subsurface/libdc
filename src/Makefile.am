@@ -17,6 +17,7 @@ endif
 libdivecomputer_la_SOURCES = \
 	version.c \
 	descriptor.c \
+	iostream-private.h iostream.c \
 	iterator-private.h iterator.c \
 	common-private.h common.c \
 	context-private.h context.c \
@@ -77,9 +78,12 @@ else
 libdivecomputer_la_SOURCES += serial.h serial_posix.c
 endif
 
+libdivecomputer_la_SOURCES += socket.h socket.c
 libdivecomputer_la_SOURCES += irda.h irda.c
 libdivecomputer_la_SOURCES += usbhid.h usbhid.c
 libdivecomputer_la_SOURCES += bluetooth.h bluetooth.c
+libdivecomputer_la_SOURCES += custom.h custom.c
+libdivecomputer_la_SOURCES += custom_io.c
 
 if OS_WIN32
 libdivecomputer_la_SOURCES += libdivecomputer.rc
@@ -97,7 +101,7 @@ libdivecomputer.lo: revision.h
 
 FORCE:
 $(top_srcdir)/revision: FORCE
-	@if (test -d $(top_srcdir)/.git && cd $(top_srcdir) \
+	@if (test -e $(top_srcdir)/.git && cd $(top_srcdir) \
 	     && git rev-parse --verify HEAD) > revision-t 2>/dev/null \
 	  && ! cmp -s revision-t $@; then \
 	  mv -f revision-t $@; \

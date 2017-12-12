@@ -91,7 +91,7 @@ typedef enum hw_ostc3_state_t {
 
 typedef struct hw_ostc3_device_t {
 	dc_device_t base;
-	dc_serial_t *port;
+	dc_iostream_t *iostream;
 	unsigned int hardware;
 	unsigned int feature;
 	unsigned int model;
@@ -197,7 +197,7 @@ hw_ostc3_transfer (hw_ostc3_device_t *device,
 
 	// Send the command.
 	unsigned char command[1] = {cmd};
-	status = dc_serial_write (device->port, command, sizeof (command), NULL);
+	status = dc_iostream_write (device->iostream, command, sizeof (command), NULL);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to send the command.");
 		return status;
@@ -205,7 +205,7 @@ hw_ostc3_transfer (hw_ostc3_device_t *device,
 
 	// Read the echo.
 	unsigned char echo[1] = {0};
-	status = dc_serial_read (device->port, echo, sizeof (echo), NULL);
+	status = dc_iostream_read (device->iostream, echo, sizeof (echo), NULL);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to receive the echo.");
 		return status;
@@ -234,7 +234,7 @@ hw_ostc3_transfer (hw_ostc3_device_t *device,
 				len = isize - nbytes;
 
 			// Write the packet.
-			status = dc_serial_write (device->port, input + nbytes, len, NULL);
+			status = dc_iostream_write (device->iostream, input + nbytes, len, NULL);
 			if (status != DC_STATUS_SUCCESS) {
 				ERROR (abstract->context, "Failed to send the data packet.");
 				return status;
@@ -258,7 +258,7 @@ hw_ostc3_transfer (hw_ostc3_device_t *device,
 
 			// Increase the packet size if more data is immediately available.
 			size_t available = 0;
-			status = dc_serial_get_available (device->port, &available);
+			status = dc_iostream_get_available (device->iostream, &available);
 			if (status == DC_STATUS_SUCCESS && available > len)
 				len = available;
 
@@ -267,7 +267,7 @@ hw_ostc3_transfer (hw_ostc3_device_t *device,
 				len = osize - nbytes;
 
 			// Read the packet.
-			status = dc_serial_read (device->port, output + nbytes, len, NULL);
+			status = dc_iostream_read (device->iostream, output + nbytes, len, NULL);
 			if (status != DC_STATUS_SUCCESS) {
 				ERROR (abstract->context, "Failed to receive the answer.");
 				return status;
@@ -287,18 +287,18 @@ hw_ostc3_transfer (hw_ostc3_device_t *device,
 		unsigned int count = delay / 100;
 		for (unsigned int i = 0; i < count; ++i) {
 			size_t available = 0;
-			status = dc_serial_get_available (device->port, &available);
+			status = dc_iostream_get_available (device->iostream, &available);
 			if (status == DC_STATUS_SUCCESS && available > 0)
 				break;
 
-			dc_serial_sleep (device->port, 100);
+			dc_iostream_sleep (device->iostream, 100);
 		}
 	}
 
 	if (cmd != EXIT) {
 		// Read the ready byte.
 		unsigned char answer[1] = {0};
-		status = dc_serial_read (device->port, answer, sizeof (answer), NULL);
+		status = dc_iostream_read (device->iostream, answer, sizeof (answer), NULL);
 		if (status != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to receive the ready byte.");
 			return status;
@@ -332,36 +332,36 @@ hw_ostc3_device_open (dc_device_t **out, dc_context_t *context, const char *name
 	}
 
 	// Set the default values.
-	device->port = NULL;
+	device->iostream = NULL;
 	device->hardware = INVALID;
 	device->feature = 0;
 	device->model = 0;
 	memset (device->fingerprint, 0, sizeof (device->fingerprint));
 
 	// Open the device.
-	status = dc_serial_open (&device->port, context, name);
+	status = dc_serial_open (&device->iostream, context, name);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to open the serial port.");
 		goto error_free;
 	}
 
 	// Set the serial communication protocol (115200 8N1).
-	status = dc_serial_configure (device->port, 115200, 8, DC_PARITY_NONE, DC_STOPBITS_ONE, DC_FLOWCONTROL_NONE);
+	status = dc_iostream_configure (device->iostream, 115200, 8, DC_PARITY_NONE, DC_STOPBITS_ONE, DC_FLOWCONTROL_NONE);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the terminal attributes.");
 		goto error_close;
 	}
 
 	// Set the timeout for receiving data (3000ms).
-	status = dc_serial_set_timeout (device->port, 3000);
+	status = dc_iostream_set_timeout (device->iostream, 3000);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the timeout.");
 		goto error_close;
 	}
 
 	// Make sure everything is in a sane state.
-	dc_serial_sleep (device->port, 300);
-	dc_serial_purge (device->port, DC_DIRECTION_ALL);
+	dc_iostream_sleep (device->iostream, 300);
+	dc_iostream_purge (device->iostream, DC_DIRECTION_ALL);
 
 	device->state = OPEN;
 
@@ -370,7 +370,7 @@ hw_ostc3_device_open (dc_device_t **out, dc_context_t *context, const char *name
 	return DC_STATUS_SUCCESS;
 
 error_close:
-	dc_serial_close (device->port);
+	dc_iostream_close (device->iostream);
 error_free:
 	dc_device_deallocate ((dc_device_t *) device);
 	return status;
@@ -434,17 +434,17 @@ hw_ostc3_device_init_service (hw_ostc3_device_t *device)
 	unsigned char output[5];
 
 	// We cant use hw_ostc3_transfer here, due to the different echos
-	status = dc_serial_write (device->port, command, sizeof (command), NULL);
+	status = dc_iostream_write (device->iostream, command, sizeof (command), NULL);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to send the command.");
 		return status;
 	}
 
 	// Give the device some time to enter service mode
-	dc_serial_sleep (device->port, 100);
+	dc_iostream_sleep (device->iostream, 100);
 
 	// Read the response
-	status = dc_serial_read (device->port, output, sizeof (output), NULL);
+	status = dc_iostream_read (device->iostream, output, sizeof (output), NULL);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to receive the echo.");
 		return status;
@@ -532,7 +532,7 @@ hw_ostc3_device_close (dc_device_t *abstract)
 	}
 
 	// Close the device.
-	rc = dc_serial_close (device->port);
+	rc = dc_iostream_close (device->iostream);
 	if (rc != DC_STATUS_SUCCESS) {
 		dc_status_set_error(&status, rc);
 	}
@@ -727,6 +727,11 @@ hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, voi
 			if (firmware < 93)
 				length -= 3;
 		}
+		if (length < RB_LOGBOOK_SIZE_FULL) {
+			ERROR (abstract->context, "Invalid profile length (%u bytes).", length);
+			free (header);
+			return DC_STATUS_DATAFORMAT;
+		}
 
 		// Check the fingerprint data.
 		if (memcmp (header + offset + logbook->fingerprint, device->fingerprint, sizeof (device->fingerprint)) == 0)
@@ -787,6 +792,26 @@ hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, voi
 			free (profile);
 			free (header);
 			return rc;
+		}
+
+		// Detect invalid profile data.
+		unsigned int delta = device->hardware == OSTC4 ? 3 : 0;
+		if (length < RB_LOGBOOK_SIZE_FULL + 2 ||
+			profile[length - 2] != 0xFD || profile[length - 1] != 0xFD) {
+			// A valid profile should have at least a correct 2 byte
+			// end-of-profile marker.
+			WARNING (abstract->context, "Invalid profile end marker detected!");
+			length = RB_LOGBOOK_SIZE_FULL;
+		} else if (length == RB_LOGBOOK_SIZE_FULL + 2) {
+			// A profile containing only the 2 byte end-of-profile
+			// marker is considered a valid empty profile.
+		} else if (length < RB_LOGBOOK_SIZE_FULL + 5 + 2 ||
+			array_uint24_le (profile + RB_LOGBOOK_SIZE_FULL) + delta != array_uint24_le (profile + 9)) {
+			// If there is more data available, then there should be a
+			// valid profile header containing a length matching the
+			// length in the dive header.
+			WARNING (abstract->context, "Invalid profile header detected.");
+			length = RB_LOGBOOK_SIZE_FULL;
 		}
 
 		if (callback && !callback (profile, length, profile + 12, sizeof (device->fingerprint), userdata))

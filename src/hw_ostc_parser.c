@@ -65,6 +65,7 @@
 #define OSTC3_CC    1
 #define OSTC3_GAUGE 2
 #define OSTC3_APNEA 3
+#define OSTC3_PSCR  4
 
 #define OSTC3_ZHL16    0
 #define OSTC3_ZHL16_GF 1
@@ -548,8 +549,10 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 					break;
 				case OSTC_ZHL16_CC:
 				case OSTC_ZHL16_CC_GF:
+					*((dc_divemode_t *) value) = DC_DIVEMODE_CCR;
+					break;
 				case OSTC_PSCR_GF:
-					*((dc_divemode_t *) value) = DC_DIVEMODE_CC;
+					*((dc_divemode_t *) value) = DC_DIVEMODE_SCR;
 					break;
 				default:
 					return DC_STATUS_DATAFORMAT;
@@ -572,13 +575,16 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 					*((dc_divemode_t *) value) = DC_DIVEMODE_OC;
 					break;
 				case OSTC3_CC:
-					*((dc_divemode_t *) value) = DC_DIVEMODE_CC;
+					*((dc_divemode_t *) value) = DC_DIVEMODE_CCR;
 					break;
 				case OSTC3_GAUGE:
 					*((dc_divemode_t *) value) = DC_DIVEMODE_GAUGE;
 					break;
 				case OSTC3_APNEA:
 					*((dc_divemode_t *) value) = DC_DIVEMODE_FREEDIVE;
+					break;
+				case OSTC3_PSCR:
+					*((dc_divemode_t *) value) = DC_DIVEMODE_SCR;
 					break;
 				default:
 					return DC_STATUS_DATAFORMAT;
@@ -684,6 +690,13 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 	unsigned int version = parser->version;
 	unsigned int header = parser->header;
 	const hw_ostc_layout_t *layout = parser->layout;
+
+	// Exit if no profile data available.
+	if (size == header || (size == header + 2 &&
+		data[header] == 0xFD && data[header + 1] == 0xFD)) {
+		parser->cached = PROFILE;
+		return DC_STATUS_SUCCESS;
+	}
 
 	// Check the header length.
 	if (version == 0x23 || version == 0x24) {

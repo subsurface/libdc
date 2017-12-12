@@ -383,7 +383,7 @@ scubapro_g2_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	progress.current += 4;
 	device_event_emit (&device->base, DC_EVENT_PROGRESS, &progress);
 
-  	if (length == 0)
+	if (length == 0)
 		return DC_STATUS_SUCCESS;
 
 	// Allocate the required amount of memory.
