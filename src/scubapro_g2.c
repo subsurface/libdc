@@ -245,7 +245,8 @@ scubapro_g2_device_open(dc_device_t **out, dc_context_t *context, const char *na
 		const struct usb_id *id = get_usb_id(model);
 		if (!id) {
 			ERROR(context, "Unknown USB ID for Scubapro model %#04x", model);
-			return DC_STATUS_IO;
+			status = DC_STATUS_IO;
+			goto error_free;
 		}
 		status = dc_usbhid_custom_io(context, id->vendor, id->device);
 	}
