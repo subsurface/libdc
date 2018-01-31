@@ -293,9 +293,9 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Shearwater", "Petrel",    DC_FAMILY_SHEARWATER_PETREL, 3},  // BT // BLE
 	{"Shearwater", "Petrel 2",  DC_FAMILY_SHEARWATER_PETREL, 3},  // BT // BLE
 	{"Shearwater", "Nerd",      DC_FAMILY_SHEARWATER_PETREL, 4},  // BT
-	{"Shearwater", "Nerd 2",    DC_FAMILY_SHEARWATER_PETREL, 4},  // BLE
 	{"Shearwater", "Perdix",    DC_FAMILY_SHEARWATER_PETREL, 5},  // BT // BLE
 	{"Shearwater", "Perdix AI", DC_FAMILY_SHEARWATER_PETREL, 6},  // BLE
+	{"Shearwater", "Nerd 2",    DC_FAMILY_SHEARWATER_PETREL, 7},  // BLE
 	/* Dive Rite NiTek Q */
 	{"Dive Rite", "NiTek Q",   DC_FAMILY_DIVERITE_NITEKQ, 0},
 	/* Citizen Hyper Aqualand */
@@ -322,6 +322,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Ratio",      "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x42},
 	{"Ratio",      "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x44},
 	{"Ratio",      "iDive Tech+",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x45},
+	{"Seac",       "Jack",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x1000},
 	/* Cochran Commander */
 	{"Cochran", "Commander TM", DC_FAMILY_COCHRAN_COMMANDER, 0},  // FTDI
 	{"Cochran", "Commander I",  DC_FAMILY_COCHRAN_COMMANDER, 1},  // FTDI

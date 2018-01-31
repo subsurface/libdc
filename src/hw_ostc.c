@@ -219,12 +219,6 @@ hw_ostc_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	dc_status_t status = DC_STATUS_SUCCESS;
 	hw_ostc_device_t *device = (hw_ostc_device_t*) abstract;
 
-	// Erase the current contents of the buffer.
-	if (!dc_buffer_clear (buffer)) {
-		ERROR (abstract->context, "Insufficient buffer space available.");
-		return DC_STATUS_NOMEMORY;
-	}
-
 	// Enable progress notifications.
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
 	progress.maximum = SZ_HEADER + SZ_FW_NEW;
@@ -593,7 +587,10 @@ hw_ostc_device_screenshot (dc_device_t *abstract, dc_buffer_t *buffer, hw_ostc_f
 
 		if (format == HW_OSTC_FORMAT_RAW) {
 			// Append the raw data to the output buffer.
-			dc_buffer_append (buffer, raw, nbytes);
+			if (!dc_buffer_append (buffer, raw, nbytes)) {
+				ERROR (abstract->context, "Insufficient buffer space available.");
+				return DC_STATUS_NOMEMORY;
+			}
 		} else {
 			// Store the decompressed data in the output buffer.
 			for (unsigned int i = 0; i < count; ++i) {

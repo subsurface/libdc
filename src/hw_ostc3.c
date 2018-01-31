@@ -1150,7 +1150,11 @@ hw_ostc3_firmware_readfile4 (dc_buffer_t *buffer, dc_context_t *context, const c
 	size_t n = 0;
 	unsigned char block[1024] = {0};
 	while ((n = fread (block, 1, sizeof (block), fp)) > 0) {
-		dc_buffer_append (buffer, block, n);
+		if (!dc_buffer_append (buffer, block, n)) {
+			ERROR (context, "Insufficient buffer space available.");
+			fclose (fp);
+			return DC_STATUS_NOMEMORY;
+		}
 	}
 
 	// Close the file.
@@ -1554,12 +1558,6 @@ static dc_status_t
 hw_ostc3_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 {
 	hw_ostc3_device_t *device = (hw_ostc3_device_t *) abstract;
-
-	// Erase the current contents of the buffer.
-	if (!dc_buffer_clear (buffer)) {
-		ERROR (abstract->context, "Insufficient buffer space available.");
-		return DC_STATUS_NOMEMORY;
-	}
 
 	// Enable progress notifications.
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;

@@ -307,12 +307,6 @@ scubapro_g2_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	scubapro_g2_device_t *device = (scubapro_g2_device_t*) abstract;
 	dc_status_t rc = DC_STATUS_SUCCESS;
 
-	// Erase the current contents of the buffer.
-	if (!dc_buffer_clear (buffer)) {
-		ERROR (abstract->context, "Insufficient buffer space available.");
-		return DC_STATUS_NOMEMORY;
-	}
-
 	// Enable progress notifications.
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
 	device_event_emit (&device->base, DC_EVENT_PROGRESS, &progress);
