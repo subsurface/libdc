@@ -51,6 +51,7 @@
 #include "zeagle_n2ition3.h"
 #include "atomics_cobalt.h"
 #include "shearwater_petrel.h"
+#include "shearwater_predator.h"
 #include "diverite_nitekq.h"
 #include "citizen_aqualand.h"
 #include "divesystem_idive.h"
@@ -149,8 +150,10 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		rc = atomics_cobalt_parser_create (&parser, context);
 		break;
 	case DC_FAMILY_SHEARWATER_PREDATOR:
+		rc = shearwater_predator_parser_create (&parser, context, model, serial);
+		break;
 	case DC_FAMILY_SHEARWATER_PETREL:
-		rc = shearwater_common_parser_create (&parser, context, model, serial);
+		rc = shearwater_petrel_parser_create (&parser, context, model, serial);
 		break;
 	case DC_FAMILY_DIVERITE_NITEKQ:
 		rc = diverite_nitekq_parser_create (&parser, context);
