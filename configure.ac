@@ -187,12 +187,16 @@ AX_APPEND_COMPILE_FLAGS([ \
 	-Wrestrict \
 	-Wformat=2 \
 	-Wwrite-strings \
-	-Wcast-qual \
 	-Wpointer-arith \
 	-Wstrict-prototypes \
 	-Wmissing-prototypes \
 	-Wmissing-declarations \
 	-Wno-unused-parameter \
+	-Wno-unused-function \
+	-Wno-unused-variable \
+	-Wno-unused-but-set-variable \
+	-Wno-pointer-sign \
+	-Wno-shadow \
 ])
 
 # Windows specific compiler options.
