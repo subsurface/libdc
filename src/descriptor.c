@@ -53,7 +53,6 @@ struct dc_descriptor_t {
 	const char *product;
 	dc_family_t type;
 	unsigned int model;
-	unsigned int serial;
 };
 
 /*
@@ -434,15 +433,6 @@ dc_descriptor_get_model (dc_descriptor_t *descriptor)
 		return 0;
 
 	return descriptor->model;
-}
-
-unsigned int
-dc_descriptor_get_serial (dc_descriptor_t *descriptor)
-{
-	if (descriptor == NULL)
-		return 0;
-
-	return descriptor->serial;
 }
 
 dc_transport_t
