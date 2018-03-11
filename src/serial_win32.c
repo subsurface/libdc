@@ -29,10 +29,14 @@
 #include "common-private.h"
 #include "context-private.h"
 #include "iostream-private.h"
+#include "iterator-private.h"
+#include "descriptor-private.h"
+
+static dc_status_t dc_serial_iterator_next (dc_iterator_t *iterator, void *item);
+static dc_status_t dc_serial_iterator_free (dc_iterator_t *iterator);
 
 static dc_status_t dc_serial_set_timeout (dc_iostream_t *iostream, int timeout);
 static dc_status_t dc_serial_set_latency (dc_iostream_t *iostream, unsigned int value);
-static dc_status_t dc_serial_set_halfduplex (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_break (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_dtr (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_rts (dc_iostream_t *iostream, unsigned int value);
@@ -45,6 +49,18 @@ static dc_status_t dc_serial_flush (dc_iostream_t *iostream);
 static dc_status_t dc_serial_purge (dc_iostream_t *iostream, dc_direction_t direction);
 static dc_status_t dc_serial_sleep (dc_iostream_t *iostream, unsigned int milliseconds);
 static dc_status_t dc_serial_close (dc_iostream_t *iostream);
+
+struct dc_serial_device_t {
+	char name[256];
+};
+
+typedef struct dc_serial_iterator_t {
+	dc_iterator_t base;
+	dc_filter_t filter;
+	HKEY hKey;
+	DWORD count;
+	DWORD current;
+} dc_serial_iterator_t;
 
 typedef struct dc_serial_t {
 	dc_iostream_t base;
@@ -59,17 +75,18 @@ typedef struct dc_serial_t {
 	 */
 	DCB dcb;
 	COMMTIMEOUTS timeouts;
-	/* Half-duplex settings */
-	int halfduplex;
-	unsigned int baudrate;
-	unsigned int nbits;
 } dc_serial_t;
+
+static const dc_iterator_vtable_t dc_serial_iterator_vtable = {
+	sizeof(dc_serial_iterator_t),
+	dc_serial_iterator_next,
+	dc_serial_iterator_free,
+};
 
 static const dc_iostream_vtable_t dc_serial_vtable = {
 	sizeof(dc_serial_t),
 	dc_serial_set_timeout, /* set_timeout */
 	dc_serial_set_latency, /* set_latency */
-	dc_serial_set_halfduplex, /* set_halfduplex */
 	dc_serial_set_break, /* set_break */
 	dc_serial_set_dtr, /* set_dtr */
 	dc_serial_set_rts, /* set_rts */
@@ -101,37 +118,93 @@ syserror(DWORD errcode)
 	}
 }
 
-dc_status_t
-dc_serial_enumerate (dc_serial_callback_t callback, void *userdata)
+const char *
+dc_serial_device_get_name (dc_serial_device_t *device)
 {
+	if (device == NULL || device->name[0] == '\0')
+		return NULL;
+
+	return device->name;
+}
+
+void
+dc_serial_device_free (dc_serial_device_t *device)
+{
+	free (device);
+}
+
+dc_status_t
+dc_serial_iterator_new (dc_iterator_t **out, dc_context_t *context, dc_descriptor_t *descriptor)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+	dc_serial_iterator_t *iterator = NULL;
+	HKEY hKey = NULL;
+	DWORD count = 0;
+	LONG rc = 0;
+
+	if (out == NULL)
+		return DC_STATUS_INVALIDARGS;
+
+	iterator = (dc_serial_iterator_t *) dc_iterator_allocate (context, &dc_serial_iterator_vtable);
+	if (iterator == NULL) {
+		SYSERROR (context, ERROR_OUTOFMEMORY);
+		return DC_STATUS_NOMEMORY;
+	}
+
 	// Open the registry key.
-	HKEY hKey;
-	LONG rc = RegOpenKeyExA (HKEY_LOCAL_MACHINE, "HARDWARE\\DEVICEMAP\\SERIALCOMM", 0, KEY_QUERY_VALUE, &hKey);
+	rc = RegOpenKeyExA (HKEY_LOCAL_MACHINE, "HARDWARE\\DEVICEMAP\\SERIALCOMM", 0, KEY_QUERY_VALUE, &hKey);
 	if (rc != ERROR_SUCCESS) {
-		if (rc == ERROR_FILE_NOT_FOUND)
-			return DC_STATUS_SUCCESS;
-		else
-			return DC_STATUS_IO;
+		if (rc == ERROR_FILE_NOT_FOUND) {
+			hKey = NULL;
+		} else {
+			SYSERROR (context, rc);
+			status = syserror (rc);
+			goto error_free;
+		}
 	}
 
 	// Get the number of values.
-	DWORD count = 0;
-	rc = RegQueryInfoKey (hKey, NULL, NULL, NULL, NULL, NULL, NULL, &count, NULL, NULL, NULL, NULL);
-	if (rc != ERROR_SUCCESS) {
-		RegCloseKey(hKey);
-		return DC_STATUS_IO;
+	if (hKey) {
+		rc = RegQueryInfoKey (hKey, NULL, NULL, NULL, NULL, NULL, NULL, &count, NULL, NULL, NULL, NULL);
+		if (rc != ERROR_SUCCESS) {
+			SYSERROR (context, rc);
+			status = syserror (rc);
+			goto error_close;
+		}
 	}
 
-	for (DWORD i = 0; i < count; ++i) {
+	iterator->filter = dc_descriptor_get_filter (descriptor);
+	iterator->hKey = hKey;
+	iterator->count = count;
+	iterator->current = 0;
+
+	*out = (dc_iterator_t *) iterator;
+
+	return DC_STATUS_SUCCESS;
+
+error_close:
+	RegCloseKey (hKey);
+error_free:
+	dc_iterator_deallocate ((dc_iterator_t *) iterator);
+	return status;
+}
+
+static dc_status_t
+dc_serial_iterator_next (dc_iterator_t *abstract, void *out)
+{
+	dc_serial_iterator_t *iterator = (dc_serial_iterator_t *) abstract;
+	dc_serial_device_t *device = NULL;
+
+	while (iterator->current < iterator->count) {
 		// Get the value name, data and type.
-		char name[512], data[512];
+		char name[256], data[sizeof(device->name)];
 		DWORD name_len = sizeof (name);
 		DWORD data_len = sizeof (data);
 		DWORD type = 0;
-		rc = RegEnumValueA (hKey, i, name, &name_len, NULL, &type, (LPBYTE) data, &data_len);
+		LONG rc = RegEnumValueA (iterator->hKey, iterator->current++, name, &name_len, NULL, &type, (LPBYTE) data, &data_len);
 		if (rc != ERROR_SUCCESS) {
-			RegCloseKey(hKey);
-			return DC_STATUS_IO;
+			SYSERROR (abstract->context, rc);
+			return syserror (rc);
 		}
 
 		// Ignore non-string values.
@@ -140,17 +213,40 @@ dc_serial_enumerate (dc_serial_callback_t callback, void *userdata)
 
 		// Prevent a possible buffer overflow.
 		if (data_len >= sizeof (data)) {
-			RegCloseKey(hKey);
 			return DC_STATUS_NOMEMORY;
 		}
 
 		// Null terminate the string.
 		data[data_len] = 0;
 
-		callback (data, userdata);
+		if (iterator->filter && !iterator->filter (DC_TRANSPORT_SERIAL, data)) {
+			continue;
+		}
+
+		device = (dc_serial_device_t *) malloc (sizeof(dc_serial_device_t));
+		if (device == NULL) {
+			SYSERROR (abstract->context, ERROR_OUTOFMEMORY);
+			return DC_STATUS_NOMEMORY;
+		}
+
+		strncpy(device->name, data, sizeof(device->name));
+
+		*(dc_serial_device_t **) out = device;
+
+		return DC_STATUS_SUCCESS;
 	}
 
-	RegCloseKey(hKey);
+	return DC_STATUS_DONE;
+}
+
+static dc_status_t
+dc_serial_iterator_free (dc_iterator_t *abstract)
+{
+	dc_serial_iterator_t *iterator = (dc_serial_iterator_t *) abstract;
+
+	if (iterator->hKey) {
+		RegCloseKey (iterator->hKey);
+	}
 
 	return DC_STATUS_SUCCESS;
 }
@@ -189,11 +285,6 @@ dc_serial_open (dc_iostream_t **out, dc_context_t *context, const char *name)
 		SYSERROR (context, ERROR_OUTOFMEMORY);
 		return DC_STATUS_NOMEMORY;
 	}
-
-	// Default to full-duplex.
-	device->halfduplex = 0;
-	device->baudrate = 0;
-	device->nbits = 0;
 
 	// Open the device.
 	device->hFile = CreateFileA (devname,
@@ -359,9 +450,6 @@ dc_serial_configure (dc_iostream_t *abstract, unsigned int baudrate, unsigned in
 		return syserror (errcode);
 	}
 
-	device->baudrate = baudrate;
-	device->nbits = 1 + databits + stopbits + (parity ? 1 : 0);
-
 	return DC_STATUS_SUCCESS;
 }
 
@@ -413,16 +501,6 @@ dc_serial_set_timeout (dc_iostream_t *abstract, int timeout)
 }
 
 static dc_status_t
-dc_serial_set_halfduplex (dc_iostream_t *abstract, unsigned int value)
-{
-	dc_serial_t *device = (dc_serial_t *) abstract;
-
-	device->halfduplex = value;
-
-	return DC_STATUS_SUCCESS;
-}
-
-static dc_status_t
 dc_serial_set_latency (dc_iostream_t *abstract, unsigned int value)
 {
 	return DC_STATUS_SUCCESS;
@@ -460,50 +538,11 @@ dc_serial_write (dc_iostream_t *abstract, const void *data, size_t size, size_t 
 	dc_serial_t *device = (dc_serial_t *) abstract;
 	DWORD dwWritten = 0;
 
-	LARGE_INTEGER begin, end, freq;
-	if (device->halfduplex) {
-		// Get the current time.
-		if (!QueryPerformanceFrequency(&freq) ||
-			!QueryPerformanceCounter(&begin)) {
-			DWORD errcode = GetLastError ();
-			SYSERROR (abstract->context, errcode);
-			status = syserror (errcode);
-			goto out;
-		}
-	}
-
 	if (!WriteFile (device->hFile, data, size, &dwWritten, NULL)) {
 		DWORD errcode = GetLastError ();
 		SYSERROR (abstract->context, errcode);
 		status = syserror (errcode);
 		goto out;
-	}
-
-	if (device->halfduplex) {
-		// Get the current time.
-		if (!QueryPerformanceCounter(&end))  {
-			DWORD errcode = GetLastError ();
-			SYSERROR (abstract->context, errcode);
-			status = syserror (errcode);
-			goto out;
-		}
-
-		// Calculate the elapsed time (microseconds).
-		unsigned long elapsed = 1000000.0 * (end.QuadPart - begin.QuadPart) / freq.QuadPart + 0.5;
-
-		// Calculate the expected duration (microseconds). A 2 millisecond fudge
-		// factor is added because it improves the success rate significantly.
-		unsigned long expected = 1000000.0 * device->nbits / device->baudrate * size + 0.5 + 2000;
-
-		// Wait for the remaining time.
-		if (elapsed < expected) {
-			unsigned long remaining = expected - elapsed;
-
-			// The remaining time is rounded up to the nearest millisecond
-			// because the Windows Sleep() function doesn't have a higher
-			// resolution.
-			dc_serial_sleep (abstract, (remaining + 999) / 1000);
-		}
 	}
 
 	if (dwWritten != size) {
