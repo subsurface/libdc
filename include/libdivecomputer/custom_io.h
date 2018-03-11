@@ -49,7 +49,6 @@ typedef struct dc_custom_io_t
 	dc_status_t (*serial_configure) (struct dc_custom_io_t *io, unsigned int baudrate, unsigned int databits, dc_parity_t parity, dc_stopbits_t stopbits, dc_flowcontrol_t flowcontrol);
 	dc_status_t (*serial_set_dtr) (struct dc_custom_io_t *io, int level);
 	dc_status_t (*serial_set_rts) (struct dc_custom_io_t *io, int level);
-	dc_status_t (*serial_set_halfduplex) (struct dc_custom_io_t *io, unsigned int value);
 	dc_status_t (*serial_set_break) (struct dc_custom_io_t *io, unsigned int level);
 	//dc_serial_set_latency (dc_serial_t *device, unsigned int milliseconds) - Unused
 	//dc_serial_get_lines (dc_serial_t *device, unsigned int *value) - Unused
