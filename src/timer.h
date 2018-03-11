@@ -1,7 +1,7 @@
 /*
  * libdivecomputer
  *
- * Copyright (C) 2012 Jef Driesen
+ * Copyright (C) 2018 Jef Driesen
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -19,39 +19,33 @@
  * MA 02110-1301 USA
  */
 
-#ifndef DC_ITERATOR_PRIVATE_H
-#define DC_ITERATOR_PRIVATE_H
+#ifndef DC_TIMER_H
+#define DC_TIMER_H
 
-#include <libdivecomputer/context.h>
-#include <libdivecomputer/iterator.h>
+#include <libdivecomputer/common.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
-typedef struct dc_iterator_vtable_t dc_iterator_vtable_t;
+#if defined (_WIN32) && !defined (__GNUC__)
+typedef unsigned __int64 dc_usecs_t;
+#else
+typedef unsigned long long dc_usecs_t;
+#endif
 
-struct dc_iterator_t {
-	const dc_iterator_vtable_t *vtable;
-	dc_context_t *context;
-};
+typedef struct dc_timer_t dc_timer_t;
 
-struct dc_iterator_vtable_t {
-	size_t size;
-	dc_status_t (*next) (dc_iterator_t *iterator, void *item);
-	dc_status_t (*free) (dc_iterator_t *iterator);
-};
+dc_status_t
+dc_timer_new (dc_timer_t **timer);
 
-dc_iterator_t *
-dc_iterator_allocate (dc_context_t *context, const dc_iterator_vtable_t *vtable);
+dc_status_t
+dc_timer_now (dc_timer_t *timer, dc_usecs_t *usecs);
 
-void
-dc_iterator_deallocate (dc_iterator_t *iterator);
-
-int
-dc_iterator_isinstance (dc_iterator_t *iterator, const dc_iterator_vtable_t *vtable);
+dc_status_t
+dc_timer_free (dc_timer_t *timer);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
-#endif /* DC_ITERATOR_PRIVATE_H */
+#endif /* DC_TIMER_H */

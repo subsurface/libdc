@@ -25,10 +25,18 @@
 #include <libdivecomputer/common.h>
 #include <libdivecomputer/context.h>
 #include <libdivecomputer/iostream.h>
+#include <libdivecomputer/iterator.h>
+#include <libdivecomputer/descriptor.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
+
+/**
+ * The minimum number of bytes (including the terminating null byte) for
+ * formatting a bluetooth address as a string.
+ */
+#define DC_BLUETOOTH_SIZE 18
 
 /**
  * Bluetooth address (48 bits).
@@ -40,48 +48,86 @@ typedef unsigned long long dc_bluetooth_address_t;
 #endif
 
 /**
- * Bluetooth enumeration callback.
+ * Convert a bluetooth address to a string.
  *
- * @param[in]  address   The bluetooth device address.
- * @param[in]  name      The bluetooth device name.
- * @param[in]  userdata  The user data pointer.
+ * The bluetooth address is formatted as XX:XX:XX:XX:XX:XX, where each
+ * XX is a hexadecimal number specifying an octet of the 48-bit address.
+ * The minimum size for the buffer is #DC_BLUETOOTH_SIZE bytes.
+ *
+ * @param[in]  address  A bluetooth address.
+ * @param[in]  str      The memory buffer to store the result.
+ * @param[in]  size     The size of the memory buffer.
+ * @returns The null-terminated string on success, or NULL on failure.
  */
-typedef void (*dc_bluetooth_callback_t) (dc_bluetooth_address_t address, const char *name, void *userdata);
+char *
+dc_bluetooth_addr2str(dc_bluetooth_address_t address, char *str, size_t size);
+
+/**
+ * Convert a string to a bluetooth address.
+ *
+ * The string is expected to be in the format XX:XX:XX:XX:XX:XX, where
+ * each XX is a hexadecimal number specifying an octet of the 48-bit
+ * address.
+ *
+ * @param[in]  address  A null-terminated string.
+ * @returns The bluetooth address on success, or zero on failure.
+ */
+dc_bluetooth_address_t
+dc_bluetooth_str2addr(const char *address);
+
+/**
+ * Opaque object representing a bluetooth device.
+ */
+typedef struct dc_bluetooth_device_t dc_bluetooth_device_t;
+
+/**
+ * Get the address of the bluetooth device.
+ *
+ * @param[in]  device  A valid bluetooth device.
+ */
+dc_bluetooth_address_t
+dc_bluetooth_device_get_address (dc_bluetooth_device_t *device);
+
+/**
+ * Get the name of the bluetooth device.
+ *
+ * @param[in]  device  A valid bluetooth device.
+ */
+const char *
+dc_bluetooth_device_get_name (dc_bluetooth_device_t *device);
+
+/**
+ * Destroy the bluetooth device and free all resources.
+ *
+ * @param[in]  device  A valid bluetooth device.
+ */
+void
+dc_bluetooth_device_free (dc_bluetooth_device_t *device);
+
+/**
+ * Create an iterator to enumerate the bluetooth devices.
+ *
+ * @param[out] iterator    A location to store the iterator.
+ * @param[in]  context     A valid context object.
+ * @param[in]  descriptor  A valid device descriptor or NULL.
+ * @returns #DC_STATUS_SUCCESS on success, or another #dc_status_t code
+ * on failure.
+ */
+dc_status_t
+dc_bluetooth_iterator_new (dc_iterator_t **iterator, dc_context_t *context, dc_descriptor_t *descriptor);
 
 /**
  * Open an bluetooth connection.
  *
  * @param[out]  iostream   A location to store the bluetooth connection.
  * @param[in]   context    A valid context object.
- * @returns #DC_STATUS_SUCCESS on success, or another #dc_status_t code
- * on failure.
- */
-dc_status_t
-dc_bluetooth_open (dc_iostream_t **iostream, dc_context_t *context);
-
-/**
- * Enumerate the bluetooth devices.
- *
- * @param[in]  iostream   A valid bluetooth connection.
- * @param[in]  callback   The callback function to call.
- * @param[in]  userdata   User data to pass to the callback function.
- * @returns #DC_STATUS_SUCCESS on success, or another #dc_status_t code
- * on failure.
- */
-dc_status_t
-dc_bluetooth_discover (dc_iostream_t *iostream, dc_bluetooth_callback_t callback, void *userdata);
-
-/**
- * Connect to an bluetooth device.
- *
- * @param[in]   iostream   A valid bluetooth connection.
  * @param[in]   address    The bluetooth device address.
  * @param[in]   port       The bluetooth port number.
  * @returns #DC_STATUS_SUCCESS on success, or another #dc_status_t code
  * on failure.
  */
 dc_status_t
-dc_bluetooth_connect (dc_iostream_t *iostream, dc_bluetooth_address_t address, unsigned int port);
+dc_bluetooth_open (dc_iostream_t **iostream, dc_context_t *context, dc_bluetooth_address_t address, unsigned int port);
 
 #ifdef __cplusplus
 }

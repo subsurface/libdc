@@ -757,6 +757,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 			switch (info[i].type) {
 			case 0: // Temperature
 			case 1: // Deco / NDL
+			case 6: // Tank pressure
 				if (info[i].size != 2) {
 					ERROR(abstract->context, "Unexpected sample size.");
 					return DC_STATUS_DATAFORMAT;
@@ -790,6 +791,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 	unsigned int time = 0;
 	unsigned int nsamples = 0;
+	unsigned int tank = parser->initial != UNDEFINED ? parser->initial : 0;
 
 	unsigned int offset = header;
 	if (version == 0x23 || version == 0x24)
@@ -925,6 +927,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 			idx--; /* Convert to a zero based index. */
 			sample.gasmix = idx;
 			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+			tank = idx;
 			offset++;
 			length--;
 		}
@@ -1024,6 +1027,12 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 					else
 						sample.cns = data[offset] / 100.0;
 					if (callback) callback (DC_SAMPLE_CNS, sample, userdata);
+					break;
+				case 6: // Tank pressure
+					value = array_uint16_le (data + offset);
+					sample.pressure.tank = tank;
+					sample.pressure.value = value / 10.0;
+					if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
 					break;
 				default: // Not yet used.
 					break;
