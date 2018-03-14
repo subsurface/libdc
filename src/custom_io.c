@@ -57,18 +57,6 @@ dc_custom_set_latency (dc_iostream_t *abstract, unsigned int value)
 }
 
 static dc_status_t
-dc_custom_set_halfduplex (dc_iostream_t *abstract, unsigned int value)
-{
-	dc_custom_t *custom = (dc_custom_t *) abstract;
-	dc_custom_io_t *io = _dc_context_custom_io(custom->context);
-
-	if (!io->serial_set_halfduplex)
-		return DC_STATUS_SUCCESS;
-
-	return io->serial_set_halfduplex(io, value);
-}
-
-static dc_status_t
 dc_custom_set_break (dc_iostream_t *abstract, unsigned int value)
 {
 	dc_custom_t *custom = (dc_custom_t *) abstract;
@@ -198,7 +186,6 @@ static const dc_iostream_vtable_t dc_custom_vtable = {
 	sizeof(dc_custom_t),
 	dc_custom_set_timeout, /* set_timeout */
 	dc_custom_set_latency, /* set_latency */
-	dc_custom_set_halfduplex, /* set_halfduplex */
 	dc_custom_set_break, /* set_break */
 	dc_custom_set_dtr, /* set_dtr */
 	dc_custom_set_rts, /* set_rts */

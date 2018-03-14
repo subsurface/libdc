@@ -30,7 +30,6 @@
 #include <fcntl.h>	// fcntl
 #include <termios.h>	// tcgetattr, tcsetattr, cfsetispeed, cfsetospeed, tcflush, tcsendbreak
 #include <sys/ioctl.h>	// ioctl
-#include <sys/time.h>	// gettimeofday
 #include <time.h>	// nanosleep
 #ifdef HAVE_LINUX_SERIAL_H
 #include <linux/serial.h>
@@ -58,10 +57,17 @@
 #include "common-private.h"
 #include "context-private.h"
 #include "iostream-private.h"
+#include "iterator-private.h"
+#include "descriptor-private.h"
+#include "timer.h"
+
+#define DIRNAME "/dev"
+
+static dc_status_t dc_serial_iterator_next (dc_iterator_t *iterator, void *item);
+static dc_status_t dc_serial_iterator_free (dc_iterator_t *iterator);
 
 static dc_status_t dc_serial_set_timeout (dc_iostream_t *iostream, int timeout);
 static dc_status_t dc_serial_set_latency (dc_iostream_t *iostream, unsigned int value);
-static dc_status_t dc_serial_set_halfduplex (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_break (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_dtr (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_rts (dc_iostream_t *iostream, unsigned int value);
@@ -75,6 +81,16 @@ static dc_status_t dc_serial_purge (dc_iostream_t *iostream, dc_direction_t dire
 static dc_status_t dc_serial_sleep (dc_iostream_t *iostream, unsigned int milliseconds);
 static dc_status_t dc_serial_close (dc_iostream_t *iostream);
 
+struct dc_serial_device_t {
+	char name[256];
+};
+
+typedef struct dc_serial_iterator_t {
+	dc_iterator_t base;
+	dc_filter_t filter;
+	DIR *dp;
+} dc_serial_iterator_t;
+
 typedef struct dc_serial_t {
 	dc_iostream_t base;
 	/*
@@ -82,23 +98,25 @@ typedef struct dc_serial_t {
 	 */
 	int fd;
 	int timeout;
+	dc_timer_t *timer;
 	/*
 	 * Serial port settings are saved into this variable immediately
 	 * after the port is opened. These settings are restored when the
 	 * serial port is closed.
 	 */
 	struct termios tty;
-	/* Half-duplex settings */
-	int halfduplex;
-	unsigned int baudrate;
-	unsigned int nbits;
 } dc_serial_t;
+
+static const dc_iterator_vtable_t dc_serial_iterator_vtable = {
+	sizeof(dc_serial_iterator_t),
+	dc_serial_iterator_next,
+	dc_serial_iterator_free,
+};
 
 static const dc_iostream_vtable_t dc_serial_vtable = {
 	sizeof(dc_serial_t),
 	dc_serial_set_timeout, /* set_timeout */
 	dc_serial_set_latency, /* set_latency */
-	dc_serial_set_halfduplex, /* set_halfduplex */
 	dc_serial_set_break, /* set_break */
 	dc_serial_set_dtr, /* set_dtr */
 	dc_serial_set_rts, /* set_rts */
@@ -131,12 +149,62 @@ syserror(int errcode)
 	}
 }
 
-dc_status_t
-dc_serial_enumerate (dc_serial_callback_t callback, void *userdata)
+const char *
+dc_serial_device_get_name (dc_serial_device_t *device)
 {
-	DIR *dp = NULL;
+	if (device == NULL || device->name[0] == '\0')
+		return NULL;
+
+	return device->name;
+}
+
+void
+dc_serial_device_free (dc_serial_device_t *device)
+{
+	free (device);
+}
+
+dc_status_t
+dc_serial_iterator_new (dc_iterator_t **out, dc_context_t *context, dc_descriptor_t *descriptor)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+	dc_serial_iterator_t *iterator = NULL;
+
+	if (out == NULL)
+		return DC_STATUS_INVALIDARGS;
+
+	iterator = (dc_serial_iterator_t *) dc_iterator_allocate (context, &dc_serial_iterator_vtable);
+	if (iterator == NULL) {
+		SYSERROR (context, ENOMEM);
+		return DC_STATUS_NOMEMORY;
+	}
+
+	iterator->dp = opendir (DIRNAME);
+	if (iterator->dp == NULL) {
+		int errcode = errno;
+		SYSERROR (context, errcode);
+		status = syserror (errcode);
+		goto error_free;
+	}
+
+	iterator->filter = dc_descriptor_get_filter (descriptor);
+
+	*out = (dc_iterator_t *) iterator;
+
+	return DC_STATUS_SUCCESS;
+
+error_free:
+	dc_iterator_deallocate ((dc_iterator_t *) iterator);
+	return status;
+}
+
+static dc_status_t
+dc_serial_iterator_next (dc_iterator_t *abstract, void *out)
+{
+	dc_serial_iterator_t *iterator = (dc_serial_iterator_t *) abstract;
+	dc_serial_device_t *device = NULL;
+
 	struct dirent *ep = NULL;
-	const char *dirname = "/dev";
 	const char *patterns[] = {
 #if defined (__APPLE__)
 		"tty.*",
@@ -149,28 +217,44 @@ dc_serial_enumerate (dc_serial_callback_t callback, void *userdata)
 		NULL
 	};
 
-	dp = opendir (dirname);
-	if (dp == NULL) {
-		return DC_STATUS_IO;
-	}
-
-	while ((ep = readdir (dp)) != NULL) {
+	while ((ep = readdir (iterator->dp)) != NULL) {
 		for (size_t i = 0; patterns[i] != NULL; ++i) {
-			if (fnmatch (patterns[i], ep->d_name, 0) == 0) {
-				char filename[1024];
-				int n = snprintf (filename, sizeof (filename), "%s/%s", dirname, ep->d_name);
-				if (n >= sizeof (filename)) {
-					closedir (dp);
-					return DC_STATUS_NOMEMORY;
-				}
+			if (fnmatch (patterns[i], ep->d_name, 0) != 0)
+				continue;
 
-				callback (filename, userdata);
-				break;
+			char filename[sizeof(device->name)];
+			int n = snprintf (filename, sizeof (filename), "%s/%s", DIRNAME, ep->d_name);
+			if (n < 0 || (size_t) n >= sizeof (filename)) {
+				return DC_STATUS_NOMEMORY;
 			}
+
+			if (iterator->filter && !iterator->filter (DC_TRANSPORT_SERIAL, filename)) {
+				continue;
+			}
+
+			device = (dc_serial_device_t *) malloc (sizeof(dc_serial_device_t));
+			if (device == NULL) {
+				SYSERROR (abstract->context, ENOMEM);
+				return DC_STATUS_NOMEMORY;
+			}
+
+			strncpy(device->name, filename, sizeof(device->name));
+
+			*(dc_serial_device_t **) out = device;
+
+			return DC_STATUS_SUCCESS;
 		}
 	}
 
-	closedir (dp);
+	return DC_STATUS_DONE;
+}
+
+static dc_status_t
+dc_serial_iterator_free (dc_iterator_t *abstract)
+{
+	dc_serial_iterator_t *iterator = (dc_serial_iterator_t *) abstract;
+
+	closedir (iterator->dp);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -200,10 +284,12 @@ dc_serial_open (dc_iostream_t **out, dc_context_t *context, const char *name)
 	// Default to blocking reads.
 	device->timeout = -1;
 
-	// Default to full-duplex.
-	device->halfduplex = 0;
-	device->baudrate = 0;
-	device->nbits = 0;
+	// Create a high resolution timer.
+	status = dc_timer_new (&device->timer);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (context, "Failed to create a high resolution timer.");
+		goto error_free;
+	}
 
 	// Open the device in non-blocking mode, to return immediately
 	// without waiting for the modem connection to complete.
@@ -212,7 +298,7 @@ dc_serial_open (dc_iostream_t **out, dc_context_t *context, const char *name)
 		int errcode = errno;
 		SYSERROR (context, errcode);
 		status = syserror (errcode);
-		goto error_free;
+		goto error_timer_free;
 	}
 
 #ifndef ENABLE_PTY
@@ -242,6 +328,8 @@ dc_serial_open (dc_iostream_t **out, dc_context_t *context, const char *name)
 
 error_close:
 	close (device->fd);
+error_timer_free:
+	dc_timer_free (device->timer);
 error_free:
 	dc_iostream_deallocate ((dc_iostream_t *) device);
 	return status;
@@ -275,6 +363,8 @@ dc_serial_close (dc_iostream_t *abstract)
 		SYSERROR (abstract->context, errcode);
 		dc_status_set_error(&status, syserror (errcode));
 	}
+
+	dc_timer_free (device->timer);
 
 	return status;
 }
@@ -522,9 +612,6 @@ dc_serial_configure (dc_iostream_t *abstract, unsigned int baudrate, unsigned in
 #endif
 	}
 
-	device->baudrate = baudrate;
-	device->nbits = 1 + databits + stopbits + (parity ? 1 : 0);
-
 	return DC_STATUS_SUCCESS;
 }
 
@@ -534,16 +621,6 @@ dc_serial_set_timeout (dc_iostream_t *abstract, int timeout)
 	dc_serial_t *device = (dc_serial_t *) abstract;
 
 	device->timeout = timeout;
-
-	return DC_STATUS_SUCCESS;
-}
-
-static dc_status_t
-dc_serial_set_halfduplex (dc_iostream_t *abstract, unsigned int value)
-{
-	dc_serial_t *device = (dc_serial_t *) abstract;
-
-	device->halfduplex = value;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -597,11 +674,8 @@ dc_serial_read (dc_iostream_t *abstract, void *data, size_t size, size_t *actual
 	dc_serial_t *device = (dc_serial_t *) abstract;
 	size_t nbytes = 0;
 
-	// The total timeout.
-	int timeout = device->timeout;
-
 	// The absolute target time.
-	struct timeval tve;
+	dc_usecs_t target = 0;
 
 	int init = 1;
 	while (nbytes < size) {
@@ -609,35 +683,40 @@ dc_serial_read (dc_iostream_t *abstract, void *data, size_t size, size_t *actual
 		FD_ZERO (&fds);
 		FD_SET (device->fd, &fds);
 
-		struct timeval tvt;
-		if (timeout > 0) {
-			struct timeval now;
-			if (gettimeofday (&now, NULL) != 0) {
-				int errcode = errno;
-				SYSERROR (abstract->context, errcode);
-				status = syserror (errcode);
+		struct timeval tv, *ptv = NULL;
+		if (device->timeout > 0) {
+			dc_usecs_t timeout = 0;
+
+			dc_usecs_t now = 0;
+			status = dc_timer_now (device->timer, &now);
+			if (status != DC_STATUS_SUCCESS) {
 				goto out;
 			}
 
 			if (init) {
 				// Calculate the initial timeout.
-				tvt.tv_sec  = (timeout / 1000);
-				tvt.tv_usec = (timeout % 1000) * 1000;
+				timeout = device->timeout * 1000;
 				// Calculate the target time.
-				timeradd (&now, &tvt, &tve);
+				target = now + timeout;
+				init = 0;
 			} else {
 				// Calculate the remaining timeout.
-				if (timercmp (&now, &tve, <))
-					timersub (&tve, &now, &tvt);
-				else
-					timerclear (&tvt);
+				if (now < target) {
+					timeout = target - now;
+				} else {
+					timeout = 0;
+				}
 			}
-			init = 0;
-		} else if (timeout == 0) {
-			timerclear (&tvt);
+			tv.tv_sec  = timeout / 1000000;
+			tv.tv_usec = timeout % 1000000;
+			ptv = &tv;
+		} else if (device->timeout == 0) {
+			tv.tv_sec  = 0;
+			tv.tv_usec = 0;
+			ptv = &tv;
 		}
 
-		int rc = select (device->fd + 1, &fds, NULL, NULL, timeout >= 0 ? &tvt : NULL);
+		int rc = select (device->fd + 1, &fds, NULL, NULL, ptv);
 		if (rc < 0) {
 			int errcode = errno;
 			if (errcode == EINTR)
@@ -681,17 +760,6 @@ dc_serial_write (dc_iostream_t *abstract, const void *data, size_t size, size_t 
 	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_serial_t *device = (dc_serial_t *) abstract;
 	size_t nbytes = 0;
-
-	struct timeval tve, tvb;
-	if (device->halfduplex) {
-		// Get the current time.
-		if (gettimeofday (&tvb, NULL) != 0) {
-			int errcode = errno;
-			SYSERROR (abstract->context, errcode);
-			status = syserror (errcode);
-			goto out;
-		}
-	}
 
 	while (nbytes < size) {
 		fd_set fds;
@@ -737,35 +805,6 @@ dc_serial_write (dc_iostream_t *abstract, const void *data, size_t size, size_t 
 			SYSERROR (abstract->context, errcode);
 			status = syserror (errcode);
 			goto out;
-		}
-	}
-
-	if (device->halfduplex) {
-		// Get the current time.
-		if (gettimeofday (&tve, NULL) != 0) {
-			int errcode = errno;
-			SYSERROR (abstract->context, errcode);
-			status = syserror (errcode);
-			goto out;
-		}
-
-		// Calculate the elapsed time (microseconds).
-		struct timeval tvt;
-		timersub (&tve, &tvb, &tvt);
-		unsigned long elapsed = tvt.tv_sec * 1000000 + tvt.tv_usec;
-
-		// Calculate the expected duration (microseconds). A 2 millisecond fudge
-		// factor is added because it improves the success rate significantly.
-		unsigned long expected = 1000000.0 * device->nbits / device->baudrate * size + 0.5 + 2000;
-
-		// Wait for the remaining time.
-		if (elapsed < expected) {
-			unsigned long remaining = expected - elapsed;
-
-			// The remaining time is rounded up to the nearest millisecond to
-			// match the Windows implementation. The higher resolution is
-			// pointless anyway, since we already added a fudge factor above.
-			dc_serial_sleep (abstract, (remaining + 999) / 1000);
 		}
 	}
 

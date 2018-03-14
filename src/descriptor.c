@@ -41,19 +41,38 @@
 
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include <libdivecomputer/descriptor.h>
-
+#include "descriptor-private.h"
 #include "iterator-private.h"
+#include "platform.h"
 
 #define C_ARRAY_SIZE(array) (sizeof (array) / sizeof *(array))
+
+static int dc_filter_uwatec (dc_transport_t transport, const void *userdata);
+static int dc_filter_suunto (dc_transport_t transport, const void *userdata);
+static int dc_filter_shearwater (dc_transport_t transport, const void *userdata);
+static int dc_filter_hw (dc_transport_t transport, const void *userdata);
+
+static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
 struct dc_descriptor_t {
 	const char *vendor;
 	const char *product;
 	dc_family_t type;
 	unsigned int model;
-	unsigned int serial;
+	dc_filter_t filter;
+};
+
+typedef struct dc_descriptor_iterator_t {
+	dc_iterator_t base;
+	size_t current;
+} dc_descriptor_iterator_t;
+
+static const dc_iterator_vtable_t dc_descriptor_iterator_vtable = {
+	sizeof(dc_descriptor_iterator_t),
+	dc_descriptor_iterator_next,
+	NULL,
 };
 
 /*
@@ -65,285 +84,369 @@ struct dc_descriptor_t {
 
 static const dc_descriptor_t g_descriptors[] = {
 	/* Suunto Solution */
-	{"Suunto", "Solution", DC_FAMILY_SUUNTO_SOLUTION, 0},   // FTDI
+	{"Suunto", "Solution", DC_FAMILY_SUUNTO_SOLUTION, 0, NULL},
 	/* Suunto Eon */
-	{"Suunto", "Eon",             DC_FAMILY_SUUNTO_EON, 0}, // FTDI
-	{"Suunto", "Solution Alpha",  DC_FAMILY_SUUNTO_EON, 0},  // FTDI
-	{"Suunto", "Solution Nitrox", DC_FAMILY_SUUNTO_EON, 0},  // FTDI
+	{"Suunto", "Eon",             DC_FAMILY_SUUNTO_EON, 0, NULL},
+	{"Suunto", "Solution Alpha",  DC_FAMILY_SUUNTO_EON, 0, NULL},
+	{"Suunto", "Solution Nitrox", DC_FAMILY_SUUNTO_EON, 0, NULL},
 	/* Suunto Vyper */
-	{"Suunto", "Spyder",   DC_FAMILY_SUUNTO_VYPER, 0x01},  // FTDI
-	{"Suunto", "Stinger",  DC_FAMILY_SUUNTO_VYPER, 0x03},  // FTDI
-	{"Suunto", "Mosquito", DC_FAMILY_SUUNTO_VYPER, 0x04},  // FTDI
-	{"Suunto", "D3",       DC_FAMILY_SUUNTO_VYPER, 0x05},  // FTDI
-	{"Suunto", "Vyper",    DC_FAMILY_SUUNTO_VYPER, 0x0A},  // FTDI
-	{"Suunto", "Vytec",    DC_FAMILY_SUUNTO_VYPER, 0X0B},  // FTDI
-	{"Suunto", "Cobra",    DC_FAMILY_SUUNTO_VYPER, 0X0C},  // FTDI
-	{"Suunto", "Gekko",    DC_FAMILY_SUUNTO_VYPER, 0X0D},  // FTDI
-	{"Suunto", "Zoop",     DC_FAMILY_SUUNTO_VYPER, 0x16},  // FTDI
+	{"Suunto", "Spyder",   DC_FAMILY_SUUNTO_VYPER, 0x01, NULL},
+	{"Suunto", "Stinger",  DC_FAMILY_SUUNTO_VYPER, 0x03, NULL},
+	{"Suunto", "Mosquito", DC_FAMILY_SUUNTO_VYPER, 0x04, NULL},
+	{"Suunto", "D3",       DC_FAMILY_SUUNTO_VYPER, 0x05, NULL},
+	{"Suunto", "Vyper",    DC_FAMILY_SUUNTO_VYPER, 0x0A, NULL},
+	{"Suunto", "Vytec",    DC_FAMILY_SUUNTO_VYPER, 0X0B, NULL},
+	{"Suunto", "Cobra",    DC_FAMILY_SUUNTO_VYPER, 0X0C, NULL},
+	{"Suunto", "Gekko",    DC_FAMILY_SUUNTO_VYPER, 0X0D, NULL},
+	{"Suunto", "Zoop",     DC_FAMILY_SUUNTO_VYPER, 0x16, NULL},
 	/* Suunto Vyper 2 */
-	{"Suunto", "Vyper 2",   DC_FAMILY_SUUNTO_VYPER2, 0x10},  // FTDI
-	{"Suunto", "Cobra 2",   DC_FAMILY_SUUNTO_VYPER2, 0x11},  // FTDI
-	{"Suunto", "Vyper Air", DC_FAMILY_SUUNTO_VYPER2, 0x13},  // FTDI
-	{"Suunto", "Cobra 3",   DC_FAMILY_SUUNTO_VYPER2, 0x14},  // FTDI
-	{"Suunto", "HelO2",     DC_FAMILY_SUUNTO_VYPER2, 0x15},  // FTDI
+	{"Suunto", "Vyper 2",   DC_FAMILY_SUUNTO_VYPER2, 0x10, NULL},
+	{"Suunto", "Cobra 2",   DC_FAMILY_SUUNTO_VYPER2, 0x11, NULL},
+	{"Suunto", "Vyper Air", DC_FAMILY_SUUNTO_VYPER2, 0x13, NULL},
+	{"Suunto", "Cobra 3",   DC_FAMILY_SUUNTO_VYPER2, 0x14, NULL},
+	{"Suunto", "HelO2",     DC_FAMILY_SUUNTO_VYPER2, 0x15, NULL},
 	/* Suunto D9 */
-	{"Suunto", "D9",   DC_FAMILY_SUUNTO_D9, 0x0E},  // FTDI
-	{"Suunto", "D6",   DC_FAMILY_SUUNTO_D9, 0x0F},  // FTDI
-	{"Suunto", "D4",   DC_FAMILY_SUUNTO_D9, 0x12},  // FTDI
-	{"Suunto", "D4i",  DC_FAMILY_SUUNTO_D9, 0x19},  // FTDI
-	{"Suunto", "D6i",  DC_FAMILY_SUUNTO_D9, 0x1A},  // FTDI
-	{"Suunto", "D9tx", DC_FAMILY_SUUNTO_D9, 0x1B},  // FTDI
-	{"Suunto", "DX",   DC_FAMILY_SUUNTO_D9, 0x1C},  // FTDI
-	{"Suunto", "Vyper Novo", DC_FAMILY_SUUNTO_D9, 0x1D},  // FTDI
-	{"Suunto", "Zoop Novo",  DC_FAMILY_SUUNTO_D9, 0x1E},  // FTDI
-	{"Suunto", "D4f",        DC_FAMILY_SUUNTO_D9, 0x20},  // FTDI
+	{"Suunto", "D9",         DC_FAMILY_SUUNTO_D9, 0x0E, NULL},
+	{"Suunto", "D6",         DC_FAMILY_SUUNTO_D9, 0x0F, NULL},
+	{"Suunto", "D4",         DC_FAMILY_SUUNTO_D9, 0x12, NULL},
+	{"Suunto", "D4i",        DC_FAMILY_SUUNTO_D9, 0x19, NULL},
+	{"Suunto", "D6i",        DC_FAMILY_SUUNTO_D9, 0x1A, NULL},
+	{"Suunto", "D9tx",       DC_FAMILY_SUUNTO_D9, 0x1B, NULL},
+	{"Suunto", "DX",         DC_FAMILY_SUUNTO_D9, 0x1C, NULL},
+	{"Suunto", "Vyper Novo", DC_FAMILY_SUUNTO_D9, 0x1D, NULL},
+	{"Suunto", "Zoop Novo",  DC_FAMILY_SUUNTO_D9, 0x1E, NULL},
+	{"Suunto", "D4f",        DC_FAMILY_SUUNTO_D9, 0x20, NULL},
 	/* Suunto EON Steel */
 #if defined(USBHID) || defined(ENABLE_BLE)
-	{"Suunto", "EON Steel", DC_FAMILY_SUUNTO_EONSTEEL, 0},  // BLE
-	{"Suunto", "EON Core",  DC_FAMILY_SUUNTO_EONSTEEL, 1},  // BLE
+	{"Suunto", "EON Steel", DC_FAMILY_SUUNTO_EONSTEEL, 0, dc_filter_suunto},
+	{"Suunto", "EON Core",  DC_FAMILY_SUUNTO_EONSTEEL, 1, dc_filter_suunto},
 #endif
 	/* Uwatec Aladin */
-	{"Uwatec", "Aladin Air Twin",     DC_FAMILY_UWATEC_ALADIN, 0x1C},  // FTDI
-	{"Uwatec", "Aladin Sport Plus",   DC_FAMILY_UWATEC_ALADIN, 0x3E},  // FTDI
-	{"Uwatec", "Aladin Pro",          DC_FAMILY_UWATEC_ALADIN, 0x3F},  // FTDI
-	{"Uwatec", "Aladin Air Z",        DC_FAMILY_UWATEC_ALADIN, 0x44},  // FTDI
-	{"Uwatec", "Aladin Air Z O2",     DC_FAMILY_UWATEC_ALADIN, 0xA4},  // FTDI
-	{"Uwatec", "Aladin Air Z Nitrox", DC_FAMILY_UWATEC_ALADIN, 0xF4},  // FTDI
-	{"Uwatec", "Aladin Pro Ultra",    DC_FAMILY_UWATEC_ALADIN, 0xFF},  // FTDI
+	{"Uwatec", "Aladin Air Twin",     DC_FAMILY_UWATEC_ALADIN, 0x1C, NULL},
+	{"Uwatec", "Aladin Sport Plus",   DC_FAMILY_UWATEC_ALADIN, 0x3E, NULL},
+	{"Uwatec", "Aladin Pro",          DC_FAMILY_UWATEC_ALADIN, 0x3F, NULL},
+	{"Uwatec", "Aladin Air Z",        DC_FAMILY_UWATEC_ALADIN, 0x44, NULL},
+	{"Uwatec", "Aladin Air Z O2",     DC_FAMILY_UWATEC_ALADIN, 0xA4, NULL},
+	{"Uwatec", "Aladin Air Z Nitrox", DC_FAMILY_UWATEC_ALADIN, 0xF4, NULL},
+	{"Uwatec", "Aladin Pro Ultra",    DC_FAMILY_UWATEC_ALADIN, 0xFF, NULL},
 	/* Uwatec Memomouse */
-	{"Uwatec", "Memomouse", DC_FAMILY_UWATEC_MEMOMOUSE, 0},  // FTDI
+	{"Uwatec", "Memomouse", DC_FAMILY_UWATEC_MEMOMOUSE, 0, NULL},
 	/* Uwatec Smart */
 #ifdef IRDA
-	{"Uwatec", "Smart Pro",     DC_FAMILY_UWATEC_SMART, 0x10},
-	{"Uwatec", "Galileo Sol",   DC_FAMILY_UWATEC_SMART, 0x11},
-	{"Uwatec", "Galileo Luna",  DC_FAMILY_UWATEC_SMART, 0x11},
-	{"Uwatec", "Galileo Terra", DC_FAMILY_UWATEC_SMART, 0x11},
-	{"Uwatec", "Aladin Tec",    DC_FAMILY_UWATEC_SMART, 0x12},
-	{"Uwatec", "Aladin Prime",  DC_FAMILY_UWATEC_SMART, 0x12},
-	{"Uwatec", "Aladin Tec 2G", DC_FAMILY_UWATEC_SMART, 0x13},
-	{"Uwatec", "Aladin 2G",     DC_FAMILY_UWATEC_SMART, 0x13},
-	{"Subgear","XP-10",         DC_FAMILY_UWATEC_SMART, 0x13},
-	{"Uwatec", "Smart Com",     DC_FAMILY_UWATEC_SMART, 0x14},
-	{"Uwatec", "Aladin 2G",     DC_FAMILY_UWATEC_SMART, 0x15},
-	{"Uwatec", "Aladin Tec 3G", DC_FAMILY_UWATEC_SMART, 0x15},
-	{"Uwatec", "Aladin Sport",  DC_FAMILY_UWATEC_SMART, 0x15},
-	{"Subgear","XP-3G",         DC_FAMILY_UWATEC_SMART, 0x15},
-	{"Uwatec", "Smart Tec",     DC_FAMILY_UWATEC_SMART, 0x18},
-	{"Uwatec", "Galileo Trimix",DC_FAMILY_UWATEC_SMART, 0x19},
-	{"Uwatec", "Smart Z",       DC_FAMILY_UWATEC_SMART, 0x1C},
-	{"Subgear","XP Air",        DC_FAMILY_UWATEC_SMART, 0x1C},
+	{"Uwatec", "Smart Pro",     DC_FAMILY_UWATEC_SMART, 0x10, dc_filter_uwatec},
+	{"Uwatec", "Galileo Sol",   DC_FAMILY_UWATEC_SMART, 0x11, dc_filter_uwatec},
+	{"Uwatec", "Galileo Luna",  DC_FAMILY_UWATEC_SMART, 0x11, dc_filter_uwatec},
+	{"Uwatec", "Galileo Terra", DC_FAMILY_UWATEC_SMART, 0x11, dc_filter_uwatec},
+	{"Uwatec", "Aladin Tec",    DC_FAMILY_UWATEC_SMART, 0x12, dc_filter_uwatec},
+	{"Uwatec", "Aladin Prime",  DC_FAMILY_UWATEC_SMART, 0x12, dc_filter_uwatec},
+	{"Uwatec", "Aladin Tec 2G", DC_FAMILY_UWATEC_SMART, 0x13, dc_filter_uwatec},
+	{"Uwatec", "Aladin 2G",     DC_FAMILY_UWATEC_SMART, 0x13, dc_filter_uwatec},
+	{"Subgear","XP-10",         DC_FAMILY_UWATEC_SMART, 0x13, dc_filter_uwatec},
+	{"Uwatec", "Smart Com",     DC_FAMILY_UWATEC_SMART, 0x14, dc_filter_uwatec},
+	{"Uwatec", "Aladin 2G",     DC_FAMILY_UWATEC_SMART, 0x15, dc_filter_uwatec},
+	{"Uwatec", "Aladin Tec 3G", DC_FAMILY_UWATEC_SMART, 0x15, dc_filter_uwatec},
+	{"Uwatec", "Aladin Sport",  DC_FAMILY_UWATEC_SMART, 0x15, dc_filter_uwatec},
+	{"Subgear","XP-3G",         DC_FAMILY_UWATEC_SMART, 0x15, dc_filter_uwatec},
+	{"Uwatec", "Smart Tec",     DC_FAMILY_UWATEC_SMART, 0x18, dc_filter_uwatec},
+	{"Uwatec", "Galileo Trimix",DC_FAMILY_UWATEC_SMART, 0x19, dc_filter_uwatec},
+	{"Uwatec", "Smart Z",       DC_FAMILY_UWATEC_SMART, 0x1C, dc_filter_uwatec},
+	{"Subgear","XP Air",        DC_FAMILY_UWATEC_SMART, 0x1C, dc_filter_uwatec},
 #endif
 	/* Scubapro/Uwatec Meridian */
-	{"Scubapro", "Meridian",    DC_FAMILY_UWATEC_MERIDIAN, 0x20},
-	{"Scubapro", "Mantis",      DC_FAMILY_UWATEC_MERIDIAN, 0x20},
-	{"Scubapro", "Chromis",     DC_FAMILY_UWATEC_MERIDIAN, 0x24},
-	{"Scubapro", "Mantis 2",    DC_FAMILY_UWATEC_MERIDIAN, 0x26},
+	{"Scubapro", "Meridian",    DC_FAMILY_UWATEC_MERIDIAN, 0x20, NULL},
+	{"Scubapro", "Mantis",      DC_FAMILY_UWATEC_MERIDIAN, 0x20, NULL},
+	{"Scubapro", "Chromis",     DC_FAMILY_UWATEC_MERIDIAN, 0x24, NULL},
+	{"Scubapro", "Mantis 2",    DC_FAMILY_UWATEC_MERIDIAN, 0x26, NULL},
 	/* Scubapro G2 */
 #if defined(USBHID) || defined(ENABLE_BLE)
-	{"Scubapro", "Aladin Sport Matrix", DC_FAMILY_UWATEC_G2, 0x17},  // BLE
-	{"Scubapro", "Aladin Square",       DC_FAMILY_UWATEC_G2, 0x22},
-	{"Scubapro", "G2",                  DC_FAMILY_UWATEC_G2, 0x32},  // BLE
+	{"Scubapro", "Aladin Sport Matrix", DC_FAMILY_UWATEC_G2, 0x17, dc_filter_uwatec},
+	{"Scubapro", "Aladin Square",       DC_FAMILY_UWATEC_G2, 0x22, dc_filter_uwatec},
+	{"Scubapro", "G2",                  DC_FAMILY_UWATEC_G2, 0x32, dc_filter_uwatec},
 #endif
 	/* Reefnet */
-	{"Reefnet", "Sensus",       DC_FAMILY_REEFNET_SENSUS, 1},
-	{"Reefnet", "Sensus Pro",   DC_FAMILY_REEFNET_SENSUSPRO, 2},
-	{"Reefnet", "Sensus Ultra", DC_FAMILY_REEFNET_SENSUSULTRA, 3},
+	{"Reefnet", "Sensus",       DC_FAMILY_REEFNET_SENSUS, 1, NULL},
+	{"Reefnet", "Sensus Pro",   DC_FAMILY_REEFNET_SENSUSPRO, 2, NULL},
+	{"Reefnet", "Sensus Ultra", DC_FAMILY_REEFNET_SENSUSULTRA, 3, NULL},
 	/* Oceanic VT Pro */
-	{"Aeris",    "500 AI",     DC_FAMILY_OCEANIC_VTPRO, 0x4151},  // FTDI
-	{"Oceanic",  "Versa Pro",  DC_FAMILY_OCEANIC_VTPRO, 0x4155},  // FTDI
-	{"Aeris",    "Atmos 2",    DC_FAMILY_OCEANIC_VTPRO, 0x4158},  // FTDI
-	{"Oceanic",  "Pro Plus 2", DC_FAMILY_OCEANIC_VTPRO, 0x4159},  // FTDI
-	{"Aeris",    "Atmos AI",   DC_FAMILY_OCEANIC_VTPRO, 0x4244},  // FTDI
-	{"Oceanic",  "VT Pro",     DC_FAMILY_OCEANIC_VTPRO, 0x4245},  // FTDI
-	{"Sherwood", "Wisdom",     DC_FAMILY_OCEANIC_VTPRO, 0x4246},  // FTDI
-	{"Aeris",    "Elite",      DC_FAMILY_OCEANIC_VTPRO, 0x424F},  // FTDI
+	{"Aeris",    "500 AI",     DC_FAMILY_OCEANIC_VTPRO, 0x4151, NULL},
+	{"Oceanic",  "Versa Pro",  DC_FAMILY_OCEANIC_VTPRO, 0x4155, NULL},
+	{"Aeris",    "Atmos 2",    DC_FAMILY_OCEANIC_VTPRO, 0x4158, NULL},
+	{"Oceanic",  "Pro Plus 2", DC_FAMILY_OCEANIC_VTPRO, 0x4159, NULL},
+	{"Aeris",    "Atmos AI",   DC_FAMILY_OCEANIC_VTPRO, 0x4244, NULL},
+	{"Oceanic",  "VT Pro",     DC_FAMILY_OCEANIC_VTPRO, 0x4245, NULL},
+	{"Sherwood", "Wisdom",     DC_FAMILY_OCEANIC_VTPRO, 0x4246, NULL},
+	{"Aeris",    "Elite",      DC_FAMILY_OCEANIC_VTPRO, 0x424F, NULL},
 	/* Oceanic Veo 250 */
-	{"Genesis", "React Pro", DC_FAMILY_OCEANIC_VEO250, 0x4247},  // FTDI
-	{"Oceanic", "Veo 200",   DC_FAMILY_OCEANIC_VEO250, 0x424B},  // FTDI
-	{"Oceanic", "Veo 250",   DC_FAMILY_OCEANIC_VEO250, 0x424C},  // FTDI
-	{"Seemann", "XP5",       DC_FAMILY_OCEANIC_VEO250, 0x4251},  // FTDI
-	{"Oceanic", "Veo 180",   DC_FAMILY_OCEANIC_VEO250, 0x4252},  // FTDI
-	{"Aeris",   "XR-2",      DC_FAMILY_OCEANIC_VEO250, 0x4255},  // FTDI
-	{"Sherwood", "Insight",  DC_FAMILY_OCEANIC_VEO250, 0x425A},  // FTDI
-	{"Hollis",  "DG02",      DC_FAMILY_OCEANIC_VEO250, 0x4352},  // FTDI
+	{"Genesis", "React Pro", DC_FAMILY_OCEANIC_VEO250, 0x4247, NULL},
+	{"Oceanic", "Veo 200",   DC_FAMILY_OCEANIC_VEO250, 0x424B, NULL},
+	{"Oceanic", "Veo 250",   DC_FAMILY_OCEANIC_VEO250, 0x424C, NULL},
+	{"Seemann", "XP5",       DC_FAMILY_OCEANIC_VEO250, 0x4251, NULL},
+	{"Oceanic", "Veo 180",   DC_FAMILY_OCEANIC_VEO250, 0x4252, NULL},
+	{"Aeris",   "XR-2",      DC_FAMILY_OCEANIC_VEO250, 0x4255, NULL},
+	{"Sherwood", "Insight",  DC_FAMILY_OCEANIC_VEO250, 0x425A, NULL},
+	{"Hollis",  "DG02",      DC_FAMILY_OCEANIC_VEO250, 0x4352, NULL},
 	/* Oceanic Atom 2.0 */
-	{"Oceanic",  "Atom 1.0",            DC_FAMILY_OCEANIC_ATOM2, 0x4250},  // FTDI
-	{"Aeris",    "Epic",                DC_FAMILY_OCEANIC_ATOM2, 0x4257},  // FTDI
-	{"Oceanic",  "VT3",                 DC_FAMILY_OCEANIC_ATOM2, 0x4258},  // FTDI
-	{"Aeris",    "Elite T3",            DC_FAMILY_OCEANIC_ATOM2, 0x4259},  // FTDI
-	{"Oceanic",  "Atom 2.0",            DC_FAMILY_OCEANIC_ATOM2, 0x4342},  // FTDI
-	{"Oceanic",  "Geo",                 DC_FAMILY_OCEANIC_ATOM2, 0x4344},  // FTDI
-	{"Aeris",    "Manta",               DC_FAMILY_OCEANIC_ATOM2, 0x4345},  // FTDI
-	{"Aeris",    "XR-1 NX",             DC_FAMILY_OCEANIC_ATOM2, 0x4346},  // FTDI
-	{"Oceanic",  "Datamask",            DC_FAMILY_OCEANIC_ATOM2, 0x4347},  // FTDI
-	{"Aeris",    "Compumask",           DC_FAMILY_OCEANIC_ATOM2, 0x4348},  // FTDI
-	{"Aeris",    "F10",                 DC_FAMILY_OCEANIC_ATOM2, 0x434D},  // FTDI
-	{"Oceanic",  "OC1",                 DC_FAMILY_OCEANIC_ATOM2, 0x434E},  // FTDI
-	{"Sherwood", "Wisdom 2",            DC_FAMILY_OCEANIC_ATOM2, 0x4350},  // FTDI
-	{"Sherwood", "Insight 2",           DC_FAMILY_OCEANIC_ATOM2, 0x4353},  // FTDI
-	{"Genesis",  "React Pro White",     DC_FAMILY_OCEANIC_ATOM2, 0x4354},  // FTDI
-	{"Tusa",     "Element II (IQ-750)", DC_FAMILY_OCEANIC_ATOM2, 0x4357},  // FTDI
-	{"Oceanic",  "Veo 1.0",             DC_FAMILY_OCEANIC_ATOM2, 0x4358},  // FTDI
-	{"Oceanic",  "Veo 2.0",             DC_FAMILY_OCEANIC_ATOM2, 0x4359},  // FTDI
-	{"Oceanic",  "Veo 3.0",             DC_FAMILY_OCEANIC_ATOM2, 0x435A},  // FTDI
-	{"Tusa",     "Zen (IQ-900)",        DC_FAMILY_OCEANIC_ATOM2, 0x4441},  // FTDI
-	{"Tusa",     "Zen Air (IQ-950)",    DC_FAMILY_OCEANIC_ATOM2, 0x4442},  // FTDI
-	{"Aeris",    "Atmos AI 2",          DC_FAMILY_OCEANIC_ATOM2, 0x4443},  // FTDI
-	{"Oceanic",  "Pro Plus 2.1",        DC_FAMILY_OCEANIC_ATOM2, 0x4444},  // FTDI
-	{"Oceanic",  "Geo 2.0",             DC_FAMILY_OCEANIC_ATOM2, 0x4446},  // FTDI
-	{"Oceanic",  "VT4",                 DC_FAMILY_OCEANIC_ATOM2, 0x4447},  // FTDI
-	{"Oceanic",  "OC1",                 DC_FAMILY_OCEANIC_ATOM2, 0x4449},  // FTDI
-	{"Beuchat",  "Voyager 2G",          DC_FAMILY_OCEANIC_ATOM2, 0x444B},  // FTDI
-	{"Oceanic",  "Atom 3.0",            DC_FAMILY_OCEANIC_ATOM2, 0x444C},  // FTDI
-	{"Hollis",   "DG03",                DC_FAMILY_OCEANIC_ATOM2, 0x444D},  // FTDI
-	{"Oceanic",  "OCS",                 DC_FAMILY_OCEANIC_ATOM2, 0x4450},  // FTDI
-	{"Oceanic",  "OC1",                 DC_FAMILY_OCEANIC_ATOM2, 0x4451},  // FTDI
-	{"Oceanic",  "VT 4.1",              DC_FAMILY_OCEANIC_ATOM2, 0x4452},  // FTDI
-	{"Aeris",    "Epic",                DC_FAMILY_OCEANIC_ATOM2, 0x4453},  // FTDI
-	{"Aeris",    "Elite T3",            DC_FAMILY_OCEANIC_ATOM2, 0x4455},  // FTDI
-	{"Oceanic",  "Atom 3.1",            DC_FAMILY_OCEANIC_ATOM2, 0x4456},  // FTDI
-	{"Aeris",    "A300 AI",             DC_FAMILY_OCEANIC_ATOM2, 0x4457},  // FTDI
-	{"Sherwood", "Wisdom 3",            DC_FAMILY_OCEANIC_ATOM2, 0x4458},  // FTDI
-	{"Aeris",    "A300",                DC_FAMILY_OCEANIC_ATOM2, 0x445A},  // FTDI
-	{"Hollis",   "TX1",                 DC_FAMILY_OCEANIC_ATOM2, 0x4542},  // FTDI
-	{"Beuchat",  "Mundial 2",           DC_FAMILY_OCEANIC_ATOM2, 0x4543},  // FTDI
-	{"Sherwood", "Amphos",              DC_FAMILY_OCEANIC_ATOM2, 0x4545},  // FTDI
-	{"Sherwood", "Amphos Air",          DC_FAMILY_OCEANIC_ATOM2, 0x4546},  // FTDI
-	{"Oceanic",  "Pro Plus 3",          DC_FAMILY_OCEANIC_ATOM2, 0x4548},  // FTDI
-	{"Aeris",    "F11",                 DC_FAMILY_OCEANIC_ATOM2, 0x4549},  // FTDI
-	{"Oceanic",  "OCi",                 DC_FAMILY_OCEANIC_ATOM2, 0x454B},  // FTDI
-	{"Aeris",    "A300CS",              DC_FAMILY_OCEANIC_ATOM2, 0x454C},  // FTDI
-	{"Beuchat",  "Mundial 3",           DC_FAMILY_OCEANIC_ATOM2, 0x4550},  // FTDI
-	{"Oceanic",  "F10",                 DC_FAMILY_OCEANIC_ATOM2, 0x4553},  // FTDI
-	{"Oceanic",  "F11",                 DC_FAMILY_OCEANIC_ATOM2, 0x4554},  // FTDI
-	{"Subgear",  "XP-Air",              DC_FAMILY_OCEANIC_ATOM2, 0x4555},  // FTDI
-	{"Sherwood", "Vision",              DC_FAMILY_OCEANIC_ATOM2, 0x4556},  // FTDI
-	{"Oceanic",  "VTX",                 DC_FAMILY_OCEANIC_ATOM2, 0x4557},  // FTDI
-	{"Aqualung", "i300",                DC_FAMILY_OCEANIC_ATOM2, 0x4559},  // FTDI
-	{"Aqualung", "i750TC",              DC_FAMILY_OCEANIC_ATOM2, 0x455A},  // FTDI
-	{"Aqualung", "i450T",               DC_FAMILY_OCEANIC_ATOM2, 0x4641},  // FTDI
-	{"Aqualung", "i550",                DC_FAMILY_OCEANIC_ATOM2, 0x4642},  // FTDI
-	{"Aqualung", "i200",                DC_FAMILY_OCEANIC_ATOM2, 0x4646},  // FTDI
+	{"Oceanic",  "Atom 1.0",            DC_FAMILY_OCEANIC_ATOM2, 0x4250, NULL},
+	{"Aeris",    "Epic",                DC_FAMILY_OCEANIC_ATOM2, 0x4257, NULL},
+	{"Oceanic",  "VT3",                 DC_FAMILY_OCEANIC_ATOM2, 0x4258, NULL},
+	{"Aeris",    "Elite T3",            DC_FAMILY_OCEANIC_ATOM2, 0x4259, NULL},
+	{"Oceanic",  "Atom 2.0",            DC_FAMILY_OCEANIC_ATOM2, 0x4342, NULL},
+	{"Oceanic",  "Geo",                 DC_FAMILY_OCEANIC_ATOM2, 0x4344, NULL},
+	{"Aeris",    "Manta",               DC_FAMILY_OCEANIC_ATOM2, 0x4345, NULL},
+	{"Aeris",    "XR-1 NX",             DC_FAMILY_OCEANIC_ATOM2, 0x4346, NULL},
+	{"Oceanic",  "Datamask",            DC_FAMILY_OCEANIC_ATOM2, 0x4347, NULL},
+	{"Aeris",    "Compumask",           DC_FAMILY_OCEANIC_ATOM2, 0x4348, NULL},
+	{"Aeris",    "F10",                 DC_FAMILY_OCEANIC_ATOM2, 0x434D, NULL},
+	{"Oceanic",  "OC1",                 DC_FAMILY_OCEANIC_ATOM2, 0x434E, NULL},
+	{"Sherwood", "Wisdom 2",            DC_FAMILY_OCEANIC_ATOM2, 0x4350, NULL},
+	{"Sherwood", "Insight 2",           DC_FAMILY_OCEANIC_ATOM2, 0x4353, NULL},
+	{"Genesis",  "React Pro White",     DC_FAMILY_OCEANIC_ATOM2, 0x4354, NULL},
+	{"Tusa",     "Element II (IQ-750)", DC_FAMILY_OCEANIC_ATOM2, 0x4357, NULL},
+	{"Oceanic",  "Veo 1.0",             DC_FAMILY_OCEANIC_ATOM2, 0x4358, NULL},
+	{"Oceanic",  "Veo 2.0",             DC_FAMILY_OCEANIC_ATOM2, 0x4359, NULL},
+	{"Oceanic",  "Veo 3.0",             DC_FAMILY_OCEANIC_ATOM2, 0x435A, NULL},
+	{"Tusa",     "Zen (IQ-900)",        DC_FAMILY_OCEANIC_ATOM2, 0x4441, NULL},
+	{"Tusa",     "Zen Air (IQ-950)",    DC_FAMILY_OCEANIC_ATOM2, 0x4442, NULL},
+	{"Aeris",    "Atmos AI 2",          DC_FAMILY_OCEANIC_ATOM2, 0x4443, NULL},
+	{"Oceanic",  "Pro Plus 2.1",        DC_FAMILY_OCEANIC_ATOM2, 0x4444, NULL},
+	{"Oceanic",  "Geo 2.0",             DC_FAMILY_OCEANIC_ATOM2, 0x4446, NULL},
+	{"Oceanic",  "VT4",                 DC_FAMILY_OCEANIC_ATOM2, 0x4447, NULL},
+	{"Oceanic",  "OC1",                 DC_FAMILY_OCEANIC_ATOM2, 0x4449, NULL},
+	{"Beuchat",  "Voyager 2G",          DC_FAMILY_OCEANIC_ATOM2, 0x444B, NULL},
+	{"Oceanic",  "Atom 3.0",            DC_FAMILY_OCEANIC_ATOM2, 0x444C, NULL},
+	{"Hollis",   "DG03",                DC_FAMILY_OCEANIC_ATOM2, 0x444D, NULL},
+	{"Oceanic",  "OCS",                 DC_FAMILY_OCEANIC_ATOM2, 0x4450, NULL},
+	{"Oceanic",  "OC1",                 DC_FAMILY_OCEANIC_ATOM2, 0x4451, NULL},
+	{"Oceanic",  "VT 4.1",              DC_FAMILY_OCEANIC_ATOM2, 0x4452, NULL},
+	{"Aeris",    "Epic",                DC_FAMILY_OCEANIC_ATOM2, 0x4453, NULL},
+	{"Aeris",    "Elite T3",            DC_FAMILY_OCEANIC_ATOM2, 0x4455, NULL},
+	{"Oceanic",  "Atom 3.1",            DC_FAMILY_OCEANIC_ATOM2, 0x4456, NULL},
+	{"Aeris",    "A300 AI",             DC_FAMILY_OCEANIC_ATOM2, 0x4457, NULL},
+	{"Sherwood", "Wisdom 3",            DC_FAMILY_OCEANIC_ATOM2, 0x4458, NULL},
+	{"Aeris",    "A300",                DC_FAMILY_OCEANIC_ATOM2, 0x445A, NULL},
+	{"Hollis",   "TX1",                 DC_FAMILY_OCEANIC_ATOM2, 0x4542, NULL},
+	{"Beuchat",  "Mundial 2",           DC_FAMILY_OCEANIC_ATOM2, 0x4543, NULL},
+	{"Sherwood", "Amphos",              DC_FAMILY_OCEANIC_ATOM2, 0x4545, NULL},
+	{"Sherwood", "Amphos Air",          DC_FAMILY_OCEANIC_ATOM2, 0x4546, NULL},
+	{"Oceanic",  "Pro Plus 3",          DC_FAMILY_OCEANIC_ATOM2, 0x4548, NULL},
+	{"Aeris",    "F11",                 DC_FAMILY_OCEANIC_ATOM2, 0x4549, NULL},
+	{"Oceanic",  "OCi",                 DC_FAMILY_OCEANIC_ATOM2, 0x454B, NULL},
+	{"Aeris",    "A300CS",              DC_FAMILY_OCEANIC_ATOM2, 0x454C, NULL},
+	{"Beuchat",  "Mundial 3",           DC_FAMILY_OCEANIC_ATOM2, 0x4550, NULL},
+	{"Oceanic",  "F10",                 DC_FAMILY_OCEANIC_ATOM2, 0x4553, NULL},
+	{"Oceanic",  "F11",                 DC_FAMILY_OCEANIC_ATOM2, 0x4554, NULL},
+	{"Subgear",  "XP-Air",              DC_FAMILY_OCEANIC_ATOM2, 0x4555, NULL},
+	{"Sherwood", "Vision",              DC_FAMILY_OCEANIC_ATOM2, 0x4556, NULL},
+	{"Oceanic",  "VTX",                 DC_FAMILY_OCEANIC_ATOM2, 0x4557, NULL},
+	{"Aqualung", "i300",                DC_FAMILY_OCEANIC_ATOM2, 0x4559, NULL},
+	{"Aqualung", "i750TC",              DC_FAMILY_OCEANIC_ATOM2, 0x455A, NULL},
+	{"Aqualung", "i450T",               DC_FAMILY_OCEANIC_ATOM2, 0x4641, NULL},
+	{"Aqualung", "i550",                DC_FAMILY_OCEANIC_ATOM2, 0x4642, NULL},
+	{"Aqualung", "i200",                DC_FAMILY_OCEANIC_ATOM2, 0x4646, NULL},
 	/* Mares Nemo */
-	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0},
-	{"Mares", "Nemo Steel",   DC_FAMILY_MARES_NEMO, 0},
-	{"Mares", "Nemo Titanium",DC_FAMILY_MARES_NEMO, 0},
-	{"Mares", "Nemo Excel",   DC_FAMILY_MARES_NEMO, 17},
-	{"Mares", "Nemo Apneist", DC_FAMILY_MARES_NEMO, 18},
+	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0, NULL},
+	{"Mares", "Nemo Steel",   DC_FAMILY_MARES_NEMO, 0, NULL},
+	{"Mares", "Nemo Titanium",DC_FAMILY_MARES_NEMO, 0, NULL},
+	{"Mares", "Nemo Excel",   DC_FAMILY_MARES_NEMO, 17, NULL},
+	{"Mares", "Nemo Apneist", DC_FAMILY_MARES_NEMO, 18, NULL},
 	/* Mares Puck */
-	{"Mares", "Puck",      DC_FAMILY_MARES_PUCK, 7},
-	{"Mares", "Puck Air",  DC_FAMILY_MARES_PUCK, 19},
-	{"Mares", "Nemo Air",  DC_FAMILY_MARES_PUCK, 4},
-	{"Mares", "Nemo Wide", DC_FAMILY_MARES_PUCK, 1},
+	{"Mares", "Puck",      DC_FAMILY_MARES_PUCK, 7, NULL},
+	{"Mares", "Puck Air",  DC_FAMILY_MARES_PUCK, 19, NULL},
+	{"Mares", "Nemo Air",  DC_FAMILY_MARES_PUCK, 4, NULL},
+	{"Mares", "Nemo Wide", DC_FAMILY_MARES_PUCK, 1, NULL},
 	/* Mares Darwin */
-	{"Mares", "Darwin",     DC_FAMILY_MARES_DARWIN , 0},
-	{"Mares", "M1",         DC_FAMILY_MARES_DARWIN , 0},
-	{"Mares", "M2",         DC_FAMILY_MARES_DARWIN , 0},
-	{"Mares", "Darwin Air", DC_FAMILY_MARES_DARWIN , 1},
-	{"Mares", "Airlab",     DC_FAMILY_MARES_DARWIN , 1},
+	{"Mares", "Darwin",     DC_FAMILY_MARES_DARWIN , 0, NULL},
+	{"Mares", "M1",         DC_FAMILY_MARES_DARWIN , 0, NULL},
+	{"Mares", "M2",         DC_FAMILY_MARES_DARWIN , 0, NULL},
+	{"Mares", "Darwin Air", DC_FAMILY_MARES_DARWIN , 1, NULL},
+	{"Mares", "Airlab",     DC_FAMILY_MARES_DARWIN , 1, NULL},
 	/* Mares Icon HD */
-	{"Mares", "Matrix",            DC_FAMILY_MARES_ICONHD , 0x0F},
-	{"Mares", "Smart",             DC_FAMILY_MARES_ICONHD , 0x000010},
-	{"Mares", "Smart Apnea",       DC_FAMILY_MARES_ICONHD , 0x010010},
-	{"Mares", "Icon HD",           DC_FAMILY_MARES_ICONHD , 0x14},
-	{"Mares", "Icon HD Net Ready", DC_FAMILY_MARES_ICONHD , 0x15},
-	{"Mares", "Puck Pro",          DC_FAMILY_MARES_ICONHD , 0x18},
-	{"Mares", "Nemo Wide 2",       DC_FAMILY_MARES_ICONHD , 0x19},
-	{"Mares", "Puck 2",            DC_FAMILY_MARES_ICONHD , 0x1F},
-	{"Mares", "Quad Air",          DC_FAMILY_MARES_ICONHD , 0x23},
-	{"Mares", "Quad",              DC_FAMILY_MARES_ICONHD , 0x29},
+	{"Mares", "Matrix",            DC_FAMILY_MARES_ICONHD , 0x0F, NULL},
+	{"Mares", "Smart",             DC_FAMILY_MARES_ICONHD , 0x000010, NULL},
+	{"Mares", "Smart Apnea",       DC_FAMILY_MARES_ICONHD , 0x010010, NULL},
+	{"Mares", "Icon HD",           DC_FAMILY_MARES_ICONHD , 0x14, NULL},
+	{"Mares", "Icon HD Net Ready", DC_FAMILY_MARES_ICONHD , 0x15, NULL},
+	{"Mares", "Puck Pro",          DC_FAMILY_MARES_ICONHD , 0x18, NULL},
+	{"Mares", "Nemo Wide 2",       DC_FAMILY_MARES_ICONHD , 0x19, NULL},
+	{"Mares", "Puck 2",            DC_FAMILY_MARES_ICONHD , 0x1F, NULL},
+	{"Mares", "Quad Air",          DC_FAMILY_MARES_ICONHD , 0x23, NULL},
+	{"Mares", "Quad",              DC_FAMILY_MARES_ICONHD , 0x29, NULL},
 	/* Heinrichs Weikamp */
-	{"Heinrichs Weikamp", "OSTC",     DC_FAMILY_HW_OSTC, 0},  // FTDI
-	{"Heinrichs Weikamp", "OSTC Mk2", DC_FAMILY_HW_OSTC, 1},  // FTDI
-	{"Heinrichs Weikamp", "OSTC 2N",  DC_FAMILY_HW_OSTC, 2},  // FTDI
-	{"Heinrichs Weikamp", "OSTC 2C",  DC_FAMILY_HW_OSTC, 3},  // FTDI
-	{"Heinrichs Weikamp", "Frog",     DC_FAMILY_HW_FROG, 0},  // FTDI
-	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x11},  // FTDI
-	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x13},  // FTDI
-	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x1B},  // FTDI
-	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A},  // FTDI
-	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x13},  // FTDI // BT
-	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x1A},  // FTDI // BT
-	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x3B},  // BT
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05},  // FTDI
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07},  // FTDI
-	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x12},  // FTDI // BT
-	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x13},  // FTDI // BT
+	{"Heinrichs Weikamp", "OSTC",     DC_FAMILY_HW_OSTC, 0, NULL},
+	{"Heinrichs Weikamp", "OSTC Mk2", DC_FAMILY_HW_OSTC, 1, NULL},
+	{"Heinrichs Weikamp", "OSTC 2N",  DC_FAMILY_HW_OSTC, 2, NULL},
+	{"Heinrichs Weikamp", "OSTC 2C",  DC_FAMILY_HW_OSTC, 3, NULL},
+	{"Heinrichs Weikamp", "Frog",     DC_FAMILY_HW_FROG, 0, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x11, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x13, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x1B, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x13, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x1A, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x3B, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x12, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x13, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 2 TR",  DC_FAMILY_HW_OSTC3, 0x33, dc_filter_hw},
 	/* Cressi Edy */
-	{"Tusa",   "IQ-700", DC_FAMILY_CRESSI_EDY, 0x05},
-	{"Cressi", "Edy",    DC_FAMILY_CRESSI_EDY, 0x08},
+	{"Tusa",   "IQ-700", DC_FAMILY_CRESSI_EDY, 0x05, NULL},
+	{"Cressi", "Edy",    DC_FAMILY_CRESSI_EDY, 0x08, NULL},
 	/* Cressi Leonardo */
-	{"Cressi", "Leonardo", DC_FAMILY_CRESSI_LEONARDO, 1},
-	{"Cressi", "Giotto",   DC_FAMILY_CRESSI_LEONARDO, 4},
-	{"Cressi", "Newton",   DC_FAMILY_CRESSI_LEONARDO, 5},
-	{"Cressi", "Drake",    DC_FAMILY_CRESSI_LEONARDO, 6},
+	{"Cressi", "Leonardo", DC_FAMILY_CRESSI_LEONARDO, 1, NULL},
+	{"Cressi", "Giotto",   DC_FAMILY_CRESSI_LEONARDO, 4, NULL},
+	{"Cressi", "Newton",   DC_FAMILY_CRESSI_LEONARDO, 5, NULL},
+	{"Cressi", "Drake",    DC_FAMILY_CRESSI_LEONARDO, 6, NULL},
 	/* Zeagle N2iTiON3 */
-	{"Zeagle",   "N2iTiON3",   DC_FAMILY_ZEAGLE_N2ITION3, 0},
-	{"Apeks",    "Quantum X",  DC_FAMILY_ZEAGLE_N2ITION3, 0},
-	{"Dive Rite", "NiTek Trio", DC_FAMILY_ZEAGLE_N2ITION3, 0},
-	{"Scubapro", "XTender 5",  DC_FAMILY_ZEAGLE_N2ITION3, 0},
+	{"Zeagle",    "N2iTiON3",   DC_FAMILY_ZEAGLE_N2ITION3, 0, NULL},
+	{"Apeks",     "Quantum X",  DC_FAMILY_ZEAGLE_N2ITION3, 0, NULL},
+	{"Dive Rite", "NiTek Trio", DC_FAMILY_ZEAGLE_N2ITION3, 0, NULL},
+	{"Scubapro",  "XTender 5",  DC_FAMILY_ZEAGLE_N2ITION3, 0, NULL},
 	/* Atomic Aquatics Cobalt */
 #ifdef HAVE_LIBUSB
-	{"Atomic Aquatics", "Cobalt", DC_FAMILY_ATOMICS_COBALT, 0},
-	{"Atomic Aquatics", "Cobalt 2", DC_FAMILY_ATOMICS_COBALT, 2},
+	{"Atomic Aquatics", "Cobalt", DC_FAMILY_ATOMICS_COBALT, 0, NULL},
+	{"Atomic Aquatics", "Cobalt 2", DC_FAMILY_ATOMICS_COBALT, 2, NULL},
 #endif
 	/* Shearwater Predator */
-	{"Shearwater", "Predator", DC_FAMILY_SHEARWATER_PREDATOR, 2},  // BT
-	/* Shearwater Petrel family */
-	{"Shearwater", "Petrel",    DC_FAMILY_SHEARWATER_PETREL, 3},  // BT // BLE
-	{"Shearwater", "Petrel 2",  DC_FAMILY_SHEARWATER_PETREL, 3},  // BT // BLE
-	{"Shearwater", "Nerd",      DC_FAMILY_SHEARWATER_PETREL, 4},  // BT
-	{"Shearwater", "Perdix",    DC_FAMILY_SHEARWATER_PETREL, 5},  // BT // BLE
-	{"Shearwater", "Perdix AI", DC_FAMILY_SHEARWATER_PETREL, 6},  // BLE
-	{"Shearwater", "Nerd 2",    DC_FAMILY_SHEARWATER_PETREL, 7},  // BLE
+	{"Shearwater", "Predator", DC_FAMILY_SHEARWATER_PREDATOR, 2, dc_filter_shearwater},
+	/* Shearwater Petrel */
+	{"Shearwater", "Petrel",    DC_FAMILY_SHEARWATER_PETREL, 3, dc_filter_shearwater},
+	{"Shearwater", "Petrel 2",  DC_FAMILY_SHEARWATER_PETREL, 3, dc_filter_shearwater},
+	{"Shearwater", "Nerd",      DC_FAMILY_SHEARWATER_PETREL, 4, dc_filter_shearwater},
+	{"Shearwater", "Perdix",    DC_FAMILY_SHEARWATER_PETREL, 5, dc_filter_shearwater},
+	{"Shearwater", "Perdix AI", DC_FAMILY_SHEARWATER_PETREL, 6, dc_filter_shearwater},
+	{"Shearwater", "Nerd 2",    DC_FAMILY_SHEARWATER_PETREL, 7, dc_filter_shearwater},
 	/* Dive Rite NiTek Q */
-	{"Dive Rite", "NiTek Q",   DC_FAMILY_DIVERITE_NITEKQ, 0},
+	{"Dive Rite", "NiTek Q",   DC_FAMILY_DIVERITE_NITEKQ, 0, NULL},
 	/* Citizen Hyper Aqualand */
-	{"Citizen", "Hyper Aqualand", DC_FAMILY_CITIZEN_AQUALAND, 0},
+	{"Citizen", "Hyper Aqualand", DC_FAMILY_CITIZEN_AQUALAND, 0, NULL},
 	/* DiveSystem/Ratio iDive */
-	{"DiveSystem", "Orca",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x02},
-	{"DiveSystem", "iDive Pro",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x03},
-	{"DiveSystem", "iDive DAN",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x04},
-	{"DiveSystem", "iDive Tech",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x05},
-	{"DiveSystem", "iDive Reb",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x06},
-	{"DiveSystem", "iDive Stealth", DC_FAMILY_DIVESYSTEM_IDIVE, 0x07},
-	{"DiveSystem", "iDive Free",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x08},
-	{"DiveSystem", "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x09},
-	{"DiveSystem", "iDive X3M",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x0A},
-	{"DiveSystem", "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x0B},
-	{"Ratio",      "iX3M Easy",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x22},
-	{"Ratio",      "iX3M Deep",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x23},
-	{"Ratio",      "iX3M Tech+",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x24},
-	{"Ratio",      "iX3M Reb",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x25},
-	{"Ratio",      "iX3M Pro Easy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x32},
-	{"Ratio",      "iX3M Pro Deep", DC_FAMILY_DIVESYSTEM_IDIVE, 0x34},
-	{"Ratio",      "iX3M Pro Tech+",DC_FAMILY_DIVESYSTEM_IDIVE, 0x35},
-	{"Ratio",      "iDive Free",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x40},
-	{"Ratio",      "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x42},
-	{"Ratio",      "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x44},
-	{"Ratio",      "iDive Tech+",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x45},
-	{"Seac",       "Jack",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x1000},
+	{"DiveSystem", "Orca",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x02, NULL},
+	{"DiveSystem", "iDive Pro",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x03, NULL},
+	{"DiveSystem", "iDive DAN",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x04, NULL},
+	{"DiveSystem", "iDive Tech",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x05, NULL},
+	{"DiveSystem", "iDive Reb",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x06, NULL},
+	{"DiveSystem", "iDive Stealth", DC_FAMILY_DIVESYSTEM_IDIVE, 0x07, NULL},
+	{"DiveSystem", "iDive Free",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x08, NULL},
+	{"DiveSystem", "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x09, NULL},
+	{"DiveSystem", "iDive X3M",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x0A, NULL},
+	{"DiveSystem", "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x0B, NULL},
+	{"Ratio",      "iX3M Easy",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x22, NULL},
+	{"Ratio",      "iX3M Deep",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x23, NULL},
+	{"Ratio",      "iX3M Tech+",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x24, NULL},
+	{"Ratio",      "iX3M Reb",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x25, NULL},
+	{"Ratio",      "iX3M Pro Easy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x32, NULL},
+	{"Ratio",      "iX3M Pro Deep", DC_FAMILY_DIVESYSTEM_IDIVE, 0x34, NULL},
+	{"Ratio",      "iX3M Pro Tech+",DC_FAMILY_DIVESYSTEM_IDIVE, 0x35, NULL},
+	{"Ratio",      "iDive Free",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x40, NULL},
+	{"Ratio",      "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x42, NULL},
+	{"Ratio",      "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x44, NULL},
+	{"Ratio",      "iDive Tech+",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x45, NULL},
+	{"Seac",       "Jack",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x1000, NULL},
 	/* Cochran Commander */
-	{"Cochran", "Commander TM", DC_FAMILY_COCHRAN_COMMANDER, 0},  // FTDI
-	{"Cochran", "Commander I",  DC_FAMILY_COCHRAN_COMMANDER, 1},  // FTDI
-	{"Cochran", "Commander II", DC_FAMILY_COCHRAN_COMMANDER, 2},  // FTDI
-	{"Cochran", "EMC-14",       DC_FAMILY_COCHRAN_COMMANDER, 3},  // FTDI
-	{"Cochran", "EMC-16",       DC_FAMILY_COCHRAN_COMMANDER, 4},  // FTDI
-	{"Cochran", "EMC-20H",      DC_FAMILY_COCHRAN_COMMANDER, 5},  // FTDI
+	{"Cochran", "Commander TM", DC_FAMILY_COCHRAN_COMMANDER, 0, NULL},
+	{"Cochran", "Commander I",  DC_FAMILY_COCHRAN_COMMANDER, 1, NULL},
+	{"Cochran", "Commander II", DC_FAMILY_COCHRAN_COMMANDER, 2, NULL},
+	{"Cochran", "EMC-14",       DC_FAMILY_COCHRAN_COMMANDER, 3, NULL},
+	{"Cochran", "EMC-16",       DC_FAMILY_COCHRAN_COMMANDER, 4, NULL},
+	{"Cochran", "EMC-20H",      DC_FAMILY_COCHRAN_COMMANDER, 5, NULL},
 };
 
-typedef struct dc_descriptor_iterator_t {
-	dc_iterator_t base;
-	size_t current;
-} dc_descriptor_iterator_t;
+static int
+dc_filter_internal_name (const char *name, const char *values[], size_t count)
+{
+	if (name == NULL)
+		return 0;
 
-static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
-static dc_status_t dc_descriptor_iterator_free (dc_iterator_t *iterator);
+	for (size_t i = 0; i < count; ++i) {
+		if (strcasecmp (name, values[i]) == 0) {
+			return 1;
+		}
+	}
 
-static const dc_iterator_vtable_t dc_descriptor_iterator_vtable = {
-	dc_descriptor_iterator_free,
-	dc_descriptor_iterator_next
-};
+	return 0;
+}
+
+static int
+dc_filter_internal_usb (const dc_usb_desc_t *desc, const dc_usb_desc_t values[], size_t count)
+{
+	if (desc == NULL)
+		return 0;
+
+	for (size_t i = 0; i < count; ++i) {
+		if (desc->vid == values[i].vid &&
+			desc->pid == values[i].pid) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int dc_filter_uwatec (dc_transport_t transport, const void *userdata)
+{
+	static const char *irda[] = {
+		"Aladin Smart Com",
+		"Aladin Smart Pro",
+		"Aladin Smart Tec",
+		"Aladin Smart Z",
+		"Uwatec Aladin",
+		"UWATEC Galileo",
+		"UWATEC Galileo Sol",
+	};
+	static const dc_usb_desc_t usbhid[] = {
+		{0x2e6c, 0x3201}, // G2
+		{0xc251, 0x2006}, // Aladin Square
+	};
+
+	if (transport == DC_TRANSPORT_IRDA) {
+		return dc_filter_internal_name ((const char *) userdata, irda, C_ARRAY_SIZE(irda));
+	} else if (transport == DC_TRANSPORT_USBHID) {
+		return dc_filter_internal_usb ((const dc_usb_desc_t *) userdata, usbhid, C_ARRAY_SIZE(usbhid));
+	}
+
+	return 1;
+}
+
+static int dc_filter_suunto (dc_transport_t transport, const void *userdata)
+{
+	static const dc_usb_desc_t usbhid[] = {
+		{0x1493, 0x0030}, // Eon Steel
+		{0x1493, 0x0033}, // Eon Core
+	};
+
+	if (transport == DC_TRANSPORT_USBHID) {
+		return dc_filter_internal_usb ((const dc_usb_desc_t *) userdata, usbhid, C_ARRAY_SIZE(usbhid));
+	}
+
+	return 1;
+}
+
+static int dc_filter_hw (dc_transport_t transport, const void *userdata)
+{
+	if (transport == DC_TRANSPORT_BLUETOOTH) {
+		return strncasecmp ((const char *) userdata, "OSTC", 4) == 0 ||
+			strncasecmp ((const char *) userdata, "FROG", 4) == 0;
+	}
+
+	return 1;
+}
+
+static int dc_filter_shearwater (dc_transport_t transport, const void *userdata)
+{
+	static const char *bluetooth[] = {
+		"Predator",
+		"Petrel",
+		"Nerd",
+		"Perdix",
+	};
+
+	if (transport == DC_TRANSPORT_BLUETOOTH) {
+		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
+	}
+
+	return 1;
+}
 
 dc_status_t
 dc_descriptor_iterator (dc_iterator_t **out)
@@ -353,22 +456,13 @@ dc_descriptor_iterator (dc_iterator_t **out)
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
-	iterator = (dc_descriptor_iterator_t *) malloc (sizeof (dc_descriptor_iterator_t));
+	iterator = (dc_descriptor_iterator_t *) dc_iterator_allocate (NULL, &dc_descriptor_iterator_vtable);
 	if (iterator == NULL)
 		return DC_STATUS_NOMEMORY;
 
-	iterator->base.vtable = &dc_descriptor_iterator_vtable;
 	iterator->current = 0;
 
 	*out = (dc_iterator_t *) iterator;
-
-	return DC_STATUS_SUCCESS;
-}
-
-static dc_status_t
-dc_descriptor_iterator_free (dc_iterator_t *iterator)
-{
-	free (iterator);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -436,15 +530,6 @@ dc_descriptor_get_model (dc_descriptor_t *descriptor)
 	return descriptor->model;
 }
 
-unsigned int
-dc_descriptor_get_serial (dc_descriptor_t *descriptor)
-{
-	if (descriptor == NULL)
-		return 0;
-
-	return descriptor->serial;
-}
-
 dc_transport_t
 dc_descriptor_get_transport (dc_descriptor_t *descriptor)
 {
@@ -461,4 +546,13 @@ dc_descriptor_get_transport (dc_descriptor_t *descriptor)
 		return DC_TRANSPORT_IRDA;
 	else
 		return DC_TRANSPORT_SERIAL;
+}
+
+dc_filter_t
+dc_descriptor_get_filter (dc_descriptor_t *descriptor)
+{
+	if (descriptor == NULL)
+		return NULL;
+
+	return descriptor->filter;
 }
