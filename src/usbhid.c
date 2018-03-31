@@ -848,4 +848,12 @@ out:
 
 	return status;
 }
+#else /* !USBHID */
+
+dc_status_t
+dc_usbhid_custom_io (dc_context_t *context, unsigned int vid, unsigned int pid)
+{
+	return DC_STATUS_UNSUPPORTED;
+}
+
 #endif
