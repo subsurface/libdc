@@ -28,9 +28,7 @@
 #include "context-private.h"
 #include "device-private.h"
 #include "array.h"
-#ifdef USBHID
 #include "usbhid.h"
-#endif
 #include "platform.h"
 
 #define EONSTEEL 0
@@ -771,11 +769,7 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, const char
 		/* We really need some way to specify USB ID's in the descriptor */
 		unsigned int vendor_id = 0x1493;
 		unsigned int device_id = model ? 0x0033 : 0x0030;
-#ifdef USBHID
 		status = dc_usbhid_custom_io(context, vendor_id, device_id);
-#else
-		status = DC_STATUS_UNSUPPORTED;
-#endif
 	}
 
 	if (status != DC_STATUS_SUCCESS) {

@@ -26,9 +26,7 @@
 #include "scubapro_g2.h"
 #include "context-private.h"
 #include "device-private.h"
-#ifdef USBHID
 #include "usbhid.h"
-#endif
 #include "array.h"
 #include "platform.h"
 
@@ -250,11 +248,7 @@ scubapro_g2_device_open(dc_device_t **out, dc_context_t *context, const char *na
 			status = DC_STATUS_IO;
 			goto error_free;
 		}
-#ifdef USBHID
 		status = dc_usbhid_custom_io(context, id->vendor, id->device);
-#else
-		status = DC_STATUS_UNSUPPORTED;
-#endif
 	}
 
 	if (status != DC_STATUS_SUCCESS) {
