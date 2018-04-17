@@ -92,7 +92,11 @@ typedef enum parser_sample_event_t {
 	SAMPLE_EVENT_HEADING,
 	SAMPLE_EVENT_TISSUELEVEL,
 	SAMPLE_EVENT_GASCHANGE2, /* Deprecated: replaced by DC_SAMPLE_GASMIX. */
+	SAMPLE_EVENT_STRING,
 } parser_sample_event_t;
+
+/* To let the compile know we have this */
+#define SAMPLE_EVENT_STRING SAMPLE_EVENT_STRING
 
 /* For backwards compatibility */
 #define SAMPLE_EVENT_UNKNOWN SAMPLE_EVENT_FLOOR
@@ -100,8 +104,17 @@ typedef enum parser_sample_event_t {
 typedef enum parser_sample_flags_t {
 	SAMPLE_FLAGS_NONE = 0,
 	SAMPLE_FLAGS_BEGIN = (1 << 0),
-	SAMPLE_FLAGS_END = (1 << 1)
+	SAMPLE_FLAGS_END = (1 << 1),
+	SAMPLE_FLAGS_SEVERITY_MASK = (7 << 2),
 } parser_sample_flags_t;
+
+#define SAMPLE_FLAGS_SEVERITY_SHIFT 2
+
+#define SAMPLE_FLAGS_SEVERITY_MISSING (0 << SAMPLE_FLAGS_SEVERITY_SHIFT)
+#define SAMPLE_FLAGS_SEVERITY_STATE   (1 << SAMPLE_FLAGS_SEVERITY_SHIFT)
+#define SAMPLE_FLAGS_SEVERITY_INFO    (2 << SAMPLE_FLAGS_SEVERITY_SHIFT)
+#define SAMPLE_FLAGS_SEVERITY_WARN    (3 << SAMPLE_FLAGS_SEVERITY_SHIFT)
+#define SAMPLE_FLAGS_SEVERITY_ALARM   (4 << SAMPLE_FLAGS_SEVERITY_SHIFT)
 
 typedef enum parser_sample_vendor_t {
 	SAMPLE_VENDOR_NONE,
@@ -199,6 +212,7 @@ typedef union dc_sample_value_t {
 		unsigned int time;
 		unsigned int flags;
 		unsigned int value;
+		const char *name;
 	} event;
 	unsigned int rbt;
 	unsigned int heartbeat;
