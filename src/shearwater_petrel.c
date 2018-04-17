@@ -212,25 +212,37 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	unsigned int hardware = array_uint_be (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer));
 	unsigned int model = 0;
 	switch (hardware) {
-	case 0x0808: // Petrel 2
-	case 0x0909: // Petrel 1
-	case 0x0B0B: // Petrel 1 (newer hardware)
-		model = PETREL;
+	case 0x0101:
+	case 0x0202:
+		model = PREDATOR;
 		break;
+	case 0x0606:
 	case 0x0A0A: // Nerd 1
 		model = NERD;
 		break;
 	case 0x0E0D: // Nerd 2
 		model = NERD2;
 		break;
-	case 0x0707:
+	case 0x0404:
+	case 0x0909: // Petrel 1
+	case 0x0B0B: // Petrel 1 (newer hardware)
+		model = PETREL;
+		break;
+	case 0x0505:
+	case 0x0808: // Petrel 2
+		model = PETREL;
+		break;
+	case 0x0707: // documentation list 0C0D for both Perdix and Perdix AI :-(
 		model = PERDIX;
 		break;
+	case 0x0C0C:
 	case 0x0C0D:
+	case 0x0D0D:
 		model = PERDIXAI;
 		break;
 	default:
-		WARNING (abstract->context, "Unknown hardware type %04x.", hardware);
+		model = PETREL;
+		WARNING (abstract->context, "Unknown hardware type %04x. Assuming Petrel.", hardware);
 	}
 
 	// Emit a device info event.
