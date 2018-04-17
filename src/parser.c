@@ -64,7 +64,7 @@
 #define REACTPROWHITE 0x4354
 
 static dc_status_t
-dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t family, unsigned int model, unsigned int devtime, dc_ticks_t systime)
+dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t family, unsigned int model, unsigned int serial, unsigned int devtime, dc_ticks_t systime)
 {
 	dc_status_t rc = DC_STATUS_SUCCESS;
 	dc_parser_t *parser = NULL;
@@ -183,7 +183,9 @@ dc_parser_new (dc_parser_t **out, dc_device_t *device)
 		return DC_STATUS_INVALIDARGS;
 
 	return dc_parser_new_internal (out, device->context,
-		dc_device_get_type (device), device->devinfo.model,
+		dc_device_get_type (device),
+		device->devinfo.model,
+		device->devinfo.serial,
 		device->clock.devtime, device->clock.systime);
 }
 
@@ -191,7 +193,9 @@ dc_status_t
 dc_parser_new2 (dc_parser_t **out, dc_context_t *context, dc_descriptor_t *descriptor, unsigned int devtime, dc_ticks_t systime)
 {
 	return dc_parser_new_internal (out, context,
-		dc_descriptor_get_type (descriptor), dc_descriptor_get_model (descriptor),
+		dc_descriptor_get_type (descriptor),
+		dc_descriptor_get_model (descriptor),
+		0,
 		devtime, systime);
 }
 
