@@ -34,7 +34,9 @@
 #define RX_PACKET_SIZE 64
 #define TX_PACKET_SIZE 32
 
+#define ALADINSPORTMATRIX 0x17
 #define ALADINSQUARE      0x22
+#define G2                0x32
 
 typedef struct uwatec_g2_device_t {
 	dc_device_t base;
@@ -150,13 +152,18 @@ uwatec_g2_transfer (uwatec_g2_device_t *device, const unsigned char command[], u
 
 
 static dc_status_t
-uwatec_g2_handshake (uwatec_g2_device_t *device)
+uwatec_g2_handshake (uwatec_g2_device_t *device, unsigned int model)
 {
 	dc_device_t *abstract = (dc_device_t *) device;
 
 	// Command template.
 	unsigned char answer[1] = {0};
 	unsigned char command[5] = {0x00, 0x10, 0x27, 0, 0};
+
+	// The vendor software does not do a handshake for the Aladin Sport Matrix,
+	// so let's not do any either.
+	if (model == ALADINSPORTMATRIX)
+		return DC_STATUS_SUCCESS;
 
 	// Handshake (stage 1).
 	command[0] = 0x1B;
@@ -209,7 +216,7 @@ uwatec_g2_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *
 	device->devtime = 0;
 
 	// Perform the handshaking.
-	status = uwatec_g2_handshake (device);
+	status = uwatec_g2_handshake (device, model);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to handshake with the device.");
 		goto error_free;
