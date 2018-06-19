@@ -500,11 +500,10 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		// properly. To avoid returning incorrect ppO2 values to the
 		// application, they are manually disabled (e.g. marked as
 		// uncalibrated).
-		WARNING (abstract->context, "Disabled all O2 sensors due to a default calibration value.");
-		parser->calibrated = 0;
-	} else {
-		parser->calibrated = data[86];
+		add_string_fmt(parser, "Warning", "O2 sensors not calibrated.", parser->serial);
 	}
+
+	parser->calibrated = data[86];
 
 	// Cache the data for later use.
 	parser->logversion = logversion;
@@ -669,10 +668,9 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		if ((status & OC) == 0) {
 			// PPO2
 			if ((status & PPO2_EXTERNAL) == 0) {
-#ifdef SENSOR_AVERAGE
 				sample.ppo2 = data[offset + 6] / 100.0;
-				if (callback) callback (DC_SAMPLE_PPO2, sample, userdata);
-#else
+				if (callback) callback (DC_SAMPLE_VOTED_PPO2, sample, userdata);
+
 				sample.ppo2 = data[offset + 12] * parser->calibration[0];
 				if (callback && (parser->calibrated & 0x01)) callback (DC_SAMPLE_PPO2, sample, userdata);
 
@@ -681,7 +679,6 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 
 				sample.ppo2 = data[offset + 15] * parser->calibration[2];
 				if (callback && (parser->calibrated & 0x04)) callback (DC_SAMPLE_PPO2, sample, userdata);
-#endif
 			}
 
 			// Setpoint
