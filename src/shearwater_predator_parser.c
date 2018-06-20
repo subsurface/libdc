@@ -502,8 +502,12 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		// uncalibrated).
 		WARNING (abstract->context, "Disabled all O2 sensors due to a default calibration value.");
 		parser->calibrated = 0;
+		if (mode != DC_DIVEMODE_OC)
+			add_string(parser, "PPO2 source", "voted/averaged");
 	} else {
 		parser->calibrated = data[86];
+		if (mode != DC_DIVEMODE_OC)
+			add_string(parser, "PPO2 source", "cells");
 	}
 
 	// Cache the data for later use.
