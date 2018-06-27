@@ -483,6 +483,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\tecdiving_divecomputereu.c"
+				>
+			</File>
+			<File
+				RelativePath="..\src\tecdiving_divecomputereu_parser.c"
+				>
+			</File>
+			<File
 				RelativePath="..\src\timer.c"
 				>
 			</File>
@@ -495,19 +503,11 @@
 				>
 			</File>
 			<File
-				RelativePath="..\src\uwatec_g2.c"
-				>
-			</File>
-			<File
 				RelativePath="..\src\uwatec_memomouse.c"
 				>
 			</File>
 			<File
 				RelativePath="..\src\uwatec_memomouse_parser.c"
-				>
-			</File>
-			<File
-				RelativePath="..\src\uwatec_meridian.c"
 				>
 			</File>
 			<File
@@ -825,6 +825,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\tecdiving_divecomputereu.h"
+				>
+			</File>
+			<File
 				RelativePath="..\src\timer.h"
 				>
 			</File>
@@ -841,15 +845,7 @@
 				>
 			</File>
 			<File
-				RelativePath="..\src\uwatec_g2.h"
-				>
-			</File>
-			<File
 				RelativePath="..\src\uwatec_memomouse.h"
-				>
-			</File>
-			<File
-				RelativePath="..\src\uwatec_meridian.h"
 				>
 			</File>
 			<File

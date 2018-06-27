@@ -68,8 +68,8 @@ typedef enum dc_family_t {
 	DC_FAMILY_UWATEC_ALADIN = (3 << 16),
 	DC_FAMILY_UWATEC_MEMOMOUSE,
 	DC_FAMILY_UWATEC_SMART,
-	DC_FAMILY_UWATEC_MERIDIAN,
-	DC_FAMILY_UWATEC_G2,
+	DC_FAMILY_UWATEC_MERIDIAN, /* Deprecated: integrated into the Uwatec Smart family. */
+	DC_FAMILY_UWATEC_G2, /* Deprecated: integrated into the Uwatec Smart family. */
 	/* Oceanic */
 	DC_FAMILY_OCEANIC_VTPRO = (4 << 16),
 	DC_FAMILY_OCEANIC_VEO250,
@@ -101,6 +101,8 @@ typedef enum dc_family_t {
 	DC_FAMILY_DIVESYSTEM_IDIVE = (13 << 16),
 	/* Cochran */
 	DC_FAMILY_COCHRAN_COMMANDER = (14 << 16),
+	/* Tecdiving */
+	DC_FAMILY_TECDIVING_DIVECOMPUTEREU = (15 << 16),
 } dc_family_t;
 
 #ifdef __cplusplus

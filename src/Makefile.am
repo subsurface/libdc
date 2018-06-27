@@ -39,8 +39,6 @@ libdivecomputer_la_SOURCES = \
 	uwatec_aladin.h uwatec_aladin.c \
 	uwatec_memomouse.h uwatec_memomouse.c uwatec_memomouse_parser.c \
 	uwatec_smart.h uwatec_smart.c uwatec_smart_parser.c \
-	uwatec_meridian.h uwatec_meridian.c \
-	uwatec_g2.h uwatec_g2.c \
 	oceanic_common.h oceanic_common.c \
 	oceanic_atom2.h oceanic_atom2.c oceanic_atom2_parser.c \
 	oceanic_veo250.h oceanic_veo250.c oceanic_veo250_parser.c \
@@ -72,6 +70,7 @@ libdivecomputer_la_SOURCES = \
 	array.h array.c \
 	buffer.c \
 	cochran_commander.h cochran_commander.c cochran_commander_parser.c \
+	tecdiving_divecomputereu.h tecdiving_divecomputereu.c tecdiving_divecomputereu_parser.c \
 	socket.h socket.c \
 	irda.c \
 	usbhid.c \

@@ -33,6 +33,7 @@ static int dc_filter_uwatec (dc_transport_t transport, const void *userdata);
 static int dc_filter_suunto (dc_transport_t transport, const void *userdata);
 static int dc_filter_shearwater (dc_transport_t transport, const void *userdata);
 static int dc_filter_hw (dc_transport_t transport, const void *userdata);
+static int dc_filter_tecdiving (dc_transport_t transport, const void *userdata);
 
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
@@ -111,34 +112,32 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Uwatec Memomouse */
 	{"Uwatec", "Memomouse", DC_FAMILY_UWATEC_MEMOMOUSE, 0, DC_TRANSPORT_SERIAL, NULL},
 	/* Uwatec Smart */
-	{"Uwatec", "Smart Pro",     DC_FAMILY_UWATEC_SMART, 0x10, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Galileo Sol",   DC_FAMILY_UWATEC_SMART, 0x11, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Galileo Luna",  DC_FAMILY_UWATEC_SMART, 0x11, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Galileo Terra", DC_FAMILY_UWATEC_SMART, 0x11, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Aladin Tec",    DC_FAMILY_UWATEC_SMART, 0x12, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Aladin Prime",  DC_FAMILY_UWATEC_SMART, 0x12, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Aladin Tec 2G", DC_FAMILY_UWATEC_SMART, 0x13, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Aladin 2G",     DC_FAMILY_UWATEC_SMART, 0x13, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Subgear","XP-10",         DC_FAMILY_UWATEC_SMART, 0x13, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Smart Com",     DC_FAMILY_UWATEC_SMART, 0x14, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Aladin 2G",     DC_FAMILY_UWATEC_SMART, 0x15, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Aladin Tec 3G", DC_FAMILY_UWATEC_SMART, 0x15, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Aladin Sport",  DC_FAMILY_UWATEC_SMART, 0x15, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Subgear","XP-3G",         DC_FAMILY_UWATEC_SMART, 0x15, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Smart Tec",     DC_FAMILY_UWATEC_SMART, 0x18, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Galileo Trimix",DC_FAMILY_UWATEC_SMART, 0x19, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Uwatec", "Smart Z",       DC_FAMILY_UWATEC_SMART, 0x1C, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	{"Subgear","XP Air",        DC_FAMILY_UWATEC_SMART, 0x1C, DC_TRANSPORT_IRDA, dc_filter_uwatec},
-	/* Scubapro/Uwatec Meridian */
-	{"Scubapro", "Meridian",    DC_FAMILY_UWATEC_MERIDIAN, 0x20, DC_TRANSPORT_SERIAL, NULL},
-	{"Scubapro", "Mantis",      DC_FAMILY_UWATEC_MERIDIAN, 0x20, DC_TRANSPORT_SERIAL, NULL},
-	{"Scubapro", "Chromis",     DC_FAMILY_UWATEC_MERIDIAN, 0x24, DC_TRANSPORT_SERIAL, NULL},
-	{"Scubapro", "Mantis 2",    DC_FAMILY_UWATEC_MERIDIAN, 0x26, DC_TRANSPORT_SERIAL, NULL},
-	/* Scubapro G2 */
-	{"Scubapro", "Aladin Sport Matrix", DC_FAMILY_UWATEC_G2, 0x17, DC_TRANSPORT_BLE, dc_filter_uwatec},
-	{"Scubapro", "Aladin Square",       DC_FAMILY_UWATEC_G2, 0x22, DC_TRANSPORT_USBHID, dc_filter_uwatec},
-	{"Scubapro", "G2",                  DC_FAMILY_UWATEC_G2, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
-	{"Scubapro", "G2 Console",          DC_FAMILY_UWATEC_G2, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
+	{"Uwatec",   "Smart Pro",           DC_FAMILY_UWATEC_SMART, 0x10, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Galileo Sol",         DC_FAMILY_UWATEC_SMART, 0x11, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Galileo Luna",        DC_FAMILY_UWATEC_SMART, 0x11, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Galileo Terra",       DC_FAMILY_UWATEC_SMART, 0x11, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Aladin Tec",          DC_FAMILY_UWATEC_SMART, 0x12, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Aladin Prime",        DC_FAMILY_UWATEC_SMART, 0x12, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Aladin Tec 2G",       DC_FAMILY_UWATEC_SMART, 0x13, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Aladin 2G",           DC_FAMILY_UWATEC_SMART, 0x13, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Subgear",  "XP-10",               DC_FAMILY_UWATEC_SMART, 0x13, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Smart Com",           DC_FAMILY_UWATEC_SMART, 0x14, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Aladin 2G",           DC_FAMILY_UWATEC_SMART, 0x15, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Aladin Tec 3G",       DC_FAMILY_UWATEC_SMART, 0x15, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Aladin Sport",        DC_FAMILY_UWATEC_SMART, 0x15, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Subgear",  "XP-3G",               DC_FAMILY_UWATEC_SMART, 0x15, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Scubapro", "Aladin Sport Matrix", DC_FAMILY_UWATEC_SMART, 0x17, DC_TRANSPORT_BLE, dc_filter_uwatec},
+	{"Uwatec",   "Smart Tec",           DC_FAMILY_UWATEC_SMART, 0x18, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Galileo Trimix",      DC_FAMILY_UWATEC_SMART, 0x19, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Uwatec",   "Smart Z",             DC_FAMILY_UWATEC_SMART, 0x1C, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Subgear",  "XP Air",              DC_FAMILY_UWATEC_SMART, 0x1C, DC_TRANSPORT_IRDA, dc_filter_uwatec},
+	{"Scubapro", "Meridian",            DC_FAMILY_UWATEC_SMART, 0x20, DC_TRANSPORT_SERIAL, NULL},
+	{"Scubapro", "Mantis",              DC_FAMILY_UWATEC_SMART, 0x20, DC_TRANSPORT_SERIAL, NULL},
+	{"Scubapro", "Aladin Square",       DC_FAMILY_UWATEC_SMART, 0x22, DC_TRANSPORT_USBHID, dc_filter_uwatec},
+	{"Scubapro", "Chromis",             DC_FAMILY_UWATEC_SMART, 0x24, DC_TRANSPORT_SERIAL, NULL},
+	{"Scubapro", "Mantis 2",            DC_FAMILY_UWATEC_SMART, 0x26, DC_TRANSPORT_SERIAL, NULL},
+	{"Scubapro", "G2",                  DC_FAMILY_UWATEC_SMART, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
+	{"Scubapro", "G2 Console",          DC_FAMILY_UWATEC_SMART, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
 	/* Reefnet */
 	{"Reefnet", "Sensus",       DC_FAMILY_REEFNET_SENSUS, 1, DC_TRANSPORT_SERIAL, NULL},
 	{"Reefnet", "Sensus Pro",   DC_FAMILY_REEFNET_SENSUSPRO, 2, DC_TRANSPORT_SERIAL, NULL},
@@ -256,12 +255,12 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x11, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x1B, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A, DC_TRANSPORT_SERIAL, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A, DC_TRANSPORT_SERIAL, NULL},
 	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x1A, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x3B, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05, DC_TRANSPORT_SERIAL, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07, DC_TRANSPORT_SERIAL, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05, DC_TRANSPORT_SERIAL, NULL},
+	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07, DC_TRANSPORT_SERIAL, NULL},
 	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x12, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC 2 TR",  DC_FAMILY_HW_OSTC3, 0x33, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
@@ -325,6 +324,8 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Cochran", "EMC-14",       DC_FAMILY_COCHRAN_COMMANDER, 3, DC_TRANSPORT_SERIAL, NULL},
 	{"Cochran", "EMC-16",       DC_FAMILY_COCHRAN_COMMANDER, 4, DC_TRANSPORT_SERIAL, NULL},
 	{"Cochran", "EMC-20H",      DC_FAMILY_COCHRAN_COMMANDER, 5, DC_TRANSPORT_SERIAL, NULL},
+	/* Tecdiving DiveComputer.eu */
+	{"Tecdiving", "DiveComputer.eu", DC_FAMILY_TECDIVING_DIVECOMPUTEREU, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_tecdiving},
 };
 
 static int
@@ -356,6 +357,27 @@ dc_filter_internal_usb (const dc_usb_desc_t *desc, const dc_usb_desc_t values[],
 	}
 
 	return 0;
+}
+
+static int
+dc_filter_internal_rfcomm (const char *name)
+{
+	static const char *prefixes[] = {
+#if defined (__linux__)
+		"/dev/rfcomm",
+#endif
+		NULL
+	};
+
+	if (name == NULL)
+		return 0;
+
+	for (size_t i = 0; prefixes[i] != NULL; ++i) {
+		if (strncmp (name, prefixes[i], strlen (prefixes[i])) == 0)
+			return 1;
+	}
+
+	return prefixes[0] == NULL;
 }
 
 static int dc_filter_uwatec (dc_transport_t transport, const void *userdata)
@@ -403,6 +425,8 @@ static int dc_filter_hw (dc_transport_t transport, const void *userdata)
 	if (transport == DC_TRANSPORT_BLUETOOTH) {
 		return strncasecmp ((const char *) userdata, "OSTC", 4) == 0 ||
 			strncasecmp ((const char *) userdata, "FROG", 4) == 0;
+	} else if (transport == DC_TRANSPORT_SERIAL) {
+		return dc_filter_internal_rfcomm ((const char *) userdata);
 	}
 
 	return 1;
@@ -419,6 +443,23 @@ static int dc_filter_shearwater (dc_transport_t transport, const void *userdata)
 
 	if (transport == DC_TRANSPORT_BLUETOOTH) {
 		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
+	} else if (transport == DC_TRANSPORT_SERIAL) {
+		return dc_filter_internal_rfcomm ((const char *) userdata);
+	}
+
+	return 1;
+}
+
+static int dc_filter_tecdiving (dc_transport_t transport, const void *userdata)
+{
+	static const char *bluetooth[] = {
+		"DiveComputer",
+	};
+
+	if (transport == DC_TRANSPORT_BLUETOOTH) {
+		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
+	} else if (transport == DC_TRANSPORT_SERIAL) {
+		return dc_filter_internal_rfcomm ((const char *) userdata);
 	}
 
 	return 1;

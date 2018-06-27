@@ -1,7 +1,7 @@
 /*
  * libdivecomputer
  *
- * Copyright (C) 2013 Jef Driesen
+ * Copyright (C) 2018 Jef Driesen
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -19,8 +19,8 @@
  * MA 02110-1301 USA
  */
 
-#ifndef UWATEC_MERIDIAN_H
-#define UWATEC_MERIDIAN_H
+#ifndef TECDIVING_DIVECOMPUTEREU_H
+#define TECDIVING_DIVECOMPUTEREU_H
 
 #include <libdivecomputer/context.h>
 #include <libdivecomputer/iostream.h>
@@ -32,9 +32,12 @@ extern "C" {
 #endif /* __cplusplus */
 
 dc_status_t
-uwatec_meridian_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream);
+tecdiving_divecomputereu_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream);
+
+dc_status_t
+tecdiving_divecomputereu_parser_create (dc_parser_t **parser, dc_context_t *context);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
-#endif /* UWATEC_MERIDIAN_H */
+#endif /* TECDIVING_DIVECOMPUTEREU_H */

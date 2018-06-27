@@ -65,8 +65,6 @@ static const backend_table_t g_backends[] = {
 	{"aladin",      DC_FAMILY_UWATEC_ALADIN,       0x3F},
 	{"memomouse",   DC_FAMILY_UWATEC_MEMOMOUSE,    0},
 	{"smart",       DC_FAMILY_UWATEC_SMART,        0x10},
-	{"meridian",    DC_FAMILY_UWATEC_MERIDIAN,     0x20},
-	{"g2",          DC_FAMILY_UWATEC_G2,           0x11},
 	{"sensus",      DC_FAMILY_REEFNET_SENSUS,      1},
 	{"sensuspro",   DC_FAMILY_REEFNET_SENSUSPRO,   2},
 	{"sensusultra", DC_FAMILY_REEFNET_SENSUSULTRA, 3},
@@ -90,6 +88,7 @@ static const backend_table_t g_backends[] = {
 	{"aqualand",    DC_FAMILY_CITIZEN_AQUALAND,    0},
 	{"idive",       DC_FAMILY_DIVESYSTEM_IDIVE,    0x03},
 	{"cochran",     DC_FAMILY_COCHRAN_COMMANDER,   0},
+	{"divecomputereu", DC_FAMILY_TECDIVING_DIVECOMPUTEREU, 0},
 };
 
 static const transport_table_t g_transports[] = {
