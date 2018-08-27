@@ -334,6 +334,7 @@ dc_context_get_transports (dc_context_t *context)
 #elif defined(HAVE_LIBUSB) && !defined(__APPLE__)
 		| DC_TRANSPORT_USBHID
 #endif
+		| DC_TRANSPORT_USBSTORAGE
 #ifdef _WIN32
 #ifdef HAVE_AF_IRDA_H
 		| DC_TRANSPORT_IRDA

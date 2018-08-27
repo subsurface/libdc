@@ -75,6 +75,7 @@ libdivecomputer_la_SOURCES = \
 	irda.c \
 	usbhid.c \
 	bluetooth.c \
+	usb_storage.c \
 	custom.c
 
 if OS_WIN32
