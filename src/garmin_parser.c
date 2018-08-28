@@ -109,9 +109,24 @@ garmin_parser_create (dc_parser_t **out, dc_context_t *context)
 	return DC_STATUS_SUCCESS;
 }
 
-typedef unsigned char ENUM;
-typedef unsigned short UINT16;
-typedef unsigned int UINT32;
+#define DECLARE_FIT_TYPE(name, ctype, inval) \
+	typedef ctype name;	\
+	static const name name##_INVAL = inval
+
+DECLARE_FIT_TYPE(ENUM, unsigned char, 0xff);
+DECLARE_FIT_TYPE(UINT8, unsigned char, 0xff);
+DECLARE_FIT_TYPE(UINT16, unsigned short, 0xffff);
+DECLARE_FIT_TYPE(UINT32, unsigned int, 0xffffffff);
+DECLARE_FIT_TYPE(UINT64, unsigned long long, 0xffffffffffffffffull);
+
+DECLARE_FIT_TYPE(UINT8Z, unsigned char, 0);
+DECLARE_FIT_TYPE(UINT16Z, unsigned short, 0);
+DECLARE_FIT_TYPE(UINT32Z, unsigned int, 0);
+
+DECLARE_FIT_TYPE(SINT8, signed char, 0x7f);
+DECLARE_FIT_TYPE(SINT16, signed short, 0x7fff);
+DECLARE_FIT_TYPE(SINT32, signed int, 0x7fffffff);
+DECLARE_FIT_TYPE(SINT64, signed long long, 0x7fffffffffffffffll);
 
 /*
  * Garmin FIT events are described by tuples of "global mesg ID" and
@@ -133,6 +148,7 @@ struct field_desc {
 	static int parse_##name##_##type(struct garmin_parser_t *g, const unsigned char *p) \
 	{ \
 		type val = *(type *)p; \
+		if (val == type##_INVAL) return 0; \
 		fprintf(stderr, "%s: %llx\n", #name, (long long)val); \
 		return parse_##name(g, *(type *)p); \
 	} \
@@ -140,7 +156,19 @@ struct field_desc {
 	static int parse_##name(struct garmin_parser_t *garmin, type data)
 
 // All msg formats can have a timestamp
-DECLARE_FIELD(ANY, timestamp, UINT32) { return 0; }
+// Garmin timestamps are in seconds since 00:00 Dec 31 1989 UTC
+// Convert to "standard epoch time" by adding 631065600.
+DECLARE_FIELD(ANY, timestamp, UINT32)
+{
+	dc_ticks_t time = 631065600 + (dc_ticks_t) data;
+	dc_datetime_t date;
+
+	dc_datetime_gmtime(&date, time);
+	fprintf(stderr, "%04d-%02d-%02d %2d:%02d:%02d\n",
+		date.year, date.month, date.day,
+		date.hour, date.minute, date.second);
+	return 0;
+}
 DECLARE_FIELD(ANY, message_index, UINT16) { return 0; }
 DECLARE_FIELD(ANY, part_index, UINT32) { return 0; }
 
@@ -149,13 +177,18 @@ DECLARE_FIELD(FILE, file_type, ENUM) { return 0; }
 DECLARE_FIELD(FILE, manufacturer, UINT16) { return 0; }
 DECLARE_FIELD(FILE, product, UINT16) { return 0; }
 DECLARE_FIELD(FILE, serial, UINT32) { return 0; }
-DECLARE_FIELD(FILE, creation_time, UINT32) { return 0; }
+DECLARE_FIELD(FILE, creation_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
+DECLARE_FIELD(FILE, number, UINT16) { return 0; }
+DECLARE_FIELD(FILE, other_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
 
 // SESSION msg
-DECLARE_FIELD(SESSION, start_time, UINT32) { return 0; }
+DECLARE_FIELD(SESSION, start_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
+
+// LAP msg
+DECLARE_FIELD(LAP, start_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
 
 // RECORD msg
-DECLARE_FIELD(RECORD, start_time, UINT32) { return 0; }
+DECLARE_FIELD(RECORD, start_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
 
 
 struct msg_desc {
@@ -170,13 +203,15 @@ struct msg_desc {
 	static const struct msg_desc name##_msg_desc
 
 DECLARE_MESG(FILE) = {
-	.maxfield = 5,
+	.maxfield = 8,
 	.field = {
 		SET_FIELD(FILE, 0, file_type, ENUM),
 		SET_FIELD(FILE, 1, manufacturer, UINT16),
 		SET_FIELD(FILE, 2, product, UINT16),
 		SET_FIELD(FILE, 3, serial, UINT32),
 		SET_FIELD(FILE, 4, creation_time, UINT32),
+		SET_FIELD(FILE, 5, number, UINT16),
+		SET_FIELD(FILE, 7, other_time, UINT32),
 	}
 };
 
@@ -192,7 +227,12 @@ DECLARE_MESG(SESSION) = {
 	}
 };
 
-DECLARE_MESG(LAP) = { };
+DECLARE_MESG(LAP) = {
+	.maxfield = 3,
+	.field = {
+		SET_FIELD(LAP, 2, start_time, UINT32),
+	}
+};
 
 DECLARE_MESG(RECORD) = {
 	.maxfield = 3,
