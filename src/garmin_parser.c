@@ -139,6 +139,11 @@ struct field_desc {
 	static const struct field_desc name##_field_##type = { #name, parse_##name##_##type }; \
 	static int parse_##name(struct garmin_parser_t *garmin, type data)
 
+// All msg formats can have a timestamp
+DECLARE_FIELD(ANY, timestamp, UINT32) { return 0; }
+DECLARE_FIELD(ANY, message_index, UINT16) { return 0; }
+DECLARE_FIELD(ANY, part_index, UINT32) { return 0; }
+
 // FILE msg
 DECLARE_FIELD(FILE, file_type, ENUM) { return 0; }
 DECLARE_FIELD(FILE, manufacturer, UINT16) { return 0; }
@@ -148,11 +153,9 @@ DECLARE_FIELD(FILE, creation_time, UINT32) { return 0; }
 
 // SESSION msg
 DECLARE_FIELD(SESSION, start_time, UINT32) { return 0; }
-DECLARE_FIELD(SESSION, timestamp, UINT32) { return 0; }
 
 // RECORD msg
 DECLARE_FIELD(RECORD, start_time, UINT32) { return 0; }
-DECLARE_FIELD(RECORD, timestamp, UINT32) { return 0; }
 
 
 struct msg_desc {
@@ -183,20 +186,18 @@ DECLARE_MESG(ZONES_TARGET) = { };
 DECLARE_MESG(SPORT) = { };
 
 DECLARE_MESG(SESSION) = {
-	.maxfield = 254,
+	.maxfield = 3,
 	.field = {
 		SET_FIELD(SESSION, 2, start_time, UINT32),
-		SET_FIELD(SESSION, 253, timestamp, UINT32),
 	}
 };
 
 DECLARE_MESG(LAP) = { };
 
 DECLARE_MESG(RECORD) = {
-	.maxfield = 254,
+	.maxfield = 3,
 	.field = {
 		SET_FIELD(RECORD, 2, start_time, UINT32),
-		SET_FIELD(RECORD, 253, timestamp, UINT32),
 	}
 };
 
@@ -343,9 +344,23 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 		}
 
 
-		field_desc = NULL;
-		if (field_nr < msg_desc->maxfield)
-			field_desc = msg_desc->field[field_nr];
+
+		// Certain field numbers have fixed meaning across all messages
+		switch (field_nr) {
+		case 250:
+			field_desc = &ANY_part_index_field_UINT32;
+			break;
+		case 253:
+			field_desc = &ANY_timestamp_field_UINT32;
+			break;
+		case 254:
+			field_desc = &ANY_message_index_field_UINT16;
+			break;
+		default:
+			field_desc = NULL;
+			if (field_nr < msg_desc->maxfield)
+				field_desc = msg_desc->field[field_nr];
+		}
 
 		if (field_desc) {
 			field_desc->parse(garmin, data);
