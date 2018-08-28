@@ -37,6 +37,17 @@ garmin_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *
 dc_status_t
 garmin_parser_create (dc_parser_t **parser, dc_context_t *context);
 
+// The dive names are of the form "2018-08-20-10-23-30.fit"
+// With the terminating zero, that's 24 bytes.
+//
+// We use this as the fingerprint, but it ends up being a
+// special fixed header in the parser data too.
+#define FIT_NAME_SIZE 24
+
+struct fit_name {
+	char name[FIT_NAME_SIZE];
+};
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

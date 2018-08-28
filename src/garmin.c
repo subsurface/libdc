@@ -35,15 +35,6 @@
 #include "device-private.h"
 #include "array.h"
 
-// The dive names are of the form "2018-08-20-10-23-30.fit"
-// With the terminating zero, that's 24 bytes.
-// We use this as the fingerprint too
-#define FIT_NAME_SIZE 24
-
-struct fit_name {
-	char name[FIT_NAME_SIZE];
-};
-
 typedef struct garmin_device_t {
 	dc_device_t base;
 	dc_iostream_t *iostream;
