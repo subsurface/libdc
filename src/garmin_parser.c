@@ -363,6 +363,7 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 			ERROR(garmin->base.context, "Unknown base type %d\n", base_type);
 			data += size;
 			len -= size;
+			total_len += size;
 			continue;
 		}
 		base_size = base_size_array[base_type];
@@ -522,10 +523,10 @@ static int traverse_data(struct garmin_parser_t *garmin)
 	hdrsize = data[0];
 	protocol = data[1];
 	profile = array_uint16_le(data+2);
-	datasize = array_uint16_le(data+4);
+	datasize = array_uint32_le(data+4);
 	if (memcmp(data+8, ".FIT", 4))
 		return -1;
-	if (hdrsize < 12 || datasize > len || datasize + hdrsize > len)
+	if (hdrsize < 12 || datasize > len || datasize + hdrsize + 2 > len)
 		return -1;
 
 	garmin->cache.protocol = protocol;
