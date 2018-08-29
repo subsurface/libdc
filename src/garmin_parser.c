@@ -54,6 +54,7 @@ typedef struct garmin_parser_t {
 		unsigned int initialized;
 		unsigned int protocol;
 		unsigned int profile;
+		unsigned int utc_offset, time_offset;
 		unsigned int divetime;
 		double maxdepth;
 		double avgdepth;
@@ -128,6 +129,30 @@ DECLARE_FIT_TYPE(SINT16, signed short, 0x7fff);
 DECLARE_FIT_TYPE(SINT32, signed int, 0x7fffffff);
 DECLARE_FIT_TYPE(SINT64, signed long long, 0x7fffffffffffffffll);
 
+static const struct {
+	const char *type_name;
+	int type_size;
+	unsigned long long type_inval;
+} base_type_info[17] = {
+	{ "ENUM",	1, 0xff },
+	{ "SINT8",	1, 0x7f },
+	{ "UINT8",	1, 0xff },
+	{ "SINT16",	2, 0x7fff },
+	{ "UINT16",	2, 0xffff },
+	{ "SINT32",	4, 0x7fffffff },
+	{ "UINT32",	4, 0xffffffff },
+	{ "STRING",	1, 0 },
+	{ "FLOAT",	4, 0xffffffff },
+	{ "DOUBLE",	8, 0xfffffffffffffffful },
+	{ "UINT8Z",	1, 0x00 },
+	{ "UINT16Z",	2, 0x0000 },
+	{ "UINT32Z",	4, 0x00000000 },
+	{ "BYTE",	1, 0xff },
+	{ "SINT64",	8, 0x7fffffffffffffff },
+	{ "UINT64",	8, 0xffffffffffffffff },
+	{ "UINT64Z",	8, 0x0000000000000000 },
+};
+
 /*
  * Garmin FIT events are described by tuples of "global mesg ID" and
  * a "field number". There's lots of them, because you have events
@@ -139,17 +164,19 @@ DECLARE_FIT_TYPE(SINT64, signed long long, 0x7fffffffffffffffll);
  */
 struct field_desc {
 	const char *name;
-	int (*parse)(struct garmin_parser_t *, const unsigned char *data);
+	int (*parse)(struct garmin_parser_t *, unsigned char base_type, const unsigned char *data);
 };
 
 #define DECLARE_FIELD(msg, name, type) __DECLARE_FIELD(msg##_##name, type)
 #define __DECLARE_FIELD(name, type) \
 	static int parse_##name(struct garmin_parser_t *, const type); \
-	static int parse_##name##_##type(struct garmin_parser_t *g, const unsigned char *p) \
+	static int parse_##name##_##type(struct garmin_parser_t *g, unsigned char base_type, const unsigned char *p) \
 	{ \
+		if (strcmp(#type, base_type_info[base_type].type_name)) \
+			fprintf(stderr, "%s: %s should be %s\n", #name, #type, base_type_info[base_type].type_name); \
 		type val = *(type *)p; \
 		if (val == type##_INVAL) return 0; \
-		fprintf(stderr, "%s: %llx\n", #name, (long long)val); \
+		DEBUG(g->base.context, "%s (%s): %lld\n", #name, #type, (long long)val); \
 		return parse_##name(g, *(type *)p); \
 	} \
 	static const struct field_desc name##_field_##type = { #name, parse_##name##_##type }; \
@@ -163,8 +190,10 @@ DECLARE_FIELD(ANY, timestamp, UINT32)
 	dc_ticks_t time = 631065600 + (dc_ticks_t) data;
 	dc_datetime_t date;
 
-	dc_datetime_gmtime(&date, time);
-	fprintf(stderr, "%04d-%02d-%02d %2d:%02d:%02d\n",
+	// Show local time (time_offset)
+	dc_datetime_gmtime(&date, time + garmin->cache.time_offset);
+	DEBUG(garmin->base.context,
+		"%04d-%02d-%02d %02d:%02d:%02d",
 		date.year, date.month, date.day,
 		date.hour, date.minute, date.second);
 	return 0;
@@ -176,19 +205,69 @@ DECLARE_FIELD(ANY, part_index, UINT32) { return 0; }
 DECLARE_FIELD(FILE, file_type, ENUM) { return 0; }
 DECLARE_FIELD(FILE, manufacturer, UINT16) { return 0; }
 DECLARE_FIELD(FILE, product, UINT16) { return 0; }
-DECLARE_FIELD(FILE, serial, UINT32) { return 0; }
+DECLARE_FIELD(FILE, serial, UINT32Z) { return 0; }
 DECLARE_FIELD(FILE, creation_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
 DECLARE_FIELD(FILE, number, UINT16) { return 0; }
 DECLARE_FIELD(FILE, other_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
 
 // SESSION msg
 DECLARE_FIELD(SESSION, start_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
+DECLARE_FIELD(SESSION, start_pos_lat, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, start_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, nec_pos_lat, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, nec_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, swc_pos_lat, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, swc_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, exit_pos_lat, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, exit_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
 
 // LAP msg
 DECLARE_FIELD(LAP, start_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
+DECLARE_FIELD(LAP, start_pos_lat, SINT32) { return 0; }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, start_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(LAP, end_pos_lat, SINT32) { return 0; }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, end_pos_long, SINT32) { return 0; }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, some_pos_lat, SINT32) { return 0; }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, some_pos_long, SINT32) { return 0; }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, other_pos_lat, SINT32) { return 0; }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, other_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
 
 // RECORD msg
-DECLARE_FIELD(RECORD, start_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
+DECLARE_FIELD(RECORD, position_lat, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(RECORD, position_long, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(RECORD, altitude, UINT16) { return 0; }		// 5 *m + 500 ?
+DECLARE_FIELD(RECORD, heart_rate, UINT8) { return 0; }		// bpm
+DECLARE_FIELD(RECORD, distance, UINT32) { return 0; }		// Distance in 100 * m? WTF?
+DECLARE_FIELD(RECORD, temperature, SINT8) { return 0; }		// degrees C
+DECLARE_FIELD(RECORD, abs_pressure, UINT32) {return 0; }	// Pascal
+DECLARE_FIELD(RECORD, depth, UINT32) { return 0; }		// mm
+DECLARE_FIELD(RECORD, next_stop_depth, UINT32) { return 0; }	// mm
+DECLARE_FIELD(RECORD, next_stop_time, UINT32) { return 0; }	// seconds
+DECLARE_FIELD(RECORD, tts, UINT32) { return 0; }		// seconds
+DECLARE_FIELD(RECORD, ndl, UINT32) { return 0; }		// s
+DECLARE_FIELD(RECORD, cns_load, UINT8) { return 0; }		// percent
+DECLARE_FIELD(RECORD, n2_load, UINT16) { return 0; }		// percent
+
+// DEVICE_SETTINGS
+DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->cache.utc_offset = data; return 0; }
+DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->cache.time_offset = data; return 0; }
+
+// DIVE_GAS - uses msg index
+DECLARE_FIELD(DIVE_GAS, helium, UINT8) { return 0; } 	// percent
+DECLARE_FIELD(DIVE_GAS, oxygen, UINT8) { return 0; }	// percent
+DECLARE_FIELD(DIVE_GAS, status, ENUM) { return 0; }	// 0 - disabled, 1 - enabled, 2 - backup
+
+// DIVE_SUMMARY
+DECLARE_FIELD(DIVE_SUMMARY, avg_depth, UINT32) { return 0; }		// mm
+DECLARE_FIELD(DIVE_SUMMARY, max_depth, UINT32) { return 0; }		// mm
+DECLARE_FIELD(DIVE_SUMMARY, surface_interval, UINT32) { return 0; }	// sec
+DECLARE_FIELD(DIVE_SUMMARY, start_cns, UINT8) { return 0; }		// percent
+DECLARE_FIELD(DIVE_SUMMARY, end_cns, UINT8) { return 0; }		// percent
+DECLARE_FIELD(DIVE_SUMMARY, start_n2, UINT16) { return 0; }		// percent
+DECLARE_FIELD(DIVE_SUMMARY, end_n2, UINT16) { return 0; }		// percent
+DECLARE_FIELD(DIVE_SUMMARY, o2_toxicity, UINT16) { return 0; }		// OTUs
+DECLARE_FIELD(DIVE_SUMMARY, dive_number, UINT32) { return 0; }
+DECLARE_FIELD(DIVE_SUMMARY, bottom_time, UINT32) { return 0; }		// ms
 
 
 struct msg_desc {
@@ -208,47 +287,107 @@ DECLARE_MESG(FILE) = {
 		SET_FIELD(FILE, 0, file_type, ENUM),
 		SET_FIELD(FILE, 1, manufacturer, UINT16),
 		SET_FIELD(FILE, 2, product, UINT16),
-		SET_FIELD(FILE, 3, serial, UINT32),
+		SET_FIELD(FILE, 3, serial, UINT32Z),
 		SET_FIELD(FILE, 4, creation_time, UINT32),
 		SET_FIELD(FILE, 5, number, UINT16),
 		SET_FIELD(FILE, 7, other_time, UINT32),
 	}
 };
 
-DECLARE_MESG(DEVICE_SETTINGS) = { };
+DECLARE_MESG(DEVICE_SETTINGS) = {
+	.maxfield = 3,
+	.field = {
+		SET_FIELD(DEVICE_SETTINGS, 1, utc_offset, UINT32),	// Convert to UTC
+		SET_FIELD(DEVICE_SETTINGS, 2, time_offset, UINT32),	// Convert to local
+	}
+};
 DECLARE_MESG(USER_PROFILE) = { };
 DECLARE_MESG(ZONES_TARGET) = { };
 DECLARE_MESG(SPORT) = { };
 
 DECLARE_MESG(SESSION) = {
-	.maxfield = 3,
+	.maxfield = 40,
 	.field = {
 		SET_FIELD(SESSION, 2, start_time, UINT32),
+		SET_FIELD(SESSION, 3, start_pos_lat, SINT32),	// 180 deg / 2**31
+		SET_FIELD(SESSION, 4, start_pos_long, SINT32),	// 180 deg / 2**31
+		SET_FIELD(SESSION, 29, nec_pos_lat, SINT32),	// 180 deg / 2**31
+		SET_FIELD(SESSION, 30, nec_pos_long, SINT32),	// 180 deg / 2**31
+		SET_FIELD(SESSION, 31, swc_pos_lat, SINT32),	// 180 deg / 2**31
+		SET_FIELD(SESSION, 32, swc_pos_long, SINT32),	// 180 deg / 2**31
+		SET_FIELD(SESSION, 38, exit_pos_lat, SINT32),	// 180 deg / 2**31
+		SET_FIELD(SESSION, 39, exit_pos_long, SINT32),	// 180 deg / 2**31
 	}
 };
 
 DECLARE_MESG(LAP) = {
-	.maxfield = 3,
+	.maxfield = 31,
 	.field = {
 		SET_FIELD(LAP, 2, start_time, UINT32),
+		SET_FIELD(LAP, 3, start_pos_lat, SINT32),	// 180 deg / 2**31
+		SET_FIELD(LAP, 4, start_pos_long, SINT32),	// 180 deg / 2**31
+		SET_FIELD(LAP, 5, end_pos_lat, SINT32),		// 180 deg / 2**31
+		SET_FIELD(LAP, 6, end_pos_long, SINT32),	// 180 deg / 2**31
+		SET_FIELD(LAP, 27, some_pos_lat, SINT32),	// 180 deg / 2**31
+		SET_FIELD(LAP, 28, some_pos_long, SINT32),	// 180 deg / 2**31
+		SET_FIELD(LAP, 29, other_pos_lat, SINT32),	// 180 deg / 2**31
+		SET_FIELD(LAP, 30, other_pos_long, SINT32),	// 180 deg / 2**31
 	}
 };
 
 DECLARE_MESG(RECORD) = {
-	.maxfield = 3,
+	.maxfield = 99,
 	.field = {
-		SET_FIELD(RECORD, 2, start_time, UINT32),
+		SET_FIELD(RECORD, 0, position_lat, SINT32),	// 180 deg / 2**31
+		SET_FIELD(RECORD, 1, position_long, SINT32),	// 180 deg / 2**31
+		SET_FIELD(RECORD, 2, altitude, UINT16),		// 5 *m + 500 ?
+		SET_FIELD(RECORD, 3, heart_rate, UINT8),	// bpm
+		SET_FIELD(RECORD, 5, distance, UINT32),		// Distance in 100 * m? WTF?
+		SET_FIELD(RECORD, 13, temperature, SINT8),	// degrees C
+		SET_FIELD(RECORD, 91, abs_pressure, UINT32),	// Pascal
+		SET_FIELD(RECORD, 92, depth, UINT32),		// mm
+		SET_FIELD(RECORD, 93, next_stop_depth, UINT32),	// mm
+		SET_FIELD(RECORD, 94, next_stop_time, UINT32),	// seconds
+		SET_FIELD(RECORD, 95, tts, UINT32),		// seconds
+		SET_FIELD(RECORD, 96, ndl, UINT32),		// s
+		SET_FIELD(RECORD, 97, cns_load, UINT8),		// percent
+		SET_FIELD(RECORD, 98, n2_load, UINT16),		// percent
 	}
 };
+
+DECLARE_MESG(DIVE_GAS) = {
+	.maxfield = 3,
+	.field = {
+		// This uses a "message index" field to set the gas index
+		SET_FIELD(DIVE_GAS, 0, helium, UINT8),
+		SET_FIELD(DIVE_GAS, 1, oxygen, UINT8),
+		SET_FIELD(DIVE_GAS, 2, status, ENUM),
+	}
+};
+
+DECLARE_MESG(DIVE_SUMMARY) = {
+	.maxfield = 12,
+	.field = {
+		SET_FIELD(DIVE_SUMMARY, 2, avg_depth, UINT32),		// mm
+		SET_FIELD(DIVE_SUMMARY, 3, max_depth, UINT32),		// mm
+		SET_FIELD(DIVE_SUMMARY, 4, surface_interval, UINT32),	// sec
+		SET_FIELD(DIVE_SUMMARY, 5, start_cns, UINT8),		// percent
+		SET_FIELD(DIVE_SUMMARY, 6, end_cns, UINT8),		// percent
+		SET_FIELD(DIVE_SUMMARY, 7, start_n2, UINT16),		// percent
+		SET_FIELD(DIVE_SUMMARY, 8, end_n2, UINT16),		// percent
+		SET_FIELD(DIVE_SUMMARY, 9, o2_toxicity, UINT16),	// OTUs
+		SET_FIELD(DIVE_SUMMARY, 10, dive_number, UINT32),
+		SET_FIELD(DIVE_SUMMARY, 11, bottom_time, UINT32),	// ms
+	}
+};
+
 
 DECLARE_MESG(EVENT) = { };
 DECLARE_MESG(DEVICE_INFO) = { };
 DECLARE_MESG(ACTIVITY) = { };
 DECLARE_MESG(FILE_CREATOR) = { };
 DECLARE_MESG(DIVE_SETTINGS) = { };
-DECLARE_MESG(DIVE_GAS) = { };
 DECLARE_MESG(DIVE_ALARM) = { };
-DECLARE_MESG(DIVE_SUMMARY) = { };
 
 // Unknown global message ID's..
 DECLARE_MESG(WTF_13) = { };
@@ -258,6 +397,7 @@ DECLARE_MESG(WTF_104) = { };
 DECLARE_MESG(WTF_125) = { };
 DECLARE_MESG(WTF_140) = { };
 DECLARE_MESG(WTF_141) = { };
+DECLARE_MESG(WTF_216) = { };
 DECLARE_MESG(WTF_233) = { };
 
 #define SET_MESG(nr, name) [nr] = { #name, &name##_msg_desc }
@@ -287,6 +427,7 @@ static const struct {
 	SET_MESG(140, WTF_140),
 	SET_MESG(141, WTF_141),
 
+	SET_MESG(216, WTF_216),
 	SET_MESG(233, WTF_233),
 	SET_MESG(258, DIVE_SETTINGS),
 	SET_MESG(259, DIVE_GAS),
@@ -404,14 +545,10 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 		}
 
 		if (field_desc) {
-			field_desc->parse(garmin, data);
+			field_desc->parse(garmin, base_type, data);
 		} else {
 #if 1
-			static const unsigned long long inval_value_array[] = {
-				0xff, 0x7f, 0xff, 0x7fff, 0xffff, 0x7fffffff, 0xffffffff, 0,
-				0xffffffff, 0xfffffffffffffffful, 0x00, 0x0000, 0x00000000, 0xff,
-				0x7fffffffffffffff, 0xffffffffffffffff, 0x0000000000000000 };
-			const unsigned long long inval = inval_value_array[base_type];
+			const unsigned long long inval = base_type_info[base_type].type_inval;
 
 			switch (base_type) {
 			case 7:
@@ -433,7 +570,7 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 					}
 					fprintf(stderr, fmt, val);
 				}
-				fprintf(stderr, "\n");
+				fprintf(stderr, " %s\n", base_type_info[base_type].type_name);
 			}
 #else
 			DEBUG(garmin->base.context, "Unknown field %s:%02x %02x %d/%d\n", msg_name, field_nr, field[2], len, base_size);
