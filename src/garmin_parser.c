@@ -48,13 +48,26 @@ struct type_desc {
 
 typedef struct garmin_parser_t {
 	dc_parser_t base;
+
+	dc_sample_callback_t callback;
+	void *userdata;
+
+	// Some sample data needs to be bunched up
+	// and sent together.
+	struct {
+		unsigned int time;
+		int stop_time;
+		double ceiling;
+	} sample_data;
 	struct type_desc type_desc[MAXTYPE];
+
 	// Field cache
 	struct {
 		unsigned int initialized;
 		unsigned int protocol;
 		unsigned int profile;
-		unsigned int utc_offset, time_offset;
+		unsigned int time;
+		int utc_offset, time_offset;
 		unsigned int divetime;
 		double maxdepth;
 		double avgdepth;
@@ -74,6 +87,23 @@ typedef struct garmin_parser_t {
 } garmin_parser_t;
 
 typedef int (*garmin_data_cb_t)(unsigned char type, const unsigned char *data, int len, void *user);
+
+static void flush_pending_sample(struct garmin_parser_t *garmin)
+{
+	if (!garmin->callback)
+		return;
+
+	if (garmin->sample_data.stop_time && garmin->sample_data.ceiling) {
+		dc_sample_value_t sample = {0};
+		sample.deco.type = DC_DECO_DECOSTOP;
+		sample.deco.time = garmin->sample_data.stop_time;
+		sample.deco.depth = garmin->sample_data.ceiling;
+		garmin->callback(DC_SAMPLE_DECO, sample, garmin->userdata);
+	}
+	garmin->sample_data.stop_time = 0;
+	garmin->sample_data.ceiling = 0;
+}
+
 
 static dc_status_t garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t garmin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
@@ -164,110 +194,148 @@ static const struct {
  */
 struct field_desc {
 	const char *name;
-	int (*parse)(struct garmin_parser_t *, unsigned char base_type, const unsigned char *data);
+	void (*parse)(struct garmin_parser_t *, unsigned char base_type, const unsigned char *data);
 };
 
 #define DECLARE_FIELD(msg, name, type) __DECLARE_FIELD(msg##_##name, type)
 #define __DECLARE_FIELD(name, type) \
-	static int parse_##name(struct garmin_parser_t *, const type); \
-	static int parse_##name##_##type(struct garmin_parser_t *g, unsigned char base_type, const unsigned char *p) \
+	static void parse_##name(struct garmin_parser_t *, const type); \
+	static void parse_##name##_##type(struct garmin_parser_t *g, unsigned char base_type, const unsigned char *p) \
 	{ \
 		if (strcmp(#type, base_type_info[base_type].type_name)) \
 			fprintf(stderr, "%s: %s should be %s\n", #name, #type, base_type_info[base_type].type_name); \
 		type val = *(type *)p; \
-		if (val == type##_INVAL) return 0; \
+		if (val == type##_INVAL) return; \
 		DEBUG(g->base.context, "%s (%s): %lld", #name, #type, (long long)val); \
-		return parse_##name(g, *(type *)p); \
+		parse_##name(g, *(type *)p); \
 	} \
 	static const struct field_desc name##_field_##type = { #name, parse_##name##_##type }; \
-	static int parse_##name(struct garmin_parser_t *garmin, type data)
+	static void parse_##name(struct garmin_parser_t *garmin, type data)
 
 // All msg formats can have a timestamp
 // Garmin timestamps are in seconds since 00:00 Dec 31 1989 UTC
 // Convert to "standard epoch time" by adding 631065600.
 DECLARE_FIELD(ANY, timestamp, UINT32)
 {
-	dc_ticks_t time = 631065600 + (dc_ticks_t) data;
-	dc_datetime_t date;
+	if (garmin->callback) {
+		dc_sample_value_t sample = {0};
 
-	// Show local time (time_offset)
-	dc_datetime_gmtime(&date, time + garmin->cache.time_offset);
-	DEBUG(garmin->base.context,
-		"%04d-%02d-%02d %02d:%02d:%02d",
-		date.year, date.month, date.day,
-		date.hour, date.minute, date.second);
-	return 0;
+		// Turn the timestamp relative to the beginning of the dive
+		if (data < garmin->cache.time)
+			return;
+		data -= garmin->cache.time;
+
+		// Did we already do this?
+		if (data <= garmin->sample_data.time)
+			return;
+
+		// Flush any pending sample data before sending the next time event
+		flush_pending_sample(garmin);
+
+		// *Now* we're ready to actually update the sample times
+		garmin->sample_data.time = data;
+		sample.time = data;
+		garmin->callback(DC_SAMPLE_TIME, sample, garmin->userdata);
+	}
 }
-DECLARE_FIELD(ANY, message_index, UINT16) { return 0; }
-DECLARE_FIELD(ANY, part_index, UINT32) { return 0; }
+DECLARE_FIELD(ANY, message_index, UINT16) { }
+DECLARE_FIELD(ANY, part_index, UINT32) { }
 
 // FILE msg
-DECLARE_FIELD(FILE, file_type, ENUM) { return 0; }
-DECLARE_FIELD(FILE, manufacturer, UINT16) { return 0; }
-DECLARE_FIELD(FILE, product, UINT16) { return 0; }
-DECLARE_FIELD(FILE, serial, UINT32Z) { return 0; }
-DECLARE_FIELD(FILE, creation_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
-DECLARE_FIELD(FILE, number, UINT16) { return 0; }
-DECLARE_FIELD(FILE, other_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
+DECLARE_FIELD(FILE, file_type, ENUM) { }
+DECLARE_FIELD(FILE, manufacturer, UINT16) { }
+DECLARE_FIELD(FILE, product, UINT16) { }
+DECLARE_FIELD(FILE, serial, UINT32Z) { }
+DECLARE_FIELD(FILE, creation_time, UINT32) { }
+DECLARE_FIELD(FILE, number, UINT16) { }
+DECLARE_FIELD(FILE, other_time, UINT32) { }
 
 // SESSION msg
-DECLARE_FIELD(SESSION, start_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
-DECLARE_FIELD(SESSION, start_pos_lat, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(SESSION, start_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(SESSION, nec_pos_lat, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(SESSION, nec_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(SESSION, swc_pos_lat, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(SESSION, swc_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(SESSION, exit_pos_lat, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(SESSION, exit_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, start_time, UINT32) { garmin->cache.time = data; }
+DECLARE_FIELD(SESSION, start_pos_lat, SINT32) { }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, start_pos_long, SINT32) { }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, nec_pos_lat, SINT32) { }		// 180 deg / 2**31 NE corner
+DECLARE_FIELD(SESSION, nec_pos_long, SINT32) { }	// 180 deg / 2**31    pos
+DECLARE_FIELD(SESSION, swc_pos_lat, SINT32) { }		// 180 deg / 2**31 SW corner
+DECLARE_FIELD(SESSION, swc_pos_long, SINT32) { }	// 180 deg / 2**31    pos
+DECLARE_FIELD(SESSION, exit_pos_lat, SINT32) { }	// 180 deg / 2**31
+DECLARE_FIELD(SESSION, exit_pos_long, SINT32) { }	// 180 deg / 2**31
 
 // LAP msg
-DECLARE_FIELD(LAP, start_time, UINT32) { return parse_ANY_timestamp(garmin, data); }
-DECLARE_FIELD(LAP, start_pos_lat, SINT32) { return 0; }		// 180 deg / 2**31
-DECLARE_FIELD(LAP, start_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(LAP, end_pos_lat, SINT32) { return 0; }		// 180 deg / 2**31
-DECLARE_FIELD(LAP, end_pos_long, SINT32) { return 0; }		// 180 deg / 2**31
-DECLARE_FIELD(LAP, some_pos_lat, SINT32) { return 0; }		// 180 deg / 2**31
-DECLARE_FIELD(LAP, some_pos_long, SINT32) { return 0; }		// 180 deg / 2**31
-DECLARE_FIELD(LAP, other_pos_lat, SINT32) { return 0; }		// 180 deg / 2**31
-DECLARE_FIELD(LAP, other_pos_long, SINT32) { return 0; }	// 180 deg / 2**31
+DECLARE_FIELD(LAP, start_time, UINT32) { }
+DECLARE_FIELD(LAP, start_pos_lat, SINT32) { }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, start_pos_long, SINT32) { }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, end_pos_lat, SINT32) { }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, end_pos_long, SINT32) { }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, some_pos_lat, SINT32) { }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, some_pos_long, SINT32) { }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, other_pos_lat, SINT32) { }		// 180 deg / 2**31
+DECLARE_FIELD(LAP, other_pos_long, SINT32) { }		// 180 deg / 2**31
 
 // RECORD msg
-DECLARE_FIELD(RECORD, position_lat, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(RECORD, position_long, SINT32) { return 0; }	// 180 deg / 2**31
-DECLARE_FIELD(RECORD, altitude, UINT16) { return 0; }		// 5 *m + 500 ?
-DECLARE_FIELD(RECORD, heart_rate, UINT8) { return 0; }		// bpm
-DECLARE_FIELD(RECORD, distance, UINT32) { return 0; }		// Distance in 100 * m? WTF?
-DECLARE_FIELD(RECORD, temperature, SINT8) { return 0; }		// degrees C
-DECLARE_FIELD(RECORD, abs_pressure, UINT32) {return 0; }	// Pascal
-DECLARE_FIELD(RECORD, depth, UINT32) { return 0; }		// mm
-DECLARE_FIELD(RECORD, next_stop_depth, UINT32) { return 0; }	// mm
-DECLARE_FIELD(RECORD, next_stop_time, UINT32) { return 0; }	// seconds
-DECLARE_FIELD(RECORD, tts, UINT32) { return 0; }		// seconds
-DECLARE_FIELD(RECORD, ndl, UINT32) { return 0; }		// s
-DECLARE_FIELD(RECORD, cns_load, UINT8) { return 0; }		// percent
-DECLARE_FIELD(RECORD, n2_load, UINT16) { return 0; }		// percent
+DECLARE_FIELD(RECORD, position_lat, SINT32) { }		// 180 deg / 2**31
+DECLARE_FIELD(RECORD, position_long, SINT32) { }	// 180 deg / 2**31
+DECLARE_FIELD(RECORD, altitude, UINT16) { }		// 5 *m + 500 ?
+DECLARE_FIELD(RECORD, heart_rate, UINT8) { }		// bpm
+DECLARE_FIELD(RECORD, distance, UINT32) { }		// Distance in 100 * m? WTF?
+DECLARE_FIELD(RECORD, temperature, SINT8)		// degrees C
+{
+	if (garmin->callback) {
+		dc_sample_value_t sample = {0};
+		sample.temperature = data;
+		garmin->callback(DC_SAMPLE_TEMPERATURE, sample, garmin->userdata);
+	}
+}
+DECLARE_FIELD(RECORD, abs_pressure, UINT32) {}		// Pascal
+DECLARE_FIELD(RECORD, depth, UINT32)			// mm
+{
+	if (garmin->callback) {
+		dc_sample_value_t sample = {0};
+		sample.depth = data / 1000.0;
+		garmin->callback(DC_SAMPLE_DEPTH, sample, garmin->userdata);
+	}
+}
+DECLARE_FIELD(RECORD, next_stop_depth, UINT32)		// mm
+{
+	garmin->sample_data.ceiling = data / 1000.0;
+}
+DECLARE_FIELD(RECORD, next_stop_time, UINT32)		// seconds
+{
+	garmin->sample_data.stop_time = data;
+}
+DECLARE_FIELD(RECORD, tts, UINT32) { }			// seconds
+DECLARE_FIELD(RECORD, ndl, UINT32)			// s
+{
+	if (garmin->callback) {
+		dc_sample_value_t sample = {0};
+		sample.deco.type = DC_DECO_NDL;
+		sample.deco.time = data;
+		garmin->callback(DC_SAMPLE_DECO, sample, garmin->userdata);
+	}
+}
+DECLARE_FIELD(RECORD, cns_load, UINT8) { }		// percent
+DECLARE_FIELD(RECORD, n2_load, UINT16) { }		// percent
 
 // DEVICE_SETTINGS
-DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->cache.utc_offset = data; return 0; }
-DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->cache.time_offset = data; return 0; }
+DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->cache.utc_offset = (SINT32) data; }	// wrong type in FIT
+DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->cache.time_offset = (SINT32) data; }	// wrong type in FIT
 
 // DIVE_GAS - uses msg index
-DECLARE_FIELD(DIVE_GAS, helium, UINT8) { return 0; } 	// percent
-DECLARE_FIELD(DIVE_GAS, oxygen, UINT8) { return 0; }	// percent
-DECLARE_FIELD(DIVE_GAS, status, ENUM) { return 0; }	// 0 - disabled, 1 - enabled, 2 - backup
+DECLARE_FIELD(DIVE_GAS, helium, UINT8) { } 	// percent
+DECLARE_FIELD(DIVE_GAS, oxygen, UINT8) { }	// percent
+DECLARE_FIELD(DIVE_GAS, status, ENUM) { }	// 0 - disabled, 1 - enabled, 2 - backup
 
 // DIVE_SUMMARY
-DECLARE_FIELD(DIVE_SUMMARY, avg_depth, UINT32) { return 0; }		// mm
-DECLARE_FIELD(DIVE_SUMMARY, max_depth, UINT32) { return 0; }		// mm
-DECLARE_FIELD(DIVE_SUMMARY, surface_interval, UINT32) { return 0; }	// sec
-DECLARE_FIELD(DIVE_SUMMARY, start_cns, UINT8) { return 0; }		// percent
-DECLARE_FIELD(DIVE_SUMMARY, end_cns, UINT8) { return 0; }		// percent
-DECLARE_FIELD(DIVE_SUMMARY, start_n2, UINT16) { return 0; }		// percent
-DECLARE_FIELD(DIVE_SUMMARY, end_n2, UINT16) { return 0; }		// percent
-DECLARE_FIELD(DIVE_SUMMARY, o2_toxicity, UINT16) { return 0; }		// OTUs
-DECLARE_FIELD(DIVE_SUMMARY, dive_number, UINT32) { return 0; }
-DECLARE_FIELD(DIVE_SUMMARY, bottom_time, UINT32) { return 0; }		// ms
+DECLARE_FIELD(DIVE_SUMMARY, avg_depth, UINT32) { garmin->cache.avgdepth = data / 1000.0; }		// mm
+DECLARE_FIELD(DIVE_SUMMARY, max_depth, UINT32) { garmin->cache.maxdepth = data / 1000.0; }		// mm
+DECLARE_FIELD(DIVE_SUMMARY, surface_interval, UINT32) { }	// sec
+DECLARE_FIELD(DIVE_SUMMARY, start_cns, UINT8) { }		// percent
+DECLARE_FIELD(DIVE_SUMMARY, end_cns, UINT8) { }			// percent
+DECLARE_FIELD(DIVE_SUMMARY, start_n2, UINT16) { }		// percent
+DECLARE_FIELD(DIVE_SUMMARY, end_n2, UINT16) { }			// percent
+DECLARE_FIELD(DIVE_SUMMARY, o2_toxicity, UINT16) { }		// OTUs
+DECLARE_FIELD(DIVE_SUMMARY, dive_number, UINT32) { }
+DECLARE_FIELD(DIVE_SUMMARY, bottom_time, UINT32) { garmin->cache.divetime = data / 1000; }		// ms
 
 
 struct msg_desc {
@@ -625,29 +693,36 @@ static int traverse_definition(struct garmin_parser_t *garmin,
 }
 
 
-static int traverse_data(struct garmin_parser_t *garmin)
+static dc_status_t
+traverse_data(struct garmin_parser_t *garmin)
 {
 	const unsigned char *data = garmin->base.data;
 	int len = garmin->base.size;
 	unsigned int hdrsize, protocol, profile, datasize;
 	unsigned int time;
 
+	// Reset the time and type descriptors before walking
+	memset(&garmin->sample_data, 0, sizeof(garmin->sample_data));
+	memset(garmin->type_desc, 0, sizeof(garmin->type_desc));
+
 	// The data starts with our filename fingerprint. Skip it.
+	if (len < FIT_NAME_SIZE)
+		return DC_STATUS_IO;
 	data += FIT_NAME_SIZE;
 	len -= FIT_NAME_SIZE;
 
 	// The FIT header
 	if (len < 12)
-		return -1;
+		return DC_STATUS_IO;
 
 	hdrsize = data[0];
 	protocol = data[1];
 	profile = array_uint16_le(data+2);
 	datasize = array_uint32_le(data+4);
 	if (memcmp(data+8, ".FIT", 4))
-		return -1;
+		return DC_STATUS_IO;
 	if (hdrsize < 12 || datasize > len || datasize + hdrsize + 2 > len)
-		return -1;
+		return DC_STATUS_IO;
 
 	garmin->cache.protocol = protocol;
 	garmin->cache.profile = profile;
@@ -679,17 +754,11 @@ static int traverse_data(struct garmin_parser_t *garmin)
 			len = traverse_regular(garmin, data, datasize, record, &time);
 		}
 		if (len <= 0 || len > datasize)
-			return -1;
+			return DC_STATUS_IO;
 		data += len;
 		datasize -= len;
 	}
-	return 0;
-}
-
-static void initialize_field_caches(garmin_parser_t *garmin)
-{
-	memset(&garmin->cache, 0, sizeof(garmin->cache));
-	traverse_data(garmin);
+	return DC_STATUS_SUCCESS;
 }
 
 static dc_status_t
@@ -697,8 +766,13 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 {
 	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
 
-	memset(garmin->type_desc, 0, sizeof(garmin->type_desc));
-	initialize_field_caches(garmin);
+	/* Walk the data once without a callback to set up the core fields */
+	garmin->callback = NULL;
+	garmin->userdata = NULL;
+	memset(&garmin->cache, 0, sizeof(garmin->cache));
+
+	traverse_data(garmin);
+	flush_pending_sample(garmin);
 	return DC_STATUS_SUCCESS;
 }
 
@@ -706,22 +780,11 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 static dc_status_t
 garmin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 {
-	const unsigned char *data = abstract->data;
-	unsigned int yyyy, mm, dd, h, m, s;
+	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
+	dc_ticks_t time = 631065600 + (dc_ticks_t) garmin->cache.time;
 
-	if (abstract->size < FIT_NAME_SIZE)
-		return DC_STATUS_UNSUPPORTED;
-
-	if (sscanf(data, "%04u-%02u-%02u-%02u-%02u-%02u",
-		   &yyyy, &mm, &dd, &h, &m, &s) != 6)
-		return DC_STATUS_UNSUPPORTED;
-
-	datetime->year     = yyyy;
-	datetime->month    = mm;
-	datetime->day      = dd;
-	datetime->hour     = h;
-	datetime->minute   = m;
-	datetime->second   = s;
+	// Show local time (time_offset)
+	dc_datetime_gmtime(datetime, time + garmin->cache.time_offset);
 	datetime->timezone = DC_TIMEZONE_NONE;
 
 	return DC_STATUS_SUCCESS;
@@ -731,33 +794,33 @@ garmin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 static dc_status_t
 garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
 {
-	const unsigned char *data = abstract->data;
+	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
 
 	if (!value)
 		return DC_STATUS_INVALIDARGS;
 
 	switch (type) {
 	case DC_FIELD_DIVETIME:
-		*((unsigned int *) value) = 0;
+		*((unsigned int *) value) = garmin->cache.divetime;
 		break;
 	case DC_FIELD_AVGDEPTH:
-		*((double *) value) = 0;
+		*((double *) value) = garmin->cache.avgdepth;
 		break;
 	case DC_FIELD_MAXDEPTH:
-		*((double *) value) = 0;
+		*((double *) value) = garmin->cache.maxdepth;
 		break;
 	default:
 		return DC_STATUS_UNSUPPORTED;
 	}
-
 	return DC_STATUS_SUCCESS;
 }
 
 static dc_status_t
 garmin_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
 {
-	const unsigned char *data = abstract->data;
-	unsigned int size = abstract->size;
+	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
 
-	return DC_STATUS_SUCCESS;
+	garmin->callback = callback;
+	garmin->userdata = userdata;
+	return traverse_data(garmin);
 }
