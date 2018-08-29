@@ -407,21 +407,31 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 			field_desc->parse(garmin, data);
 		} else {
 #if 1
-			fprintf(stderr, "%s/%d:", msg_name, field_nr);
-			if (base_type == 7)
-				fprintf(stderr, " %s\n", data);
-			else {
+			static const unsigned long long inval_value_array[] = {
+				0xff, 0x7f, 0xff, 0x7fff, 0xffff, 0x7fffffff, 0xffffffff, 0,
+				0xffffffff, 0xfffffffffffffffful, 0x00, 0x0000, 0x00000000, 0xff,
+				0x7fffffffffffffff, 0xffffffffffffffff, 0x0000000000000000 };
+			const unsigned long long inval = inval_value_array[base_type];
+
+			switch (base_type) {
+			case 7:
+				if (!*data)
+					break;
+				fprintf(stderr, "%s/%d: %s\n", msg_name, field_nr, data);
+				break;
+			default:
+				fprintf(stderr, "%s/%d:", msg_name, field_nr);
 				for (int i = 0; i < len; i += base_size) {
-					unsigned long long value;
+					unsigned long long val;
 					const char *fmt;
 					const unsigned char *ptr = data + i;
 					switch (base_size) {
-					default: value = *ptr; fmt = " %02llx"; break;
-					case 2: value = *(unsigned short *)ptr; fmt = " %04llx"; break;
-					case 4: value = *(unsigned int *)ptr; fmt = " %08llx"; break;
-					case 8: value = *(unsigned long long *)ptr; fmt = " %016llx"; break;
+					default: val = *ptr; fmt = val == inval ? " --" : " %02llx"; break;
+					case 2: val = *(unsigned short *)ptr; fmt = val == inval ? " ----" : " %04llx"; break;
+					case 4: val = *(unsigned int *)ptr; fmt = val == inval ? " --------" : " %08llx"; break;
+					case 8: val = *(unsigned long long *)ptr; fmt = val == inval ? " ----------------" : " %016llx"; break;
 					}
-					fprintf(stderr, fmt, value);
+					fprintf(stderr, fmt, val);
 				}
 				fprintf(stderr, "\n");
 			}
