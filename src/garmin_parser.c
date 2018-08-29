@@ -176,7 +176,7 @@ struct field_desc {
 			fprintf(stderr, "%s: %s should be %s\n", #name, #type, base_type_info[base_type].type_name); \
 		type val = *(type *)p; \
 		if (val == type##_INVAL) return 0; \
-		DEBUG(g->base.context, "%s (%s): %lld\n", #name, #type, (long long)val); \
+		DEBUG(g->base.context, "%s (%s): %lld", #name, #type, (long long)val); \
 		return parse_##name(g, *(type *)p); \
 	} \
 	static const struct field_desc name##_field_##type = { #name, parse_##name##_##type }; \
@@ -547,35 +547,8 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 		if (field_desc) {
 			field_desc->parse(garmin, base_type, data);
 		} else {
-#if 1
-			const unsigned long long inval = base_type_info[base_type].type_inval;
-
-			switch (base_type) {
-			case 7:
-				if (!*data)
-					break;
-				fprintf(stderr, "%s/%d: %s\n", msg_name, field_nr, data);
-				break;
-			default:
-				fprintf(stderr, "%s/%d:", msg_name, field_nr);
-				for (int i = 0; i < len; i += base_size) {
-					unsigned long long val;
-					const char *fmt;
-					const unsigned char *ptr = data + i;
-					switch (base_size) {
-					default: val = *ptr; fmt = val == inval ? " --" : " %02llx"; break;
-					case 2: val = *(unsigned short *)ptr; fmt = val == inval ? " ----" : " %04llx"; break;
-					case 4: val = *(unsigned int *)ptr; fmt = val == inval ? " --------" : " %08llx"; break;
-					case 8: val = *(unsigned long long *)ptr; fmt = val == inval ? " ----------------" : " %016llx"; break;
-					}
-					fprintf(stderr, fmt, val);
-				}
-				fprintf(stderr, " %s\n", base_type_info[base_type].type_name);
-			}
-#else
-			DEBUG(garmin->base.context, "Unknown field %s:%02x %02x %d/%d\n", msg_name, field_nr, field[2], len, base_size);
-	                HEXDUMP(garmin->base.context, DC_LOGLEVEL_DEBUG, "next", data, len);
-#endif
+			DEBUG(garmin->base.context, "%s/%d %s", msg_name, field_nr, base_type_info[base_type].type_name);
+			HEXDUMP(garmin->base.context, DC_LOGLEVEL_DEBUG, "next", data, len);
 		}
 
 		data += len;
