@@ -247,6 +247,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	progress.current = 0;
 	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
+#if 0
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
 	devinfo.model = 0;
@@ -259,6 +260,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	vendor.data = "Garmin";
 	vendor.size = 6;
 	device_event_emit (abstract, DC_EVENT_VENDOR, &vendor);
+#endif
 
 	file = dc_buffer_new (16384);
 	if (file == NULL) {
