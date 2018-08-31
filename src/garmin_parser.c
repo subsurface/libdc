@@ -150,8 +150,10 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 	record->pending = 0;
 	if (!garmin->callback) {
 		if (pending & RECORD_GASMIX) {
+			// 0 - disabled, 1 - enabled, 2 - backup
+			int enabled = record->gas_status > 0;
 			int index = record->index;
-			if (index < MAXGASES) {
+			if (enabled && index < MAXGASES) {
 				garmin->cache.gasmix[index] = record->gasmix;
 				garmin->cache.GASMIX_COUNT = index+1;
 			}
