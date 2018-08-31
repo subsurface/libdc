@@ -34,6 +34,7 @@ static int dc_filter_suunto (dc_transport_t transport, const void *userdata);
 static int dc_filter_shearwater (dc_transport_t transport, const void *userdata);
 static int dc_filter_hw (dc_transport_t transport, const void *userdata);
 static int dc_filter_tecdiving (dc_transport_t transport, const void *userdata);
+static int dc_filter_garmin (dc_transport_t transport, const void *userdata);
 
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
@@ -328,6 +329,8 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Cochran", "EMC-20H",      DC_FAMILY_COCHRAN_COMMANDER, 5, DC_TRANSPORT_SERIAL, NULL},
 	/* Tecdiving DiveComputer.eu */
 	{"Tecdiving", "DiveComputer.eu", DC_FAMILY_TECDIVING_DIVECOMPUTEREU, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_tecdiving},
+	/* Garmin */
+	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 0, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
 };
 
 static int
@@ -462,6 +465,19 @@ static int dc_filter_tecdiving (dc_transport_t transport, const void *userdata)
 		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
 	} else if (transport == DC_TRANSPORT_SERIAL) {
 		return dc_filter_internal_rfcomm ((const char *) userdata);
+	}
+
+	return 1;
+}
+
+static int dc_filter_garmin (dc_transport_t transport, const void *userdata)
+{
+	static const dc_usb_desc_t usbhid[] = {
+		{0x091e, 0x2b2b}, // Garmin Descent Mk1
+	};
+
+	if (transport == DC_TRANSPORT_USBSTORAGE) {
+		return dc_filter_internal_usb ((const dc_usb_desc_t *) userdata, usbhid, C_ARRAY_SIZE(usbhid));
 	}
 
 	return 1;

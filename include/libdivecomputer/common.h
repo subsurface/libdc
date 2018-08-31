@@ -48,8 +48,12 @@ typedef enum dc_transport_t {
 	DC_TRANSPORT_USBHID    = (1 << 2),
 	DC_TRANSPORT_IRDA      = (1 << 3),
 	DC_TRANSPORT_BLUETOOTH = (1 << 4),
-	DC_TRANSPORT_BLE       = (1 << 5)
+	DC_TRANSPORT_BLE       = (1 << 5),
+	DC_TRANSPORT_USBSTORAGE= (1 << 6),
 } dc_transport_t;
+
+// Idiotic enums can't be queried
+#define DC_TRANSPORT_USBSTORAGE DC_TRANSPORT_USBSTORAGE
 
 typedef enum dc_family_t {
 	DC_FAMILY_NULL = 0,
@@ -103,6 +107,8 @@ typedef enum dc_family_t {
 	DC_FAMILY_COCHRAN_COMMANDER = (14 << 16),
 	/* Tecdiving */
 	DC_FAMILY_TECDIVING_DIVECOMPUTEREU = (15 << 16),
+	/* Garmin */
+	DC_FAMILY_GARMIN = (16 << 16),
 } dc_family_t;
 
 #ifdef __cplusplus

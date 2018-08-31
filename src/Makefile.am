@@ -71,10 +71,12 @@ libdivecomputer_la_SOURCES = \
 	buffer.c \
 	cochran_commander.h cochran_commander.c cochran_commander_parser.c \
 	tecdiving_divecomputereu.h tecdiving_divecomputereu.c tecdiving_divecomputereu_parser.c \
+	garmin.h garmin.c garmin_parser.c \
 	socket.h socket.c \
 	irda.c \
 	usbhid.c \
 	bluetooth.c \
+	usb_storage.c \
 	custom.c
 
 if OS_WIN32
