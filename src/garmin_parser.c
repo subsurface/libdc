@@ -53,19 +53,33 @@ struct pos {
 #define MAXGASES 16
 #define MAXSTRINGS 32
 
+// Some record data needs to be bunched up
+// and sent together.
+struct record_data {
+	unsigned int pending;
+	unsigned int time;
+
+	// RECORD_DECO
+	int stop_time;
+	double ceiling;
+
+	// RECORD_GASMIX
+	int index, gas_status;
+	dc_gasmix_t gasmix;
+};
+
+#define RECORD_GASMIX 1
+#define RECORD_DECO   2
+
 typedef struct garmin_parser_t {
 	dc_parser_t base;
 
 	dc_sample_callback_t callback;
 	void *userdata;
 
-	// Some sample data needs to be bunched up
-	// and sent together.
-	struct {
-		unsigned int time;
-		int stop_time;
-		double ceiling;
-	} sample_data;
+	// Multi-value record data
+	struct record_data record_data;
+
 	struct type_desc type_desc[MAXTYPE];
 
 	// Field cache
@@ -76,9 +90,12 @@ typedef struct garmin_parser_t {
 		unsigned int time;
 		int utc_offset, time_offset;
 
+		// dc_get_field() data
 		unsigned int DIVETIME;
 		double MAXDEPTH;
 		double AVGDEPTH;
+		unsigned int GASMIX_COUNT;
+		dc_gasmix_t gasmix[MAXGASES];
 
 		// I count nine (!) different GPS fields Hmm.
 		// Reporting all of them just to try to figure
@@ -95,8 +112,6 @@ typedef struct garmin_parser_t {
 			struct pos RECORD;
 		} gps;
 
-		unsigned int ngases;
-		dc_gasmix_t gasmix[MAXGASES];
 		dc_salinity_t salinity;
 		double surface_pressure;
 		dc_divemode_t divemode;
@@ -120,20 +135,40 @@ typedef struct garmin_parser_t {
 
 typedef int (*garmin_data_cb_t)(unsigned char type, const unsigned char *data, int len, void *user);
 
-static void flush_pending_sample(struct garmin_parser_t *garmin)
+/*
+ * Some data isn't just something we can save off directly: it's a record with
+ * multiple fields where one field describes another.
+ *
+ * The solution is to just batch it up in the "garmin->record_data", and then
+ * this function gets called at the end of a record.
+ */
+static void flush_pending_record(struct garmin_parser_t *garmin)
 {
-	if (!garmin->callback)
-		return;
+	struct record_data *record = &garmin->record_data;
+	unsigned int pending = record->pending;
 
-	if (garmin->sample_data.stop_time && garmin->sample_data.ceiling) {
+	record->pending = 0;
+	if (!garmin->callback) {
+		if (pending & RECORD_GASMIX) {
+			int index = record->index;
+			if (index < MAXGASES) {
+				garmin->cache.gasmix[index] = record->gasmix;
+				garmin->cache.GASMIX_COUNT = index+1;
+			}
+			garmin->cache.initialized |= 1 << DC_FIELD_GASMIX;
+			garmin->cache.initialized |= 1 << DC_FIELD_GASMIX_COUNT;
+			garmin->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
+		}
+		return;
+	}
+
+	if (pending &  RECORD_DECO) {
 		dc_sample_value_t sample = {0};
 		sample.deco.type = DC_DECO_DECOSTOP;
-		sample.deco.time = garmin->sample_data.stop_time;
-		sample.deco.depth = garmin->sample_data.ceiling;
+		sample.deco.time = record->stop_time;
+		sample.deco.depth = record->ceiling;
 		garmin->callback(DC_SAMPLE_DECO, sample, garmin->userdata);
 	}
-	garmin->sample_data.stop_time = 0;
-	garmin->sample_data.ceiling = 0;
 }
 
 
@@ -286,17 +321,17 @@ DECLARE_FIELD(ANY, timestamp, UINT32)
 		data -= garmin->cache.time;
 
 		// Did we already do this?
-		if (data <= garmin->sample_data.time)
+		if (data <= garmin->record_data.time)
 			return;
 
 		// Now we're ready to actually update the sample times
-		garmin->sample_data.time = data;
+		garmin->record_data.time = data;
 		sample.time = data;
 		garmin->callback(DC_SAMPLE_TIME, sample, garmin->userdata);
 	}
 }
-DECLARE_FIELD(ANY, message_index, UINT16) { }
-DECLARE_FIELD(ANY, part_index, UINT32) { }
+DECLARE_FIELD(ANY, message_index, UINT16)	{ garmin->record_data.index = data; }
+DECLARE_FIELD(ANY, part_index, UINT32)		{ garmin->record_data.index = data; }
 
 // FILE msg
 DECLARE_FIELD(FILE, file_type, ENUM) { }
@@ -354,11 +389,13 @@ DECLARE_FIELD(RECORD, depth, UINT32)			// mm
 }
 DECLARE_FIELD(RECORD, next_stop_depth, UINT32)		// mm
 {
-	garmin->sample_data.ceiling = data / 1000.0;
+	garmin->record_data.pending |= RECORD_DECO;
+	garmin->record_data.ceiling = data / 1000.0;
 }
 DECLARE_FIELD(RECORD, next_stop_time, UINT32)		// seconds
 {
-	garmin->sample_data.stop_time = data;
+	garmin->record_data.pending |= RECORD_DECO;
+	garmin->record_data.stop_time = data;
 }
 DECLARE_FIELD(RECORD, tts, UINT32) { }			// seconds
 DECLARE_FIELD(RECORD, ndl, UINT32)			// s
@@ -378,9 +415,21 @@ DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->cache.utc_offset = 
 DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->cache.time_offset = (SINT32) data; }	// wrong type in FIT
 
 // DIVE_GAS - uses msg index
-DECLARE_FIELD(DIVE_GAS, helium, UINT8) { } 	// percent
-DECLARE_FIELD(DIVE_GAS, oxygen, UINT8) { }	// percent
-DECLARE_FIELD(DIVE_GAS, status, ENUM) { }	// 0 - disabled, 1 - enabled, 2 - backup
+DECLARE_FIELD(DIVE_GAS, helium, UINT8)
+{
+	garmin->record_data.gasmix.helium = data / 100.0;
+	garmin->record_data.pending |= RECORD_GASMIX;
+}
+DECLARE_FIELD(DIVE_GAS, oxygen, UINT8)
+{
+	garmin->record_data.gasmix.oxygen = data / 100.0;
+	garmin->record_data.pending |= RECORD_GASMIX;
+}
+DECLARE_FIELD(DIVE_GAS, status, ENUM)
+{
+	// 0 - disabled, 1 - enabled, 2 - backup
+	garmin->record_data.gas_status = data;
+}
 
 // DIVE_SUMMARY
 DECLARE_FIELD(DIVE_SUMMARY, avg_depth, UINT32) { ASSIGN_FIELD(AVGDEPTH, data / 1000.0); }
@@ -759,7 +808,7 @@ traverse_data(struct garmin_parser_t *garmin)
 	unsigned int time;
 
 	// Reset the time and type descriptors before walking
-	memset(&garmin->sample_data, 0, sizeof(garmin->sample_data));
+	memset(&garmin->record_data, 0, sizeof(garmin->record_data));
 	memset(garmin->type_desc, 0, sizeof(garmin->type_desc));
 
 	// The data starts with our filename fingerprint. Skip it.
@@ -816,7 +865,8 @@ traverse_data(struct garmin_parser_t *garmin)
 		datasize -= len;
 
 		// Flush pending data on record boundaries
-		flush_pending_sample(garmin);
+		if (garmin->record_data.pending)
+			flush_pending_record(garmin);
 	}
 	return DC_STATUS_SUCCESS;
 }
@@ -916,6 +966,8 @@ static dc_status_t get_string_field(dc_field_string_t *strings, unsigned idx, dc
 // I'd love to use __typeof__, but that's a gcc'ism
 #define field_value(p, NAME) \
 	(memcpy((p), &garmin->cache.NAME, sizeof(garmin->cache.NAME)), DC_STATUS_SUCCESS)
+// Hacky hack hack
+#define GASMIX gasmix[flags]
 
 static dc_status_t
 garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
@@ -938,9 +990,11 @@ garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned i
 		return field_value(value, AVGDEPTH);
 	case DC_FIELD_GASMIX_COUNT:
 	case DC_FIELD_TANK_COUNT:
-		return DC_STATUS_UNSUPPORTED;
+		return field_value(value, GASMIX_COUNT);
 	case DC_FIELD_GASMIX:
-		return DC_STATUS_UNSUPPORTED;
+		if (flags >= MAXGASES)
+			return DC_STATUS_UNSUPPORTED;
+		return field_value(value, GASMIX);
 	case DC_FIELD_SALINITY:
 		return DC_STATUS_UNSUPPORTED;
 	case DC_FIELD_ATMOSPHERIC:
