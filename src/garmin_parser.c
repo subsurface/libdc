@@ -399,7 +399,14 @@ DECLARE_FIELD(RECORD, next_stop_time, UINT32)		// seconds
 	garmin->record_data.pending |= RECORD_DECO;
 	garmin->record_data.stop_time = data;
 }
-DECLARE_FIELD(RECORD, tts, UINT32) { }			// seconds
+DECLARE_FIELD(RECORD, tts, UINT32)
+{
+	if (garmin->callback) {
+		dc_sample_value_t sample = {0};
+		sample.time = data;
+		garmin->callback(DC_SAMPLE_TTS, sample, garmin->userdata);
+	}
+}
 DECLARE_FIELD(RECORD, ndl, UINT32)			// s
 {
 	if (garmin->callback) {
