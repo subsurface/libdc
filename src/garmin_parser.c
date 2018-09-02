@@ -416,7 +416,14 @@ DECLARE_FIELD(RECORD, ndl, UINT32)			// s
 		garmin->callback(DC_SAMPLE_DECO, sample, garmin->userdata);
 	}
 }
-DECLARE_FIELD(RECORD, cns_load, UINT8) { }		// percent
+DECLARE_FIELD(RECORD, cns_load, UINT8)
+{
+	if (garmin->callback) {
+		dc_sample_value_t sample = {0};
+		sample.cns = data / 100.0;
+		garmin->callback(DC_SAMPLE_CNS, sample, garmin->userdata);
+	}
+}
 DECLARE_FIELD(RECORD, n2_load, UINT16) { }		// percent
 
 // DEVICE_SETTINGS
