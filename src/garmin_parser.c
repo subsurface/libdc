@@ -323,11 +323,11 @@ DECLARE_FIELD(ANY, timestamp, UINT32)
 		data -= garmin->cache.time;
 
 		// Did we already do this?
-		if (data <= garmin->record_data.time)
+		if (data < garmin->record_data.time)
 			return;
 
 		// Now we're ready to actually update the sample times
-		garmin->record_data.time = data;
+		garmin->record_data.time = data+1;
 		sample.time = data;
 		garmin->callback(DC_SAMPLE_TIME, sample, garmin->userdata);
 	}
