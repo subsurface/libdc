@@ -90,6 +90,7 @@ typedef struct garmin_parser_t {
 	// Field cache
 	struct {
 		unsigned int initialized;
+		unsigned int sub_sport;
 		unsigned int protocol;
 		unsigned int profile;
 		unsigned int time;
@@ -488,6 +489,9 @@ DECLARE_FIELD(RECORD, n2_load, UINT16) { }		// percent
 DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->cache.utc_offset = (SINT32) data; }	// wrong type in FIT
 DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->cache.time_offset = (SINT32) data; }	// wrong type in FIT
 
+// SPORT
+DECLARE_FIELD(SPORT, sub_sport, ENUM) { garmin->cache.sub_sport = (ENUM) data; }
+
 // DIVE_GAS - uses msg index
 DECLARE_FIELD(DIVE_GAS, helium, UINT8)
 {
@@ -574,7 +578,13 @@ DECLARE_MESG(DEVICE_SETTINGS) = {
 };
 DECLARE_MESG(USER_PROFILE) = { };
 DECLARE_MESG(ZONES_TARGET) = { };
-DECLARE_MESG(SPORT) = { };
+
+DECLARE_MESG(SPORT) = {
+	.maxfield = 2,
+	.field = {
+		SET_FIELD(SPORT, 1, sub_sport, ENUM),	// 53 - 57 are dive activities
+	}
+};
 
 DECLARE_MESG(SESSION) = {
 	.maxfield = 40,
@@ -1077,6 +1087,16 @@ static void add_gps_string(garmin_parser_t *garmin, const char *desc, struct pos
 			latsign ? "-" : "", lat, latfrac,
 			lonsign ? "-" : "", lon, lonfrac);
 	}
+}
+
+int
+garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
+{
+	// set up the parser and extract data
+	dc_parser_set_data(abstract, data, size);
+	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
+
+	return garmin->cache.sub_sport >= 53 && garmin->cache.sub_sport <= 57;
 }
 
 static dc_status_t

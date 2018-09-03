@@ -194,6 +194,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	garmin_device_t *device = (garmin_device_t *) abstract;
+	dc_parser_t *parser;
 	char pathname[PATH_MAX];
 	size_t pathlen;
 	struct file_list files = { 0, 0, NULL };
@@ -268,6 +269,11 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		free(files.array);
 		return DC_STATUS_NOMEMORY;
 	}
+	if ((rc = garmin_parser_create(&parser, abstract->context) != DC_STATUS_SUCCESS)) {
+		ERROR (abstract->context, "Failed to create parser for dive verification.");
+		free(files.array);
+		return rc;
+	}
 
 	for (int i = 0; i < files.nr; i++) {
 		const char *name = files.array[i].name;
@@ -290,6 +296,11 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		data = dc_buffer_get_data(file);
 		size = dc_buffer_get_size(file);
 
+		if (!garmin_parser_is_dive(parser, data, size)) {
+			DEBUG (abstract->context, "decided %s isn't a dive.", name);
+			continue;
+		}
+
 		if (callback && !callback(data, size, name, FIT_NAME_SIZE, userdata))
 			break;
 
@@ -298,5 +309,6 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	}
 
 	free(files.array);
+	dc_parser_destroy(parser);
 	return status;
 }
