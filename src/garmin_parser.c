@@ -66,10 +66,15 @@ struct record_data {
 	// RECORD_GASMIX
 	int index, gas_status;
 	dc_gasmix_t gasmix;
+
+	// RECORD_EVENT
+	unsigned char event_type, event_nr, event_group;
+	unsigned int event_data, event_unknown;
 };
 
 #define RECORD_GASMIX 1
 #define RECORD_DECO   2
+#define RECORD_EVENT  4
 
 typedef struct garmin_parser_t {
 	dc_parser_t base;
@@ -136,6 +141,54 @@ typedef struct garmin_parser_t {
 typedef int (*garmin_data_cb_t)(unsigned char type, const unsigned char *data, int len, void *user);
 
 /*
+ * Decode the event. Numbers from Wojtek's fit2subs python script
+ */
+static void garmin_event(struct garmin_parser_t *garmin,
+		unsigned char event, unsigned char type, unsigned char group,
+		unsigned int data, unsigned int unknown)
+{
+	static const struct {
+		// 1 - state, 2 - notify, 3 - warning, 4 - alarm
+		int severity;
+		const char *name;
+	} event_desc[] = {
+		[0] =  { 2, "Deco required" },
+		[3] =  { 2, "First ceiling" },
+		[4] =  { 3, "ppO2 violation" },
+		[7] =  { 2, "Time alert" },
+		[8] =  { 2, "Depth alert" },
+		[11] = { 3, "Safety stop ceiling broken" },
+		[12] = { 1, "Safety stop completed" },
+		[17] = { 2, "Ascent speed too high" },
+		[22] = { 1, "Safety stop begin" },
+	};
+	dc_sample_value_t sample = {0};
+
+	switch (event) {
+	case 38:
+		break;
+	case 48:
+		break;
+	case 56:
+		if (data >= C_ARRAY_SIZE(event_desc))
+			return;
+
+		sample.event.type = SAMPLE_EVENT_STRING;
+		sample.event.name = event_desc[data].name;
+		sample.event.flags =  event_desc[data].severity << SAMPLE_FLAGS_SEVERITY_SHIFT;
+		if (!sample.event.name)
+			return;
+		garmin->callback(DC_SAMPLE_EVENT, sample, garmin->userdata);
+		return;
+
+	case 57:
+		sample.gasmix = data - 1;
+		garmin->callback(DC_SAMPLE_GASMIX, sample, garmin->userdata);
+		return;
+	}
+}
+
+/*
  * Some data isn't just something we can save off directly: it's a record with
  * multiple fields where one field describes another.
  *
@@ -170,6 +223,11 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 		sample.deco.time = record->stop_time;
 		sample.deco.depth = record->ceiling;
 		garmin->callback(DC_SAMPLE_DECO, sample, garmin->userdata);
+	}
+
+	if (pending & RECORD_EVENT) {
+		garmin_event(garmin, record->event_nr, record->event_type,
+			record->event_group, record->event_data, record->event_unknown);
 	}
 }
 
@@ -459,6 +517,29 @@ DECLARE_FIELD(DIVE_SUMMARY, o2_toxicity, UINT16) { }		// OTUs
 DECLARE_FIELD(DIVE_SUMMARY, dive_number, UINT32) { }
 DECLARE_FIELD(DIVE_SUMMARY, bottom_time, UINT32) { ASSIGN_FIELD(DIVETIME, data / 1000); }
 
+// EVENT
+DECLARE_FIELD(EVENT, event, ENUM)
+{
+	garmin->record_data.event_nr = data;
+	garmin->record_data.pending |= RECORD_EVENT;
+}
+DECLARE_FIELD(EVENT, type, ENUM)
+{
+	garmin->record_data.event_type = data;
+	garmin->record_data.pending |= RECORD_EVENT;
+}
+DECLARE_FIELD(EVENT, data, UINT32)
+{
+	garmin->record_data.event_data = data;
+}
+DECLARE_FIELD(EVENT, event_group, UINT8)
+{
+	garmin->record_data.event_group = data;
+}
+DECLARE_FIELD(EVENT, unknown, UINT32)
+{
+	garmin->record_data.event_unknown = data;
+}
 
 struct msg_desc {
 	unsigned char maxfield;
@@ -571,8 +652,17 @@ DECLARE_MESG(DIVE_SUMMARY) = {
 	}
 };
 
+DECLARE_MESG(EVENT) = {
+	.maxfield = 16,
+	.field = {
+		SET_FIELD(EVENT, 0, event, ENUM),
+		SET_FIELD(EVENT, 1, type, ENUM),
+		SET_FIELD(EVENT, 3, data, UINT32),
+		SET_FIELD(EVENT, 4, event_group, UINT8),
+		SET_FIELD(EVENT, 15, unknown, UINT32),
+	}
+};
 
-DECLARE_MESG(EVENT) = { };
 DECLARE_MESG(DEVICE_INFO) = { };
 DECLARE_MESG(ACTIVITY) = { };
 DECLARE_MESG(FILE_CREATOR) = { };
