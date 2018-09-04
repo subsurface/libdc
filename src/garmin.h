@@ -40,7 +40,7 @@ garmin_parser_create (dc_parser_t **parser, dc_context_t *context);
 // we need to be able to call into the parser to check if the
 // files that we find are actual dives
 int
-garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
+garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigned int size, dc_event_devinfo_t *devinfo_p);
 
 // The dive names are of the form "2018-08-20-10-23-30.fit"
 // With the terminating zero, that's 24 bytes.

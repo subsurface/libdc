@@ -248,21 +248,6 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	progress.current = 0;
 	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
-#if 0
-	// Emit a device info event.
-	dc_event_devinfo_t devinfo;
-	devinfo.model = 0;
-	devinfo.firmware = 0;
-	devinfo.serial = 0;
-	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
-
-	// Emit a vendor event.
-	dc_event_vendor_t vendor;
-	vendor.data = "Garmin";
-	vendor.size = 6;
-	device_event_emit (abstract, DC_EVENT_VENDOR, &vendor);
-#endif
-
 	file = dc_buffer_new (16384);
 	if (file == NULL) {
 		ERROR (abstract->context, "Insufficient buffer space available.");
@@ -275,10 +260,13 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		return rc;
 	}
 
+	dc_event_devinfo_t devinfo;
+	dc_event_devinfo_t *devinfo_p = &devinfo;
 	for (int i = 0; i < files.nr; i++) {
 		const char *name = files.array[i].name;
 		const unsigned char *data;
 		unsigned int size;
+		short is_dive = 0;
 
 		if (device_is_cancelled(abstract)) {
 			status = DC_STATUS_CANCELLED;
@@ -296,7 +284,14 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		data = dc_buffer_get_data(file);
 		size = dc_buffer_get_size(file);
 
-		if (!garmin_parser_is_dive(parser, data, size)) {
+		is_dive = garmin_parser_is_dive(parser, data, size, devinfo_p);
+		if (devinfo_p) {
+			// first time we came through here, let's emit the
+			// devinfo and vendor events
+			device_event_emit (abstract, DC_EVENT_DEVINFO, devinfo_p);
+			devinfo_p = NULL;
+		}
+		if (!is_dive) {
 			DEBUG (abstract->context, "decided %s isn't a dive.", name);
 			continue;
 		}

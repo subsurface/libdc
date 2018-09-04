@@ -91,6 +91,9 @@ typedef struct garmin_parser_t {
 	struct {
 		unsigned int initialized;
 		unsigned int sub_sport;
+		unsigned int serial_nr;
+		unsigned int product;
+		unsigned int firmware;
 		unsigned int protocol;
 		unsigned int profile;
 		unsigned int time;
@@ -489,6 +492,21 @@ DECLARE_FIELD(RECORD, n2_load, UINT16) { }		// percent
 DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->cache.utc_offset = (SINT32) data; }	// wrong type in FIT
 DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->cache.time_offset = (SINT32) data; }	// wrong type in FIT
 
+// DEVICE_INFO
+// We just pick the first data we see
+DECLARE_FIELD(DEVICE_INFO, product, UINT16)
+{
+	if (!garmin->cache.product) garmin->cache.product = data;
+}
+DECLARE_FIELD(DEVICE_INFO, serial_nr, UINT32Z)
+{
+	if (!garmin->cache.serial_nr) garmin->cache.serial_nr = data;
+}
+DECLARE_FIELD(DEVICE_INFO, firmware, UINT16)
+{
+	if (!garmin->cache.firmware) garmin->cache.firmware = data;
+}
+
 // SPORT
 DECLARE_FIELD(SPORT, sub_sport, ENUM) { garmin->cache.sub_sport = (ENUM) data; }
 
@@ -673,7 +691,15 @@ DECLARE_MESG(EVENT) = {
 	}
 };
 
-DECLARE_MESG(DEVICE_INFO) = { };
+DECLARE_MESG(DEVICE_INFO) = {
+	.maxfield = 6,
+	.field = {
+		SET_FIELD(DEVICE_INFO, 3, serial_nr, UINT32Z),
+		SET_FIELD(DEVICE_INFO, 4, product, UINT16),
+		SET_FIELD(DEVICE_INFO, 5, firmware, UINT16),
+	}
+};
+
 DECLARE_MESG(ACTIVITY) = { };
 DECLARE_MESG(FILE_CREATOR) = { };
 DECLARE_MESG(DIVE_SETTINGS) = { };
@@ -1090,12 +1116,17 @@ static void add_gps_string(garmin_parser_t *garmin, const char *desc, struct pos
 }
 
 int
-garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
+garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigned int size, dc_event_devinfo_t *devinfo_p)
 {
 	// set up the parser and extract data
 	dc_parser_set_data(abstract, data, size);
 	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
 
+	if (devinfo_p) {
+		devinfo_p->firmware = garmin->cache.firmware;
+		devinfo_p->serial = garmin->cache.serial_nr;
+		devinfo_p->model = garmin->cache.product;
+	}
 	return garmin->cache.sub_sport >= 53 && garmin->cache.sub_sport <= 57;
 }
 
