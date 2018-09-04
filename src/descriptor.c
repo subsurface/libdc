@@ -330,7 +330,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Tecdiving DiveComputer.eu */
 	{"Tecdiving", "DiveComputer.eu", DC_FAMILY_TECDIVING_DIVECOMPUTEREU, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_tecdiving},
 	/* Garmin */
-	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 0, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
+	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
 };
 
 static int
