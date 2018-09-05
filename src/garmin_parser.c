@@ -70,11 +70,15 @@ struct record_data {
 	// RECORD_EVENT
 	unsigned char event_type, event_nr, event_group;
 	unsigned int event_data, event_unknown;
+
+	// RECORD_DEVICE_INFO
+	unsigned int device_index, firmware, serial, product;
 };
 
-#define RECORD_GASMIX 1
-#define RECORD_DECO   2
-#define RECORD_EVENT  4
+#define RECORD_GASMIX      1
+#define RECORD_DECO        2
+#define RECORD_EVENT       4
+#define RECORD_DEVICE_INFO 8
 
 typedef struct garmin_parser_t {
 	dc_parser_t base;
@@ -91,7 +95,7 @@ typedef struct garmin_parser_t {
 	struct {
 		unsigned int initialized;
 		unsigned int sub_sport;
-		unsigned int serial_nr;
+		unsigned int serial;
 		unsigned int product;
 		unsigned int firmware;
 		unsigned int protocol;
@@ -217,6 +221,11 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 			garmin->cache.initialized |= 1 << DC_FIELD_GASMIX;
 			garmin->cache.initialized |= 1 << DC_FIELD_GASMIX_COUNT;
 			garmin->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
+		}
+		if (pending & RECORD_DEVICE_INFO && record->device_index == 0) {
+			garmin->cache.firmware = record->firmware;
+			garmin->cache.serial = record->serial;
+			garmin->cache.product = record->product;
 		}
 		return;
 	}
@@ -493,18 +502,26 @@ DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->cache.utc_offset = 
 DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->cache.time_offset = (SINT32) data; }	// wrong type in FIT
 
 // DEVICE_INFO
-// We just pick the first data we see
+// collect the data and then use the record if it is for device_index 0
+DECLARE_FIELD(DEVICE_INFO, device_index, UINT8)
+{
+	garmin->record_data.device_index = data;
+	garmin->record_data.pending |= RECORD_DEVICE_INFO;
+}
 DECLARE_FIELD(DEVICE_INFO, product, UINT16)
 {
-	if (!garmin->cache.product) garmin->cache.product = data;
+	garmin->record_data.product = data;
+	garmin->record_data.pending |= RECORD_DEVICE_INFO;
 }
 DECLARE_FIELD(DEVICE_INFO, serial_nr, UINT32Z)
 {
-	if (!garmin->cache.serial_nr) garmin->cache.serial_nr = data;
+	garmin->record_data.serial = data;
+	garmin->record_data.pending |= RECORD_DEVICE_INFO;
 }
 DECLARE_FIELD(DEVICE_INFO, firmware, UINT16)
 {
-	if (!garmin->cache.firmware) garmin->cache.firmware = data;
+	garmin->record_data.firmware = data;
+	garmin->record_data.pending |= RECORD_DEVICE_INFO;
 }
 
 // SPORT
@@ -694,6 +711,7 @@ DECLARE_MESG(EVENT) = {
 DECLARE_MESG(DEVICE_INFO) = {
 	.maxfield = 6,
 	.field = {
+		SET_FIELD(DEVICE_INFO, 0, device_index, UINT8),
 		SET_FIELD(DEVICE_INFO, 3, serial_nr, UINT32Z),
 		SET_FIELD(DEVICE_INFO, 4, product, UINT16),
 		SET_FIELD(DEVICE_INFO, 5, firmware, UINT16),
@@ -1124,7 +1142,7 @@ garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigne
 
 	if (devinfo_p) {
 		devinfo_p->firmware = garmin->cache.firmware;
-		devinfo_p->serial = garmin->cache.serial_nr;
+		devinfo_p->serial = garmin->cache.serial;
 		devinfo_p->model = garmin->cache.product;
 	}
 	return garmin->cache.sub_sport >= 53 && garmin->cache.sub_sport <= 57;
