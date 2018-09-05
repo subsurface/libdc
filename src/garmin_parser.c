@@ -747,6 +747,70 @@ static int traverse_compressed(struct garmin_parser_t *garmin,
 	return -1;
 }
 
+static int all_data_inval(const unsigned char *data, int base_type, int len)
+{
+	int base_size = base_type_info[base_type].type_size;
+	unsigned long long invalid = base_type_info[base_type].type_inval;
+
+	while (len > 0) {
+		unsigned long long val = 0;
+		memcpy(&val, data, base_size);
+		if (val != invalid)
+			return 0;
+		data += base_size;
+		len -= base_size;
+	}
+	return 1;
+}
+
+static void unknown_field(struct garmin_parser_t *garmin, const unsigned char *data,
+	const char *msg_name, unsigned int field_nr,
+	int base_type, int len)
+{
+	char buffer[80];
+	const char *str = (const char *)data;
+
+	/* Skip empty strings */
+	if (base_type == 7 && !*str)
+		return;
+
+	/* Turn non-string data into hex values */
+	if (base_type != 7) {
+		int pos = 0;
+		int base_size = base_type_info[base_type].type_size;
+		const char *sep = "";
+
+		/* Skip empty data */
+		if (all_data_inval(data, base_type, len))
+			return;
+
+		str = buffer;
+		while (len > 0) {
+			long long val;
+			/* Space + hex + NUL */
+			int need = 2+base_size*2;
+
+			/* The "-4" is because we reserve that " ..\0" at the end */
+			if (pos + need >= sizeof(buffer)-4) {
+				strcpy(buffer+pos, " ..");
+				break;
+			}
+
+			val = 0;
+			memcpy(&val, data, base_size);
+
+			pos += sprintf(buffer+pos, "%s%0*llx", sep, base_size*2, val);
+			sep = " ";
+
+			data += base_size;
+			len -= base_size;
+		}
+	}
+
+	DEBUG(garmin->base.context, "%s/%d %s '%s'", msg_name, field_nr, base_type_info[base_type].type_name, str);
+}
+
+
 static int traverse_regular(struct garmin_parser_t *garmin,
 	const unsigned char *data, unsigned int size,
 	unsigned char type, unsigned int *timep)
@@ -766,7 +830,6 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 		unsigned int field_nr = field[0];
 		unsigned int len = field[1];
 		unsigned int base_type = field[2] & 0x7f;
-		static const int base_size_array[] = { 1, 1, 1, 2, 2, 4, 4, 1, 4, 8, 1, 2, 4, 1, 8, 8, 8 };
 		const struct field_desc *field_desc;
 		unsigned int base_size;
 
@@ -787,7 +850,7 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 			total_len += size;
 			continue;
 		}
-		base_size = base_size_array[base_type];
+		base_size = base_type_info[base_type].type_size;
 		if (len % base_size) {
 			ERROR(garmin->base.context, "Data traversal size not a multiple of base size (%d vs %d)\n", len, base_size);
 			return -1;
@@ -827,8 +890,7 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 		if (field_desc) {
 			field_desc->parse(garmin, base_type, data);
 		} else {
-			DEBUG(garmin->base.context, "%s/%d %s", msg_name, field_nr, base_type_info[base_type].type_name);
-			HEXDUMP(garmin->base.context, DC_LOGLEVEL_DEBUG, "next", data, len);
+			unknown_field(garmin, data, msg_name, field_nr, base_type, len);
 		}
 
 		data += len;
@@ -920,6 +982,9 @@ traverse_data(struct garmin_parser_t *garmin)
 	// The data starts with our filename fingerprint. Skip it.
 	if (len < FIT_NAME_SIZE)
 		return DC_STATUS_IO;
+
+	DEBUG(garmin->base.context, "file %s", data);
+
 	data += FIT_NAME_SIZE;
 	len -= FIT_NAME_SIZE;
 
