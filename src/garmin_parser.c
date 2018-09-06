@@ -73,12 +73,16 @@ struct record_data {
 
 	// RECORD_DEVICE_INFO
 	unsigned int device_index, firmware, serial, product;
+
+	// RECORD_DECO_MODEL
+	unsigned char model, gf_low, gf_high;
 };
 
-#define RECORD_GASMIX      1
-#define RECORD_DECO        2
-#define RECORD_EVENT       4
-#define RECORD_DEVICE_INFO 8
+#define RECORD_GASMIX		1
+#define RECORD_DECO		2
+#define RECORD_EVENT		4
+#define RECORD_DEVICE_INFO	8
+#define RECORD_DECO_MODEL	16
 
 typedef struct garmin_parser_t {
 	dc_parser_t base;
@@ -108,6 +112,7 @@ typedef struct garmin_parser_t {
 		double MAXDEPTH;
 		double AVGDEPTH;
 		unsigned int GASMIX_COUNT;
+		dc_salinity_t SALINITY;
 		dc_gasmix_t gasmix[MAXGASES];
 
 		// I count nine (!) different GPS fields Hmm.
@@ -137,6 +142,10 @@ typedef struct garmin_parser_t {
 		double tankworkingpressure[MAXGASES];
 	} cache;
 } garmin_parser_t;
+
+// I *really* need to make this generic
+static void add_string(garmin_parser_t *garmin, const char *desc, const char *data);
+static void add_string_fmt(garmin_parser_t *garmin, const char *desc, const char *fmt, ...);
 
 /*
  * Macro to make it easy to set DC_FIELD_xyz values
@@ -242,6 +251,8 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 			garmin->cache.serial = record->serial;
 			garmin->cache.product = record->product;
 		}
+		if (pending & RECORD_DECO_MODEL)
+			add_string_fmt(garmin, "Deco model", "Buhlmann ZHL-16C %u/%u", record->gf_low, record->gf_high);
 		return;
 	}
 
@@ -341,6 +352,10 @@ DECLARE_FIT_TYPE(SINT8, signed char, 0x7f);
 DECLARE_FIT_TYPE(SINT16, signed short, 0x7fff);
 DECLARE_FIT_TYPE(SINT32, signed int, 0x7fffffff);
 DECLARE_FIT_TYPE(SINT64, signed long long, 0x7fffffffffffffffll);
+
+DECLARE_FIT_TYPE(FLOAT, unsigned int, 0xffffffff);
+DECLARE_FIT_TYPE(DOUBLE, unsigned long long, 0xffffffffffffffffll);
+DECLARE_FIT_TYPE(STRING, char *, NULL);
 
 static const struct {
 	const char *type_name;
@@ -571,6 +586,51 @@ DECLARE_FIELD(DIVE_SUMMARY, o2_toxicity, UINT16) { }		// OTUs
 DECLARE_FIELD(DIVE_SUMMARY, dive_number, UINT32) { }
 DECLARE_FIELD(DIVE_SUMMARY, bottom_time, UINT32) { ASSIGN_FIELD(DIVETIME, data / 1000); }
 
+// DIVE_SETTINGS
+DECLARE_FIELD(DIVE_SETTINGS, name, STRING) { }
+DECLARE_FIELD(DIVE_SETTINGS, model, ENUM)
+{
+	garmin->record_data.model = data;
+	garmin->record_data.pending |= RECORD_DECO_MODEL;
+}
+DECLARE_FIELD(DIVE_SETTINGS, gf_low, UINT8)
+{
+	garmin->record_data.gf_low = data;
+	garmin->record_data.pending |= RECORD_DECO_MODEL;
+}
+DECLARE_FIELD(DIVE_SETTINGS, gf_high, UINT8)
+{
+	garmin->record_data.gf_high = data;
+	garmin->record_data.pending |= RECORD_DECO_MODEL;
+}
+DECLARE_FIELD(DIVE_SETTINGS, water_type, ENUM)
+{
+	garmin->cache.SALINITY.type = data ? DC_WATER_SALT : DC_WATER_FRESH;
+	garmin->cache.initialized |= 1 << DC_FIELD_SALINITY;
+}
+DECLARE_FIELD(DIVE_SETTINGS, water_density, FLOAT)
+{
+	union { unsigned int binary; float actual; } val;
+	val.binary = data;
+	garmin->cache.SALINITY.density = val.actual;
+	garmin->cache.initialized |= 1 << DC_FIELD_SALINITY;
+}
+DECLARE_FIELD(DIVE_SETTINGS, po2_warn, UINT8) { }
+DECLARE_FIELD(DIVE_SETTINGS, po2_critical, UINT8) { }
+DECLARE_FIELD(DIVE_SETTINGS, po2_deco, UINT8) { }
+DECLARE_FIELD(DIVE_SETTINGS, safety_stop_enabled, ENUM) { }
+DECLARE_FIELD(DIVE_SETTINGS, bottom_depth, FLOAT) { }
+DECLARE_FIELD(DIVE_SETTINGS, bottom_time, UINT32) { }
+DECLARE_FIELD(DIVE_SETTINGS, apnea_countdown_enabled, ENUM) { }
+DECLARE_FIELD(DIVE_SETTINGS, apnea_countdown_time, UINT32) { }
+DECLARE_FIELD(DIVE_SETTINGS, backlight_mode, ENUM) { }
+DECLARE_FIELD(DIVE_SETTINGS, backlight_brightness, UINT8) { }
+DECLARE_FIELD(DIVE_SETTINGS, backlight_timeout, UINT8) { }
+DECLARE_FIELD(DIVE_SETTINGS, repeat_dive_interval, UINT16) { }
+DECLARE_FIELD(DIVE_SETTINGS, safety_stop_time, UINT16) { }
+DECLARE_FIELD(DIVE_SETTINGS, heart_rate_source_type, ENUM) { }
+DECLARE_FIELD(DIVE_SETTINGS, hear_rate_device_type, UINT8) { }
+
 // EVENT
 DECLARE_FIELD(EVENT, event, ENUM)
 {
@@ -735,7 +795,33 @@ DECLARE_MESG(DEVICE_INFO) = {
 
 DECLARE_MESG(ACTIVITY) = { };
 DECLARE_MESG(FILE_CREATOR) = { };
-DECLARE_MESG(DIVE_SETTINGS) = { };
+
+DECLARE_MESG(DIVE_SETTINGS) = {
+	.maxfield = 21,
+	.field = {
+		SET_FIELD(DIVE_SETTINGS, 0, name, STRING),		// Unused except in dive plans
+		SET_FIELD(DIVE_SETTINGS, 1, model, ENUM),		// model - Always 0 for Buhlmann ZHL-16C
+		SET_FIELD(DIVE_SETTINGS, 2, gf_low, UINT8),		// 0 to 100
+		SET_FIELD(DIVE_SETTINGS, 3, gf_high, UINT8),		// 0 to 100
+		SET_FIELD(DIVE_SETTINGS, 4, water_type, ENUM),		// One of fresh (0), salt (1), or custom (3). 2 is en13319 which is unused.
+		SET_FIELD(DIVE_SETTINGS, 5, water_density, FLOAT),	// If water_type is custom, this will be the density. Fresh is usually 1000, salt is usually 1025
+		SET_FIELD(DIVE_SETTINGS, 6, po2_warn, UINT8),		// PO2 * 100, so typically 140 to 160. When the PO2 starts blinking yellow
+		SET_FIELD(DIVE_SETTINGS, 7, po2_critical, UINT8),	// See above; value when PO2 blinks red and you get a popup
+		SET_FIELD(DIVE_SETTINGS, 8, po2_deco, UINT8),		// See above; PO2 limited used for choosing which gas to suggest
+		SET_FIELD(DIVE_SETTINGS, 9, safety_stop_enabled, ENUM),	// Used in conjunction with safety_stop_time below
+		SET_FIELD(DIVE_SETTINGS, 10, bottom_depth, FLOAT),	// Unused except in dive plans
+		SET_FIELD(DIVE_SETTINGS, 11, bottom_time, UINT32),	// Unused except in dive plans
+		SET_FIELD(DIVE_SETTINGS, 12, apnea_countdown_enabled, ENUM), // This and apnea_countdown_time are the "Apnea Surface Alert" setting
+		SET_FIELD(DIVE_SETTINGS, 13, apnea_countdown_time, UINT32), //
+		SET_FIELD(DIVE_SETTINGS, 14, backlight_mode, ENUM),	// 0 is "At Depth" and 1 is "Always On"
+		SET_FIELD(DIVE_SETTINGS, 15, backlight_brightness, UINT8), // 0 to 100
+		SET_FIELD(DIVE_SETTINGS, 16, backlight_timeout, UINT8),	// seconds; 0 is no timeout
+		SET_FIELD(DIVE_SETTINGS, 17, repeat_dive_interval, UINT16), // seconds between surfacing and when the watch stops and saves your dive. Must be at least 20.
+		SET_FIELD(DIVE_SETTINGS, 18, safety_stop_time, UINT16),	// seconds; 180 or 300 are acceptable values
+		SET_FIELD(DIVE_SETTINGS, 19, heart_rate_source_type, ENUM), // For now all you need to know is source_type_local means WHR and source_type_antplus means strap data or off. (We're reusing existing infrastructure here which is why this is complex.)
+		SET_FIELD(DIVE_SETTINGS, 20, hear_rate_device_type, UINT8), // device type depending on heart_rate_source_type (ignorable for now)
+	}
+};
 DECLARE_MESG(DIVE_ALARM) = { };
 
 // Unknown global message ID's..
@@ -1251,7 +1337,7 @@ garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned i
 			return DC_STATUS_UNSUPPORTED;
 		return field_value(value, GASMIX);
 	case DC_FIELD_SALINITY:
-		return DC_STATUS_UNSUPPORTED;
+		return field_value(value, SALINITY);
 	case DC_FIELD_ATMOSPHERIC:
 		return DC_STATUS_UNSUPPORTED;
 	case DC_FIELD_DIVEMODE:
