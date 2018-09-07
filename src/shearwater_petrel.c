@@ -255,6 +255,37 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	devinfo.serial = array_uint32_be (serial);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
+	// Read the logbook type
+	rc = shearwater_common_identifier (&device->base, buffer, ID_RDBI);
+	if (rc != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to read the logbook type.");
+		dc_buffer_free (buffer);
+		dc_buffer_free (manifests);
+		return rc;
+	}
+	unsigned int base_addr = array_uint_be (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer));
+	base_addr &= 0xFF000000u;
+	switch (base_addr) {
+	case 0xDD000000: // Predator or Predator-Like Format
+		// on a Predator, use the old format, otherwise use the Predator-Like Format (what we called Petrel so far)
+		if (model != PREDATOR)
+			base_addr = 0xC0000000;
+		break;
+	case 0x90000000: // some firmware versions supported an earlier version of PNF without final record
+		// use the Predator-Like Format instead
+		base_addr = 0xC0000000;
+		break;
+	case 0x80000000: // new Petrel Native Format with final record
+		// that's the correct address
+		break;
+	default: // unknown format
+		ERROR (abstract->context, "Unknown logbook format %08x", base_addr);
+		dc_buffer_free (buffer);
+		dc_buffer_free (manifests);
+		return DC_STATUS_UNSUPPORTED;
+	}
+
+	// Read the manifest pages
 	while (1) {
 		// Update the progress state.
 		// Assume the worst case scenario of a full manifest, and adjust the

@@ -32,6 +32,7 @@ extern "C" {
 
 #define ID_SERIAL   0x8010
 #define ID_FIRMWARE 0x8011
+#define ID_RDBI     0x8021
 #define ID_HARDWARE 0x8050
 
 #define PREDATOR 2
