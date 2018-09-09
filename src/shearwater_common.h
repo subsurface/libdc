@@ -55,6 +55,9 @@ dc_status_t
 shearwater_common_setup (shearwater_common_device_t *device, dc_context_t *context, dc_iostream_t *iostream);
 
 dc_status_t
+shearwater_common_command (shearwater_common_device_t *device, const unsigned char input[], unsigned int isize);
+
+dc_status_t
 shearwater_common_transfer (shearwater_common_device_t *device, const unsigned char input[], unsigned int isize, unsigned char output[], unsigned int osize, unsigned int *actual);
 
 dc_status_t

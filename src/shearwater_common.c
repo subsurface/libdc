@@ -316,6 +316,27 @@ done:
 	return status;
 }
 
+dc_status_t
+shearwater_common_command (shearwater_common_device_t *device, const unsigned char input[], unsigned int isize)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+	dc_device_t *abstract = (dc_device_t *) device;
+
+	if (isize > SZ_PACKET)
+		return DC_STATUS_INVALIDARGS;
+
+	if (device_is_cancelled (abstract))
+		return DC_STATUS_CANCELLED;
+
+	// Send the command packet.
+	status = shearwater_common_slip_write (device, input, isize);
+	if (status != DC_STATUS_SUCCESS)
+		ERROR (abstract->context, "Failed to send the command packet.");
+
+	return status;
+}
+
+
 
 dc_status_t
 shearwater_common_transfer (shearwater_common_device_t *device, const unsigned char input[], unsigned int isize, unsigned char output[], unsigned int osize, unsigned int *actual)
@@ -378,7 +399,6 @@ shearwater_common_transfer (shearwater_common_device_t *device, const unsigned c
 
 	return DC_STATUS_SUCCESS;
 }
-
 
 dc_status_t
 shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int address, unsigned int size, unsigned int compression, dc_event_progress_t *progress)
