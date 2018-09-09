@@ -33,7 +33,6 @@
 #define MANIFEST_ADDR 0xE0000000
 #define MANIFEST_SIZE 0x600
 
-#define DIVE_ADDR     0xC0000000
 #define DIVE_SIZE     0xFFFFFF
 
 #define RECORD_SIZE   0x20
@@ -370,7 +369,7 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		// Download the dive.
 		progress.current = NSTEPS * current;
 		progress.maximum = NSTEPS * maximum;
-		rc = shearwater_common_download (&device->base, buffer, DIVE_ADDR + address, DIVE_SIZE, 1, &progress);
+		rc = shearwater_common_download (&device->base, buffer, base_addr + address, DIVE_SIZE, 1, &progress);
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to download the dive.");
 			dc_buffer_free (buffer);
