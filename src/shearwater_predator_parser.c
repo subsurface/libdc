@@ -486,6 +486,14 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		}
 	}
 
+	// if this is logversion 9 or higher, make sure this isn't a freedive, as we can't parse that
+	if (logversion > 9 && pnf) {
+		if (data[parser->block_offset[LOG_RECORD_OPENING_5] + 25] == LOG_RECORD_FREEDIVE_SAMPLE) {
+			ERROR (abstract->context, "Cannot parse freedive samples");
+			return DC_STATUS_DATAFORMAT;
+		}
+	}
+
 	// Default dive mode.
 	dc_divemode_t mode = DC_DIVEMODE_OC;
 
