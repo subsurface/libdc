@@ -463,8 +463,6 @@ struct sample_data {
 
 	/* We gather up deco and cylinder pressure information */
 	int gasnr;
-	int tts, ndl;
-	double ceiling;
 };
 
 static void sample_time(struct sample_data *info, unsigned short time_delta)
@@ -502,7 +500,6 @@ static void sample_ndl(struct sample_data *info, short ndl)
 {
 	dc_sample_value_t sample = {0};
 
-	info->ndl = ndl;
 	if (ndl < 0)
 		return;
 
@@ -513,14 +510,27 @@ static void sample_ndl(struct sample_data *info, short ndl)
 
 static void sample_tts(struct sample_data *info, unsigned short tts)
 {
-	if (tts != 0xffff)
-		info->tts = tts;
+	if (tts != 0xffff) {
+		dc_sample_value_t sample = {0};
+		sample.time = tts;
+		if (info->callback) info->callback(DC_SAMPLE_TTS, sample, info->userdata);
+	}
 }
 
 static void sample_ceiling(struct sample_data *info, unsigned short ceiling)
 {
-	if (ceiling != 0xffff)
-		info->ceiling = ceiling / 100.0;
+	if (ceiling != 0xffff) {
+		dc_sample_value_t sample = {0};
+
+		// We don't actually have a time for the
+		// deco stop, we just have a ceiling.
+		//
+		// We'll just say it's one minute.
+		sample.deco.type = DC_DECO_DECOSTOP;
+		sample.deco.time = ceiling ? 60 : 0;
+		sample.deco.depth = ceiling / 100.0;
+		if (info->callback) info->callback(DC_SAMPLE_DECO, sample, info->userdata);
+	}
 }
 
 static void sample_heading(struct sample_data *info, unsigned short heading)
@@ -918,10 +928,6 @@ static int traverse_samples(unsigned short type, const struct type_desc *desc, c
 	if (desc->size > len)
 		ERROR(eon->base.context, "Got %d bytes of data for '%s' that wants %d bytes", len, desc->desc, desc->size);
 
-	info->ndl = -1;
-	info->tts = 0;
-	info->ceiling = 0.0;
-
 	for (i = 0; i < EON_MAX_GROUP; i++) {
 		enum eon_sample type = desc->type[i];
 		int bytes = handle_sample_type(desc, info, type, data);
@@ -935,15 +941,6 @@ static int traverse_samples(unsigned short type, const struct type_desc *desc, c
 		data += bytes;
 		len -= bytes;
 		used += bytes;
-	}
-
-	if (info->ndl < 0 && (info->tts || info->ceiling)) {
-		dc_sample_value_t sample = {0};
-
-		sample.deco.type = DC_DECO_DECOSTOP;
-		sample.deco.time = info->tts;
-		sample.deco.depth = info->ceiling;
-		if (info->callback) info->callback(DC_SAMPLE_DECO, sample, info->userdata);
 	}
 
 	// Warn if there are left-over bytes for something we did use part of
