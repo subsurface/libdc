@@ -33,7 +33,6 @@
 #define MANIFEST_ADDR 0xE0000000
 #define MANIFEST_SIZE 0x600
 
-#define DIVE_ADDR     0xC0000000
 #define DIVE_SIZE     0xFFFFFF
 
 #define RECORD_SIZE   0x20
@@ -240,6 +239,9 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	case 0x0D0D:
 		model = PERDIXAI;
 		break;
+	case 0x0F0F:
+		model = TERIC;
+		break;
 	default:
 		model = PETREL;
 		WARNING (abstract->context, "Unknown hardware type %04x. Assuming Petrel.", hardware);
@@ -252,6 +254,39 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	devinfo.serial = array_uint32_be (serial);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
+	// Read the logbook type
+	rc = shearwater_common_identifier (&device->base, buffer, ID_RDBI);
+	if (rc != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to read the logbook type.");
+		dc_buffer_free (buffer);
+		dc_buffer_free (manifests);
+		return rc;
+	}
+	unsigned int base_addr = array_uint_be (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer));
+	INFO(abstract->context, "RDBI command completed with %d bytes, evaluated as %08x", (int) dc_buffer_get_size (buffer), base_addr);
+	base_addr &= 0xFF000000u;
+	switch (base_addr) {
+	case 0xDD000000: // Predator or Predator-Like Format
+		// on a Predator, use the old format, otherwise use the Predator-Like Format (what we called Petrel so far)
+		if (model != PREDATOR)
+			base_addr = 0xC0000000u;
+		break;
+	case 0x90000000: // some firmware versions supported an earlier version of PNF without final record
+		// use the Predator-Like Format instead
+		base_addr = 0xC0000000u;
+		break;
+	case 0x80000000: // new Petrel Native Format with final record
+		// that's the correct address
+		break;
+	default: // unknown format
+		// use the defaults for the models
+		if (model >= TERIC)
+			base_addr = 0x80000000u;
+		else
+			base_addr = 0xC0000000u;
+	}
+
+	// Read the manifest pages
 	while (1) {
 		// Update the progress state.
 		// Assume the worst case scenario of a full manifest, and adjust the
@@ -275,11 +310,17 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		unsigned int size = dc_buffer_get_size (buffer);
 
 		// Process the records in the manifest.
-		unsigned int count = 0;
+		unsigned int count = 0, deleted = 0;
 		unsigned int offset = 0;
 		while (offset < size) {
 			// Check for a valid dive header.
 			unsigned int header = array_uint16_be (data + offset);
+			if (header == 0x5A23) {
+				// this is a deleted dive; keep looking
+				offset += RECORD_SIZE;
+				deleted++;
+				continue;
+			}
 			if (header != 0xA5C4)
 				break;
 
@@ -293,7 +334,7 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 
 		// Update the progress state.
 		current += 1;
-		maximum -= RECORD_COUNT - count;
+		maximum -= RECORD_COUNT - count - deleted;
 
 		// Append the manifest records to the main buffer.
 		if (!dc_buffer_append (manifests, data, count * RECORD_SIZE)) {
@@ -304,7 +345,7 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		}
 
 		// Stop downloading manifest if there are no more records.
-		if (count != RECORD_COUNT)
+		if (count + deleted != RECORD_COUNT)
 			break;
 	}
 
@@ -319,13 +360,18 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 
 	unsigned int offset = 0;
 	while (offset < size) {
+		// skip deleted dives
+		if (array_uint16_be(data + offset) == 0x5A23) {
+			offset += RECORD_SIZE;
+			continue;
+		}
 		// Get the address of the dive.
 		unsigned int address = array_uint32_be (data + offset + 20);
 
 		// Download the dive.
 		progress.current = NSTEPS * current;
 		progress.maximum = NSTEPS * maximum;
-		rc = shearwater_common_download (&device->base, buffer, DIVE_ADDR + address, DIVE_SIZE, 1, &progress);
+		rc = shearwater_common_download (&device->base, buffer, base_addr + address, DIVE_SIZE, 1, &progress);
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to download the dive.");
 			dc_buffer_free (buffer);
@@ -343,6 +389,11 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 
 		offset += RECORD_SIZE;
 	}
+	// send the "graceful exit" instruction
+	// I don't think we care about the return value of this call - this is just trying to be nice to the device
+	unsigned char command[4] = { 0x2e, 0x90, 0x20, 0x00 };
+	rc = shearwater_common_command(&device->base, command, 4);
+	DEBUG(abstract->context, "Sent graceful exit command, rc=%d", rc);
 
 	// Update and emit a progress event.
 	progress.current = NSTEPS * current;
