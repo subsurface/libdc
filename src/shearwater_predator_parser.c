@@ -694,7 +694,7 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			break;
 		case DC_FIELD_ATMOSPHERIC:
 			idx = parser->pnf ? parser->block_offset[LOG_RECORD_OPENING_1] + 16 : 47;
-			*((double *) value) = array_uint16_be (data + 47) / 1000.0;
+			*((double *) value) = array_uint16_be (data + idx) / 1000.0;
 			break;
 		case DC_FIELD_DIVEMODE:
 			*((dc_divemode_t *) value) = parser->mode;
