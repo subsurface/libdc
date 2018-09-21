@@ -130,8 +130,11 @@ static int get_file_list(DIR *dir, struct file_list *files)
 
 	while ((de = readdir(dir)) != NULL) {
 		int len = strlen(de->d_name);
+		struct fit_name *entry;
 
-		if (len != FIT_NAME_SIZE-1)
+		if (len < 5)
+			continue;
+		if (len >= FIT_NAME_SIZE)
 			continue;
 		if (strncasecmp(de->d_name + len - 4, ".FIT", 4))
 			continue;
@@ -150,7 +153,14 @@ static int get_file_list(DIR *dir, struct file_list *files)
 			files->allocated = n;
 		}
 
-		memcpy(files->array + files->nr++, de->d_name, FIT_NAME_SIZE);
+		/*
+		 * NOTE! This depends on the zero-padding that strncpy does.
+		 *
+		 * strncpy() doesn't just limit the size of the copy, it
+		 * will zero-pad the end of the result buffer.
+		 */
+		entry = files->array + files->nr++;
+		strncpy(entry->name, de->d_name, FIT_NAME_SIZE);
 	}
 
 	qsort(files->array, files->nr, sizeof(struct fit_name), name_cmp);
