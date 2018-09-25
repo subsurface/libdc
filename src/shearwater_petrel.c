@@ -255,7 +255,7 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the logbook type
-	rc = shearwater_common_identifier (&device->base, buffer, ID_RDBI);
+	rc = shearwater_common_identifier (&device->base, buffer, ID_LOGUPLOAD);
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to read the logbook type.");
 		dc_buffer_free (buffer);
