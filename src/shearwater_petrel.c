@@ -262,15 +262,11 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		dc_buffer_free (manifests);
 		return rc;
 	}
-	unsigned int base_addr = array_uint_be (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer));
+	unsigned int base_addr = array_uint32_be (dc_buffer_get_data (buffer) + 1);
 	INFO(abstract->context, "RDBI command completed with %d bytes, evaluated as %08x", (int) dc_buffer_get_size (buffer), base_addr);
-	base_addr &= 0xFF000000u;
 	switch (base_addr) {
-	case 0xDD000000: // Predator or Predator-Like Format
-		// on a Predator, use the old format, otherwise use the Predator-Like Format (what we called Petrel so far)
-		if (model != PREDATOR)
-			base_addr = 0xC0000000u;
-		break;
+	case 0xDD000000: // Predator - we shouldn't get here, we could give up or we can try 0xC0000000
+	case 0xC0000000: // Predator-Like Format (what we used to call the Petrel format)
 	case 0x90000000: // some firmware versions supported an earlier version of PNF without final record
 		// use the Predator-Like Format instead
 		base_addr = 0xC0000000u;
@@ -279,11 +275,10 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		// that's the correct address
 		break;
 	default: // unknown format
-		// use the defaults for the models
-		if (model >= TERIC)
-			base_addr = 0x80000000u;
-		else
-			base_addr = 0xC0000000u;
+		ERROR (abstract->context, "Unknown logbook download format.");
+		dc_buffer_free (buffer);
+		dc_buffer_free (manifests);
+		return DC_STATUS_DATAFORMAT;
 	}
 
 	// Read the manifest pages
