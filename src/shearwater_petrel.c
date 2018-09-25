@@ -384,11 +384,6 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 
 		offset += RECORD_SIZE;
 	}
-	// send the "graceful exit" instruction
-	// I don't think we care about the return value of this call - this is just trying to be nice to the device
-	unsigned char command[4] = { 0x2e, 0x90, 0x20, 0x00 };
-	rc = shearwater_common_command(&device->base, command, 4);
-	DEBUG(abstract->context, "Sent graceful exit command, rc=%d", rc);
 
 	// Update and emit a progress event.
 	progress.current = NSTEPS * current;
