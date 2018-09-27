@@ -97,6 +97,7 @@ typedef struct mares_iconhd_device_t {
 	unsigned char cache[20];
 	unsigned int available;
 	unsigned int offset;
+	unsigned int splitcommand;
 } mares_iconhd_device_t;
 
 static dc_status_t mares_iconhd_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
@@ -250,14 +251,17 @@ mares_iconhd_packet (mares_iconhd_device_t *device,
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
+	unsigned int split_csize;
 
 	assert (csize >= 2);
 
 	if (device_is_cancelled (abstract))
 		return DC_STATUS_CANCELLED;
 
+	split_csize = device->splitcommand ? 2 : csize;
+
 	// Send the command header to the dive computer.
-	status = mares_iconhd_write (device, command, 2);
+	status = mares_iconhd_write (device, command, split_csize);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to send the command.");
 		return status;
@@ -277,9 +281,9 @@ mares_iconhd_packet (mares_iconhd_device_t *device,
 		return DC_STATUS_PROTOCOL;
 	}
 
-	// Send the command payload to the dive computer.
-	if (csize > 2) {
-		status = mares_iconhd_write (device, command + 2, csize - 2);
+	// Send any remaining command payload to the dive computer.
+	if (csize > split_csize) {
+		status = mares_iconhd_write (device, command + split_csize, csize - split_csize);
 		if (status != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to send the command.");
 			return status;
@@ -475,6 +479,15 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_
 	device->available = 0;
 	device->offset = 0;
 
+	/*
+	 * At least the Mares Matrix needs the command to be split into
+	 * base and argument, with a wait for the ACK byte in between.
+	 *
+	 * See commit 59bfb0f3189b ("Add support for the Mares Matrix")
+	 * for details.
+	 */
+	device->splitcommand = 1;
+
 	// Set the serial communication protocol (115200 8E1).
 	status = dc_iostream_configure (device->iostream, 115200, 8, DC_PARITY_EVEN, DC_STOPBITS_ONE, DC_FLOWCONTROL_NONE);
 	if (status != DC_STATUS_SUCCESS) {
@@ -572,6 +585,26 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_
 		device->layout = &mares_iconhd_layout;
 		device->packetsize = 4096;
 		break;
+	}
+
+	if (dc_iostream_get_transport(device->iostream) == DC_TRANSPORT_BLE) {
+		/*
+		 * Don't ask for larger amounts of data with the BLE
+		 * transport - it will fail.  I suspect there is a buffer
+		 * overflow in the BlueLink Pro dongle when bluetooth is
+		 * slower than the serial protocol that the dongle talks to
+		 * the dive computer.
+		 */
+		if (device->packetsize > 128)
+			device->packetsize = 128;
+		/*
+		 * With BLE, don't wait for ACK before sending the arguments
+		 * to a command.
+		 *
+		 * There is some timing issue that makes that take too long
+		 * and causes the command to be aborted.
+		 */
+		device->splitcommand = 0;
 	}
 
 	*out = (dc_device_t *) device;
