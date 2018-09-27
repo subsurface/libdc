@@ -159,7 +159,7 @@ mares_iconhd_transfer (mares_iconhd_device_t *device,
 		return DC_STATUS_CANCELLED;
 
 	// Send the command header to the dive computer.
-	status = dc_iostream_write (device->iostream, command, 2, NULL);
+	status = dc_iostream_write (device->iostream, command, csize, NULL);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to send the command.");
 		return status;
@@ -177,15 +177,6 @@ mares_iconhd_transfer (mares_iconhd_device_t *device,
 	if (header[0] != ACK) {
 		ERROR (abstract->context, "Unexpected answer byte.");
 		return DC_STATUS_PROTOCOL;
-	}
-
-	// Send the command payload to the dive computer.
-	if (csize > 2) {
-		status = dc_iostream_write (device->iostream, command + 2, csize - 2, NULL);
-		if (status != DC_STATUS_SUCCESS) {
-			ERROR (abstract->context, "Failed to send the command.");
-			return status;
-		}
 	}
 
 	// Read the packet.
