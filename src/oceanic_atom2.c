@@ -35,6 +35,7 @@
 #define PROPLUSX   0x4552
 #define VTX        0x4557
 #define I750TC     0x455A
+#define I770R      0x4651
 
 #define MAXRETRIES 2
 #define MAXDELAY   16
@@ -56,6 +57,7 @@
 typedef struct oceanic_atom2_device_t {
 	oceanic_common_device_t base;
 	dc_iostream_t *iostream;
+	unsigned int sequence;
 	unsigned int delay;
 	unsigned int bigpage;
 	unsigned char cache[256];
@@ -196,6 +198,19 @@ static const oceanic_common_version_t aeris_a300cs_version[] = {
 	{"AER300CS \0\0 2048"},
 	{"OCEANVTX \0\0 2048"},
 	{"AQUAI750 \0\0 2048"},
+};
+
+// Not 100% sure what the pattern is.
+// I've seen:
+//
+//   "AQUA770R 1A 0001"
+//   "AQUA770R 1A 0090"
+//
+// from the same dive computer. On other ones, it's
+// apparently the two middle digits that change, on
+// the i770R it might be all of them.
+static const oceanic_common_version_t aqualung_i770r_version[] = {
+	{"AQUA770R \0\0 \0\0\0\0"},
 };
 
 static const oceanic_common_version_t aqualung_i450t_version[] = {
@@ -487,6 +502,21 @@ static const oceanic_common_layout_t aeris_a300cs_layout = {
 	0, /* pt_mode_serial */
 };
 
+static const oceanic_common_layout_t aqualung_i770r_layout = {
+	0x440000, /* memsize */
+	0x40000, /* highmem */
+	0x0000, /* cf_devinfo */
+	0x0040, /* cf_pointers */
+	0x1000, /* rb_logbook_begin */
+	0x10000, /* rb_logbook_end */
+	16, /* rb_logbook_entry_size */
+	0x40000, /* rb_profile_begin */
+	0x440000, /* rb_profile_end */
+	0, /* pt_mode_global */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
+};
+
 static const oceanic_common_layout_t aqualung_i450t_layout = {
 	0x40000, /* memsize */
 	0, /* highmem */
@@ -570,7 +600,7 @@ oceanic_atom2_packet (oceanic_atom2_device_t *device, const unsigned char comman
 
 
 static dc_status_t
-oceanic_atom2_transfer (oceanic_atom2_device_t *device, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize, unsigned int crc_size)
+oceanic_atom2_serial_transfer (oceanic_atom2_device_t *device, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize, unsigned int crc_size)
 {
 	// Send the command to the device. If the device responds with an
 	// ACK byte, the command was received successfully and the answer
@@ -600,6 +630,193 @@ oceanic_atom2_transfer (oceanic_atom2_device_t *device, const unsigned char comm
 	return DC_STATUS_SUCCESS;
 }
 
+/*
+ * The BLE GATT packet size is up to 20 bytes and the format is:
+ *
+ * byte 0: <0xCD>
+ *         Seems to always have this value. Don't ask what it means
+ * byte 1: <d 1 c s s s s s>
+ *          d=0 means "command", d=1 means "reply from dive computer"
+ *          1 is always set, afaik
+ *          c=0 means "last packet" in sequence, c=1 means "more packets coming"
+ *          sssss is a 5-bit sequence number for packets
+ * byte 2: <cmd seq>
+ *          starts at 0 for the connection, incremented for each command
+ * byte 3: <length of data>
+ *          1-16 bytes of data per packet.
+ * byte 4..n: <data>
+ */
+static dc_status_t
+oceanic_atom2_ble_write(oceanic_atom2_device_t *device, const unsigned char command[], unsigned int csize)
+{
+	unsigned char buf[20];
+	unsigned char cmd_seq = device->sequence;
+	unsigned char pkt_seq;
+
+	pkt_seq = 0;
+	while (csize) {
+		dc_status_t ret;
+		unsigned char status = 0x40;
+		unsigned int cpartial = csize;
+		if (cpartial > 16) {
+			cpartial = 16;
+			status |= 0x20;
+		}
+		buf[0] = 0xcd;
+		buf[1] = status | (pkt_seq & 31);
+		buf[2] = cmd_seq;
+		buf[3] = cpartial;
+		memcpy(buf+4, command, cpartial);
+		command += cpartial;
+		csize -= cpartial;
+		ret = dc_iostream_write(device->iostream, buf, 4+cpartial, NULL);
+		if (ret != DC_STATUS_SUCCESS)
+			return ret;
+		pkt_seq++;
+	}
+	return DC_STATUS_SUCCESS;
+}
+
+static dc_status_t
+oceanic_atom2_ble_read(oceanic_atom2_device_t *device, unsigned char **result_p, unsigned int *size_p)
+{
+	unsigned char *result = NULL;
+	unsigned int size = 0, allocated = 0;
+	unsigned char buf[20];
+	unsigned char cmd_seq = device->sequence;
+	unsigned char pkt_seq;
+	dc_status_t ret = DC_STATUS_SUCCESS;
+
+	pkt_seq = 0;
+	for (;;) {
+		unsigned char status, expect;
+		size_t transferred = 0;
+		ret = dc_iostream_read(device->iostream, buf, sizeof(buf), &transferred);
+		if (ret != DC_STATUS_SUCCESS)
+			break;
+
+		ret = DC_STATUS_IO;
+		if (transferred < 5 || transferred > 20) {
+			ERROR(device->base.base.context, "Odd BLE packet size %zd", transferred);
+			break;
+		}
+		if (buf[0] != 0xcd)
+			ERROR(device->base.base.context, "Odd first byte (got '%02x', expected 'cd'", buf[0]);
+
+		// Verify status byte
+		expect = 0xc0;
+		expect |= (pkt_seq & 31);
+		status = buf[1];
+		if ((status & ~0x20) != expect)
+			ERROR(device->base.base.context, "Odd status byte (got '%02x', expected '%02x'", buf[1], expect);
+
+		// Verify command sequence byte
+		expect = cmd_seq;
+		if (buf[2] != expect)
+			ERROR(device->base.base.context, "Odd cmd sequence byte (got '%02x', expected '%02x'", buf[2], expect);
+
+		// Verify length byte
+		expect = buf[3];
+		if (expect < 1 || expect > 16) {
+			ERROR(device->base.base.context, "Odd reply size byte (got %d, expected 1..16", buf[3]);
+			break;
+		}
+
+		if (transferred < 4+expect) {
+			ERROR(device->base.base.context, "Packet too small (got %zd bytes, expected at least %d bytes)", transferred, 4+expect);
+			break;
+		}
+
+		if (size + expect > allocated) {
+			unsigned int newsize = size + expect + 100;
+			unsigned char *newalloc = realloc(result, newsize);
+			if (!newalloc) {
+				ret = DC_STATUS_NOMEMORY;
+				break;
+			}
+			result = newalloc;
+			allocated = newsize;
+		}
+
+		memcpy(result + size, buf+4, expect);
+		size += expect;
+		pkt_seq++;
+
+		/* More packets? */
+		if (status & 0x20)
+			continue;
+
+		ret = DC_STATUS_SUCCESS;
+		break;
+	}
+
+	if (ret != DC_STATUS_SUCCESS) {
+		free(result);
+		size = 0;
+		result = NULL;
+	}
+	*result_p = result;
+	*size_p = size;
+	return ret;
+}
+
+/*
+ * Transfer a command and optionally read return data.
+ *
+ * NOTE! The NUL byte at the end of a command is a serial transfer thing,
+ * and we remove it. The correct thing to do would be to add it on the
+ * serial transfer side instead (or perhaps not send it at all, Jef says
+ * it may be historical), but right now I've tried to minimize the changes
+ * that the BLE transfer code made to the code, so instead this tries to
+ * just skip the extraneous byte.
+ */
+static dc_status_t
+oceanic_atom2_ble_transfer (oceanic_atom2_device_t *device, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize, unsigned int crc_size)
+{
+	unsigned char buf[20];
+	unsigned char cmd_seq = device->sequence;
+	unsigned char pkt_seq;
+	dc_status_t ret = DC_STATUS_SUCCESS;
+
+	/*
+	 * The serial commands have a NUL byte at the end. It's bogus.
+	 * It should be added on the serial transfer side, not removed
+	 * here.
+	 */
+	if (csize > 1 && csize < 8 && !command[csize-1])
+		csize--;
+
+	ret = oceanic_atom2_ble_write(device, command, csize);
+	if (ret != DC_STATUS_SUCCESS)
+		return ret;
+
+	pkt_seq = 0;
+	if (asize) {
+		unsigned char *buf;
+		unsigned int size;
+		ret = oceanic_atom2_ble_read(device, &buf, &size);
+		if (ret != DC_STATUS_SUCCESS)
+			return ret;
+		if (size > asize && buf[0] == ACK) {
+			memcpy(answer, buf+1, asize);
+		} else {
+			ERROR(device->base.base.context, "Result too small: got %d bytes, expected at least %d bytes", size, asize+1);
+			ret = DC_STATUS_IO;
+		}
+		free(buf);
+	}
+
+	return ret;
+}
+
+static dc_status_t
+oceanic_atom2_transfer (oceanic_atom2_device_t *device, const unsigned char command[], unsigned int csize, unsigned char answer[], unsigned int asize, unsigned int crc_size)
+{
+	if (dc_iostream_get_transport(device->iostream) == DC_TRANSPORT_BLE)
+		return oceanic_atom2_ble_transfer(device, command, csize, answer, asize, crc_size);
+
+	return oceanic_atom2_serial_transfer(device, command, csize, answer, asize, crc_size);
+}
 
 static dc_status_t
 oceanic_atom2_quit (oceanic_atom2_device_t *device)
@@ -636,15 +853,26 @@ oceanic_atom2_device_open (dc_device_t **out, dc_context_t *context, dc_iostream
 	// Set the default values.
 	device->iostream = iostream;
 	device->delay = 0;
+	device->sequence = 0;
 	device->bigpage = 1; // no big pages
 	device->cached_page = INVALID;
 	device->cached_highmem = INVALID;
 	memset(device->cache, 0, sizeof(device->cache));
 
 	// Get the correct baudrate.
-	unsigned int baudrate = 38400;
-	if (model == VTX || model == I750TC || model == PROPLUSX) {
+	unsigned int baudrate;
+	switch (model) {
+	case VTX:
+	case I750TC:
+	case PROPLUSX:
 		baudrate = 115200;
+		break;
+	case I770R:
+		baudrate = 1000000;
+		break;
+	default:
+		baudrate = 38400;
+		break;
 	}
 
 	// Set the serial communication protocol (38400 8N1).
@@ -733,6 +961,9 @@ oceanic_atom2_device_open (dc_device_t **out, dc_context_t *context, dc_iostream
 	} else if (OCEANIC_COMMON_MATCH (device->base.version, aeris_a300cs_version)) {
 		device->base.layout = &aeris_a300cs_layout;
 		device->bigpage = 16;
+	} else if (OCEANIC_COMMON_MATCH (device->base.version, aqualung_i770r_version)) {
+		device->base.layout = &aqualung_i770r_layout;
+		device->bigpage = 16;
 	} else if (OCEANIC_COMMON_MATCH (device->base.version, aqualung_i450t_version)) {
 		device->base.layout = &aqualung_i450t_layout;
 	} else if (OCEANIC_COMMON_MATCH (device->base.version, oceanic_default_version)) {
@@ -793,7 +1024,7 @@ oceanic_atom2_device_keepalive (dc_device_t *abstract)
 	dc_status_t rc = oceanic_atom2_transfer (device, command, sizeof (command), NULL, 0, 0);
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
-
+	device->sequence++;
 	return DC_STATUS_SUCCESS;
 }
 
@@ -816,6 +1047,17 @@ oceanic_atom2_device_version (dc_device_t *abstract, unsigned char data[], unsig
 		return rc;
 
 	memcpy (data, answer, PAGESIZE);
+	device->sequence++;
+
+	if (dc_iostream_get_transport(device->iostream) == DC_TRANSPORT_BLE) {
+		/* I have NO IDEA! */
+		unsigned char unk[10] = "\xe5\x00\x00\x01\x01\x02\x04\x00\x00\x08";
+		rc = oceanic_atom2_ble_write(device, unk, sizeof (unk));
+		unsigned char *ret;
+		unsigned int ret_size;
+		rc = oceanic_atom2_ble_read(device, &ret, &ret_size);
+		device->sequence++;
+	}
 
 	return DC_STATUS_SUCCESS;
 }
@@ -883,6 +1125,8 @@ oceanic_atom2_device_read (dc_device_t *abstract, unsigned int address, unsigned
 			if (rc != DC_STATUS_SUCCESS)
 				return rc;
 
+			device->sequence++;
+
 			// Cache the page.
 			memcpy (device->cache, answer, pagesize);
 			device->cached_page = page;
@@ -937,6 +1181,8 @@ oceanic_atom2_device_write (dc_device_t *abstract, unsigned int address, const u
 		rc = oceanic_atom2_transfer (device, command, sizeof (command), NULL, 0, 0);
 		if (rc != DC_STATUS_SUCCESS)
 			return rc;
+
+		device->sequence++;
 
 		nbytes += PAGESIZE;
 		address += PAGESIZE;
