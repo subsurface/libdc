@@ -777,6 +777,7 @@ oceanic_atom2_ble_transfer (oceanic_atom2_device_t *device, const unsigned char 
 	unsigned char cmd_seq = device->sequence;
 	unsigned char pkt_seq;
 	dc_status_t ret = DC_STATUS_SUCCESS;
+	int retry = 3;
 
 	/*
 	 * The serial commands have a NUL byte at the end. It's bogus.
@@ -785,6 +786,10 @@ oceanic_atom2_ble_transfer (oceanic_atom2_device_t *device, const unsigned char 
 	 */
 	if (csize > 1 && csize < 8 && !command[csize-1])
 		csize--;
+
+retry:
+	if (--retry < 0)
+		return ret;
 
 	ret = oceanic_atom2_ble_write(device, command, csize);
 	if (ret != DC_STATUS_SUCCESS)
@@ -796,12 +801,13 @@ oceanic_atom2_ble_transfer (oceanic_atom2_device_t *device, const unsigned char 
 		unsigned int size;
 		ret = oceanic_atom2_ble_read(device, &buf, &size);
 		if (ret != DC_STATUS_SUCCESS)
-			return ret;
+			goto retry;
 		if (size > asize && buf[0] == ACK) {
 			memcpy(answer, buf+1, asize);
 		} else {
 			ERROR(device->base.base.context, "Result too small: got %d bytes, expected at least %d bytes", size, asize+1);
 			ret = DC_STATUS_IO;
+			goto retry;
 		}
 		free(buf);
 	}
