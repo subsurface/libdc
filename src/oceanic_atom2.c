@@ -507,7 +507,7 @@ static const oceanic_common_layout_t aqualung_i770r_layout = {
 	0x40000, /* highmem */
 	0x0000, /* cf_devinfo */
 	0x0040, /* cf_pointers */
-	0x1000, /* rb_logbook_begin */
+	0x2000, /* rb_logbook_begin */
 	0x10000, /* rb_logbook_end */
 	16, /* rb_logbook_entry_size */
 	0x40000, /* rb_profile_begin */
@@ -871,10 +871,8 @@ oceanic_atom2_device_open (dc_device_t **out, dc_context_t *context, dc_iostream
 	case VTX:
 	case I750TC:
 	case PROPLUSX:
-		baudrate = 115200;
-		break;
 	case I770R:
-		baudrate = 1000000;
+		baudrate = 115200;
 		break;
 	default:
 		baudrate = 38400;
