@@ -424,6 +424,7 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 	unsigned int ngasmixes = 0;
 	unsigned int o2_offset = 0;
 	unsigned int he_offset = 0;
+	unsigned int pO2_offset = 1;
 	if (mode == FREEDIVE) {
 		ngasmixes = 0;
 	} else if (parser->model == DATAMASK || parser->model == COMPUMASK) {
@@ -442,7 +443,7 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 		he_offset = 0x48;
 		ngasmixes = 6;
 	} else if (parser->model == A300CS || parser->model == VTX ||
-		parser->model == I750TC || parser->model == I770R) {
+		parser->model == I750TC) {
 		o2_offset = 0x2A;
 		if (data[0x39] & 0x04) {
 			ngasmixes = 1;
@@ -459,6 +460,13 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 	} else if (parser->model == ZEN) {
 		o2_offset = header + 4;
 		ngasmixes = 2;
+	} else if (parser->model == PROPLUSX) {
+		o2_offset = 0x24;
+		ngasmixes = 4;
+	} else if (parser->model == I770R) {
+		o2_offset = 0x24;
+		ngasmixes = 4;
+		pO2_offset = 2;
 	} else {
 		o2_offset = header + 4;
 		ngasmixes = 3;
@@ -470,8 +478,8 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 	parser->mode = mode;
 	parser->ngasmixes = ngasmixes;
 	for (unsigned int i = 0; i < ngasmixes; ++i) {
-		if (data[o2_offset + i]) {
-			parser->oxygen[i] = data[o2_offset + i];
+		if (data[o2_offset + i*pO2_offset]) {
+			parser->oxygen[i] = data[o2_offset + i*pO2_offset];
 		} else {
 			parser->oxygen[i] = 21;
 		}
