@@ -464,7 +464,7 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 		o2_offset = 0x24;
 		ngasmixes = 4;
 	} else if (parser->model == I770R) {
-		o2_offset = 0x24;
+		o2_offset = 0x30;
 		ngasmixes = 4;
 		pO2_offset = 2;
 	} else {
