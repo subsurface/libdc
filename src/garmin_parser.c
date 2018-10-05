@@ -471,7 +471,14 @@ DECLARE_FIELD(LAP, other_pos_long, SINT32)	{ garmin->cache.gps.LAP.other.lon = d
 DECLARE_FIELD(RECORD, position_lat, SINT32)	{ garmin->cache.gps.RECORD.lat = data; }
 DECLARE_FIELD(RECORD, position_long, SINT32)	{ garmin->cache.gps.RECORD.lon = data; }
 DECLARE_FIELD(RECORD, altitude, UINT16) { }		// 5 *m + 500 ?
-DECLARE_FIELD(RECORD, heart_rate, UINT8) { }		// bpm
+DECLARE_FIELD(RECORD, heart_rate, UINT8)		// bpm
+{
+	if (garmin->callback) {
+		dc_sample_value_t sample = {0};
+		sample.heartbeat = data;
+		garmin->callback(DC_SAMPLE_HEARTBEAT, sample, garmin->userdata);
+	}
+}
 DECLARE_FIELD(RECORD, distance, UINT32) { }		// Distance in 100 * m? WTF?
 DECLARE_FIELD(RECORD, temperature, SINT8)		// degrees C
 {
