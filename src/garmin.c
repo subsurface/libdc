@@ -167,6 +167,10 @@ static int get_file_list(DIR *dir, struct file_list *files)
 	return DC_STATUS_SUCCESS;
 }
 
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
+
 static dc_status_t
 read_file(char *pathname, int pathlen, const char *name, dc_buffer_t *file)
 {
@@ -174,7 +178,7 @@ read_file(char *pathname, int pathlen, const char *name, dc_buffer_t *file)
 
 	pathname[pathlen] = '/';
 	memcpy(pathname+pathlen+1, name, FIT_NAME_SIZE);
-	fd = open(pathname, O_RDONLY);
+	fd = open(pathname, O_RDONLY | O_BINARY);
 
 	if (fd < 0)
 		return DC_STATUS_IO;
