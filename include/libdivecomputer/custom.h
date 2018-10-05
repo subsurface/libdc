@@ -45,6 +45,7 @@ typedef struct dc_custom_cbs_t {
 	dc_status_t (*purge) (void *userdata, dc_direction_t direction);
 	dc_status_t (*sleep) (void *userdata, unsigned int milliseconds);
 	dc_status_t (*close) (void *userdata);
+	const char *(*get_name) (void *userdata);
 } dc_custom_cbs_t;
 
 /**

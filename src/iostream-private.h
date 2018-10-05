@@ -68,6 +68,8 @@ struct dc_iostream_vtable_t {
 	dc_status_t (*sleep) (dc_iostream_t *iostream, unsigned int milliseconds);
 
 	dc_status_t (*close) (dc_iostream_t *iostream);
+
+	const char *(*get_name) (dc_iostream_t *iostream);
 };
 
 dc_iostream_t *

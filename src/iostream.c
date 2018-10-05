@@ -305,3 +305,15 @@ dc_iostream_close (dc_iostream_t *iostream)
 
 	return status;
 }
+
+const char *
+dc_iostream_get_name (dc_iostream_t *iostream)
+{
+	if (iostream == NULL)
+		return NULL;
+
+	if (iostream->vtable->get_name)
+		return iostream->vtable->get_name (iostream);
+
+	return NULL;
+}

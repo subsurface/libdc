@@ -41,6 +41,7 @@ static dc_status_t dc_custom_flush (dc_iostream_t *abstract);
 static dc_status_t dc_custom_purge (dc_iostream_t *abstract, dc_direction_t direction);
 static dc_status_t dc_custom_sleep (dc_iostream_t *abstract, unsigned int milliseconds);
 static dc_status_t dc_custom_close (dc_iostream_t *abstract);
+static const char *dc_custom_get_name (dc_iostream_t *abstract);
 
 typedef struct dc_custom_t {
 	/* Base class. */
@@ -66,6 +67,7 @@ static const dc_iostream_vtable_t dc_custom_vtable = {
 	dc_custom_purge, /* purge */
 	dc_custom_sleep, /* sleep */
 	dc_custom_close, /* close */
+	dc_custom_get_name, /* get_name */
 };
 
 dc_status_t
@@ -245,4 +247,15 @@ dc_custom_close (dc_iostream_t *abstract)
 		return DC_STATUS_SUCCESS;
 
 	return custom->callbacks.close (custom->userdata);
+}
+
+static const char *
+dc_custom_get_name (dc_iostream_t *abstract)
+{
+	dc_custom_t *custom = (dc_custom_t *) abstract;
+
+	if (custom->callbacks.get_name == NULL)
+		return NULL;
+
+	return custom->callbacks.get_name (custom->userdata);
 }
