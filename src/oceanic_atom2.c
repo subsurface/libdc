@@ -796,7 +796,7 @@ retry:
 		return ret;
 
 	pkt_seq = 0;
-	if (asize) {
+	if (answer) {
 		unsigned char *buf;
 		unsigned int size;
 		ret = oceanic_atom2_ble_read(device, &buf, &size);
@@ -804,6 +804,7 @@ retry:
 			goto retry;
 		if (size > asize && buf[0] == ACK) {
 			memcpy(answer, buf+1, asize);
+			device->sequence++;
 		} else {
 			ERROR(device->base.base.context, "Result too small: got %d bytes, expected at least %d bytes", size, asize+1);
 			ret = DC_STATUS_IO;
@@ -1028,10 +1029,56 @@ oceanic_atom2_device_keepalive (dc_device_t *abstract)
 	dc_status_t rc = oceanic_atom2_transfer (device, command, sizeof (command), NULL, 0, 0);
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
+
+	/* No answer: increment sequence number manually */
 	device->sequence++;
 	return DC_STATUS_SUCCESS;
 }
 
+/*
+ * The BLE communication sends a handshake packet that seems
+ * to be a passphrase based on the BLE name of the device
+ * (more specifically the serial number encoded in the name).
+ *
+ * The packet format is:
+ *    0xe5
+ *    < 8 bytes of passphrase >
+ *    one-byte checksum of the passphrase.
+ */
+static dc_status_t
+oceanic_atom2_send_ble_handshake(oceanic_atom2_device_t *device)
+{
+	unsigned char handshake[10] = { 0xe5, }, ack[1];
+	const char *bt_name = dc_iostream_get_name(device->iostream);
+
+	/*
+	 * Allow skipping the handshake if no name. But the download will
+	 * likely fail.
+	 *
+	 * The format of the name is something like 'FQ001124', where the
+	 * two first letters indicate the kind of device it is, and the
+	 * six digits are the serial number.
+	 *
+	 * Jef theorizes that 'FQ' in hexadecimal is 0x4651, which is
+	 * the model number of the i770R.
+	 */
+	if (!bt_name || strlen(bt_name) < 8)
+		return DC_STATUS_SUCCESS;
+
+	/* Turn ASCII numbers into just raw byte values */
+	for (int i = 0; i < 6; i++)
+		handshake[i+1] = bt_name[i+2] - '0';
+
+	/* Add simple checksum */
+	handshake[9] = checksum_add_uint8(handshake+1, 8, 0x00);
+
+	/*
+	 * .. and send it off.
+	 *
+	 * NOTE! We don't expect any data back, but we do want the ACK.
+	 */
+	return oceanic_atom2_ble_transfer(device, handshake, sizeof(handshake), ack, 0, 0);
+}
 
 dc_status_t
 oceanic_atom2_device_version (dc_device_t *abstract, unsigned char data[], unsigned int size)
@@ -1051,19 +1098,11 @@ oceanic_atom2_device_version (dc_device_t *abstract, unsigned char data[], unsig
 		return rc;
 
 	memcpy (data, answer, PAGESIZE);
-	device->sequence++;
 
-	if (dc_iostream_get_transport(device->iostream) == DC_TRANSPORT_BLE) {
-		/* I have NO IDEA! */
-		unsigned char unk[10] = "\xe5\x00\x00\x01\x01\x02\x04\x00\x00\x08";
-		rc = oceanic_atom2_ble_write(device, unk, sizeof (unk));
-		unsigned char *ret;
-		unsigned int ret_size;
-		rc = oceanic_atom2_ble_read(device, &ret, &ret_size);
-		device->sequence++;
-	}
+	if (dc_iostream_get_transport(device->iostream) == DC_TRANSPORT_BLE)
+		rc = oceanic_atom2_send_ble_handshake(device);
 
-	return DC_STATUS_SUCCESS;
+	return rc;
 }
 
 
@@ -1129,8 +1168,6 @@ oceanic_atom2_device_read (dc_device_t *abstract, unsigned int address, unsigned
 			if (rc != DC_STATUS_SUCCESS)
 				return rc;
 
-			device->sequence++;
-
 			// Cache the page.
 			memcpy (device->cache, answer, pagesize);
 			device->cached_page = page;
@@ -1186,6 +1223,7 @@ oceanic_atom2_device_write (dc_device_t *abstract, unsigned int address, const u
 		if (rc != DC_STATUS_SUCCESS)
 			return rc;
 
+		/* No answer, increment sequence number manually */
 		device->sequence++;
 
 		nbytes += PAGESIZE;
