@@ -88,6 +88,7 @@
 #define I450T       0x4641
 #define I550        0x4642
 #define I200        0x4646
+#define I300C       0x4648
 #define I100        0x464E
 #define I770R       0x4651
 
@@ -162,7 +163,7 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		model == A300 || model == MANTA ||
 		model == INSIGHT2 || model == ZEN ||
 		model == I300 || model == I550 ||
-		model == I200) {
+		model == I200 || model == I300C) {
 		parser->headersize -= PAGESIZE;
 	} else if (model == VT4 || model == VT41) {
 		parser->headersize += PAGESIZE;
@@ -280,6 +281,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case I300:
 		case I200:
 		case I100:
+		case I300C:
 			datetime->year   = ((p[3] & 0xE0) >> 1) + (p[4] & 0x0F) + 2000;
 			datetime->month  = (p[4] & 0xF0) >> 4;
 			datetime->day    = p[3] & 0x1F;
@@ -424,7 +426,7 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 	unsigned int ngasmixes = 0;
 	unsigned int o2_offset = 0;
 	unsigned int he_offset = 0;
-	unsigned int pO2_offset = 1;
+	unsigned int o2_step = 1;
 	if (mode == FREEDIVE) {
 		ngasmixes = 0;
 	} else if (parser->model == DATAMASK || parser->model == COMPUMASK) {
@@ -466,7 +468,7 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 	} else if (parser->model == I770R) {
 		o2_offset = 0x30;
 		ngasmixes = 4;
-		pO2_offset = 2;
+		o2_step = 2;
 	} else {
 		o2_offset = header + 4;
 		ngasmixes = 3;
@@ -478,8 +480,8 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 	parser->mode = mode;
 	parser->ngasmixes = ngasmixes;
 	for (unsigned int i = 0; i < ngasmixes; ++i) {
-		if (data[o2_offset + i*pO2_offset]) {
-			parser->oxygen[i] = data[o2_offset + i*pO2_offset];
+		if (data[o2_offset + i * o2_step]) {
+			parser->oxygen[i] = data[o2_offset + i * o2_step];
 		} else {
 			parser->oxygen[i] = 21;
 		}
@@ -728,7 +730,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 		parser->model == A300 || parser->model == ZEN ||
 		parser->model == GEO || parser->model == GEO20 ||
 		parser->model == MANTA || parser->model == I300 ||
-		parser->model == I200 || parser->model == I100) {
+		parser->model == I200 || parser->model == I100 ||
+		parser->model == I300C) {
 		have_pressure = 0;
 	}
 
@@ -883,7 +886,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 					parser->model == OC1B || parser->model == OC1C ||
 					parser->model == OCI || parser->model == A300 ||
 					parser->model == I450T || parser->model == I300 ||
-					parser->model == I200 || parser->model == I100) {
+					parser->model == I200 || parser->model == I100 ||
+					parser->model == I300C) {
 					temperature = data[offset + 3];
 				} else if (parser->model == OCS || parser->model == TX1) {
 					temperature = data[offset + 1];
@@ -953,7 +957,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				parser->model == OC1B || parser->model == OC1C ||
 				parser->model == OCI || parser->model == A300 ||
 				parser->model == I450T || parser->model == I300 ||
-				parser->model == I200 || parser->model == I100)
+				parser->model == I200 || parser->model == I100 ||
+				parser->model == I300C)
 				depth = (data[offset + 4] + (data[offset + 5] << 8)) & 0x0FFF;
 			else if (parser->model == ATOM1)
 				depth = data[offset + 3] * 16;
@@ -1004,7 +1009,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			} else if (parser->model == I200 || parser->model == I300 ||
 				parser->model == OC1A || parser->model == OC1B ||
 				parser->model == OC1C || parser->model == OCI ||
-				parser->model == I100) {
+				parser->model == I100 || parser->model == I300C) {
 				decostop = (data[offset + 7] & 0xF0) >> 4;
 				decotime = array_uint16_le(data + offset + 6) & 0x0FFF;
 				have_deco = 1;
@@ -1028,7 +1033,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				have_rbt = 1;
 			} else if (parser->model == I450T || parser->model == OC1A ||
 				parser->model == OC1B || parser->model == OC1C ||
-				parser->model == OCI || parser->model == PROPLUSX) {
+				parser->model == OCI || parser->model == PROPLUSX ||
+				parser->model == I770R) {
 				rbt = array_uint16_le(data + offset + 8) & 0x01FF;
 				have_rbt = 1;
 			} else if (parser->model == VISION || parser->model == XPAIR ||

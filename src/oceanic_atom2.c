@@ -122,6 +122,7 @@ static const oceanic_common_version_t oceanic_atom2b_version[] = {
 	{"AQUAI300 \0\0 512K"},
 	{"HOLLDG03 \0\0 512K"},
 	{"AQUAI100 \0\0 512K"},
+	{"AQUA300C \0\0 512K"},
 };
 
 static const oceanic_common_version_t oceanic_atom2c_version[] = {
@@ -487,21 +488,6 @@ static const oceanic_common_layout_t oceanic_proplusx_layout = {
 	0, /* pt_mode_serial */
 };
 
-static const oceanic_common_layout_t aeris_a300cs_layout = {
-	0x40000, /* memsize */
-	0, /* highmem */
-	0x0000, /* cf_devinfo */
-	0x0040, /* cf_pointers */
-	0x0900, /* rb_logbook_begin */
-	0x1000, /* rb_logbook_end */
-	16, /* rb_logbook_entry_size */
-	0x1000, /* rb_profile_begin */
-	0x3FE00, /* rb_profile_end */
-	0, /* pt_mode_global */
-	1, /* pt_mode_logbook */
-	0, /* pt_mode_serial */
-};
-
 static const oceanic_common_layout_t aqualung_i770r_layout = {
 	0x440000, /* memsize */
 	0x40000, /* highmem */
@@ -512,6 +498,21 @@ static const oceanic_common_layout_t aqualung_i770r_layout = {
 	16, /* rb_logbook_entry_size */
 	0x40000, /* rb_profile_begin */
 	0x440000, /* rb_profile_end */
+	0, /* pt_mode_global */
+	1, /* pt_mode_logbook */
+	0, /* pt_mode_serial */
+};
+
+static const oceanic_common_layout_t aeris_a300cs_layout = {
+	0x40000, /* memsize */
+	0, /* highmem */
+	0x0000, /* cf_devinfo */
+	0x0040, /* cf_pointers */
+	0x0900, /* rb_logbook_begin */
+	0x1000, /* rb_logbook_end */
+	16, /* rb_logbook_entry_size */
+	0x1000, /* rb_profile_begin */
+	0x3FE00, /* rb_profile_end */
 	0, /* pt_mode_global */
 	1, /* pt_mode_logbook */
 	0, /* pt_mode_serial */
@@ -867,17 +868,9 @@ oceanic_atom2_device_open (dc_device_t **out, dc_context_t *context, dc_iostream
 	memset(device->cache, 0, sizeof(device->cache));
 
 	// Get the correct baudrate.
-	unsigned int baudrate;
-	switch (model) {
-	case VTX:
-	case I750TC:
-	case PROPLUSX:
-	case I770R:
+	unsigned int baudrate = 38400;
+	if (model == VTX || model == I750TC || model == PROPLUSX || model == I770R) {
 		baudrate = 115200;
-		break;
-	default:
-		baudrate = 38400;
-		break;
 	}
 
 	// Set the serial communication protocol (38400 8N1).
@@ -979,11 +972,11 @@ oceanic_atom2_device_open (dc_device_t **out, dc_context_t *context, dc_iostream
 	} else if (OCEANIC_COMMON_MATCH (device->base.version, oceanic_proplusx_version)) {
 		device->base.layout = &oceanic_proplusx_layout;
 		device->bigpage = 16;
-	} else if (OCEANIC_COMMON_MATCH (device->base.version, aeris_a300cs_version)) {
-		device->base.layout = &aeris_a300cs_layout;
-		device->bigpage = 16;
 	} else if (OCEANIC_COMMON_MATCH (device->base.version, aqualung_i770r_version)) {
 		device->base.layout = &aqualung_i770r_layout;
+		device->bigpage = 16;
+	} else if (OCEANIC_COMMON_MATCH (device->base.version, aeris_a300cs_version)) {
+		device->base.layout = &aeris_a300cs_layout;
 		device->bigpage = 16;
 	} else if (OCEANIC_COMMON_MATCH (device->base.version, aqualung_i450t_version)) {
 		device->base.layout = &aqualung_i450t_layout;
