@@ -122,7 +122,7 @@ static const oceanic_common_version_t oceanic_atom2b_version[] = {
 	{"AQUAI300 \0\0 512K"},
 	{"HOLLDG03 \0\0 512K"},
 	{"AQUAI100 \0\0 512K"},
-	{"AQUA300C \0\0 512K"},
+	{"AQUA300C \0\0 \0\0\0\0"},
 };
 
 static const oceanic_common_version_t oceanic_atom2c_version[] = {
@@ -191,8 +191,13 @@ static const oceanic_common_version_t oceanic_reactpro_version[] = {
 	{"REACPRO2 \0\0 512K"},
 };
 
+// Like the i770R, there's some extended pattern for the last
+// four digits. The serial communication apparently says "2048"
+// for this, but the BLE version says "0001".
+//
+// The middle two digits are the FW version or something,
 static const oceanic_common_version_t oceanic_proplusx_version[] = {
-	{"OCEANOCX \0\0 2048"},
+	{"OCEANOCX \0\0 \0\0\0\0"},
 };
 
 static const oceanic_common_version_t aeris_a300cs_version[] = {
