@@ -26,6 +26,7 @@
 #include "shearwater_common.h"
 #include "context-private.h"
 #include "device-private.h"
+#include "platform.h"
 #include "array.h"
 
 #define ISINSTANCE(device) dc_device_isinstance((device), &shearwater_petrel_device_vtable)
@@ -262,20 +263,27 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		dc_buffer_free (manifests);
 		return rc;
 	}
+
+	if (dc_buffer_get_size (buffer) != 9) {
+		ERROR (abstract->context, "Unexpected packet size (" DC_PRINTF_SIZE " bytes).", dc_buffer_get_size(buffer));
+		dc_buffer_free (buffer);
+		dc_buffer_free (manifests);
+		return DC_STATUS_DATAFORMAT;
+	}
+
 	unsigned int base_addr = array_uint32_be (dc_buffer_get_data (buffer) + 1);
-	INFO(abstract->context, "RDBI command completed with %d bytes, evaluated as %08x", (int) dc_buffer_get_size (buffer), base_addr);
 	switch (base_addr) {
 	case 0xDD000000: // Predator - we shouldn't get here, we could give up or we can try 0xC0000000
 	case 0xC0000000: // Predator-Like Format (what we used to call the Petrel format)
 	case 0x90000000: // some firmware versions supported an earlier version of PNF without final record
 		// use the Predator-Like Format instead
-		base_addr = 0xC0000000u;
+		base_addr = 0xC0000000;
 		break;
 	case 0x80000000: // new Petrel Native Format with final record
 		// that's the correct address
 		break;
 	default: // unknown format
-		ERROR (abstract->context, "Unknown logbook download format.");
+		ERROR (abstract->context, "Unknown logbook format %08x", base_addr);
 		dc_buffer_free (buffer);
 		dc_buffer_free (manifests);
 		return DC_STATUS_DATAFORMAT;

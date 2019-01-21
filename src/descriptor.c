@@ -278,6 +278,9 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Cressi", "Giotto",   DC_FAMILY_CRESSI_LEONARDO, 4, DC_TRANSPORT_SERIAL, NULL},
 	{"Cressi", "Newton",   DC_FAMILY_CRESSI_LEONARDO, 5, DC_TRANSPORT_SERIAL, NULL},
 	{"Cressi", "Drake",    DC_FAMILY_CRESSI_LEONARDO, 6, DC_TRANSPORT_SERIAL, NULL},
+	/* Cressi Goa */
+	{"Cressi", "Cartesio", DC_FAMILY_CRESSI_GOA, 1, DC_TRANSPORT_SERIAL, NULL},
+	{"Cressi", "Goa",      DC_FAMILY_CRESSI_GOA, 2, DC_TRANSPORT_SERIAL, NULL},
 	/* Zeagle N2iTiON3 */
 	{"Zeagle",    "N2iTiON3",   DC_FAMILY_ZEAGLE_N2ITION3, 0, DC_TRANSPORT_SERIAL, NULL},
 	{"Apeks",     "Quantum X",  DC_FAMILY_ZEAGLE_N2ITION3, 0, DC_TRANSPORT_SERIAL, NULL},
@@ -322,6 +325,9 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Ratio",      "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x42, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x44, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Tech+",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x45, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Color Easy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x52, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Color Deep", DC_FAMILY_DIVESYSTEM_IDIVE, 0x54, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Color Tech", DC_FAMILY_DIVESYSTEM_IDIVE, 0x55, DC_TRANSPORT_SERIAL, NULL},
 	{"Seac",       "Jack",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x1000, DC_TRANSPORT_SERIAL, NULL},
 	{"Seac",       "Guru",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x1002, DC_TRANSPORT_SERIAL, NULL},
 	/* Cochran Commander */
@@ -448,6 +454,7 @@ static int dc_filter_shearwater (dc_transport_t transport, const void *userdata)
 		"Petrel",
 		"Nerd",
 		"Perdix",
+		"Teric",
 	};
 
 	if (transport == DC_TRANSPORT_BLUETOOTH) {
