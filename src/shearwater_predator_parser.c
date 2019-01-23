@@ -442,6 +442,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	if (parser->cached) {
 		return DC_STATUS_SUCCESS;
 	}
+	memset(parser->strings, 0, sizeof(parser->strings));
 
 	// Verify the minimum length.
 	if (size < 2) {
@@ -577,6 +578,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	// Log versions before 6 weren't reliably stored in the data, but
 	// 6 is also the oldest version that we assume in our code
 	unsigned int logversion = data[parser->opening[4] + (pnf ? 16 : 127)];
+	add_string_fmt(parser, "Logversion", "%d%s", logversion, pnf ? "(PNF)" : "");
 
 	// The transmitter battery levels are only valid for logversion 7+
 	if (logversion < 7) {
