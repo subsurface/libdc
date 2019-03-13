@@ -314,20 +314,32 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"DiveSystem", "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x09, DC_TRANSPORT_SERIAL, NULL},
 	{"DiveSystem", "iDive X3M",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x0A, DC_TRANSPORT_SERIAL, NULL},
 	{"DiveSystem", "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x0B, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M Pro ",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x21, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M Easy",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x22, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M Deep",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x23, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M Tech+",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x24, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M Reb",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x25, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M Fancy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x26, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M Pro Fancy",DC_FAMILY_DIVESYSTEM_IDIVE, 0x31, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M Pro Easy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x32, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M Pro Pro",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x33, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M Pro Deep", DC_FAMILY_DIVESYSTEM_IDIVE, 0x34, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M Pro Tech+",DC_FAMILY_DIVESYSTEM_IDIVE, 0x35, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M Pro Reb",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x36, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Free",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x40, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Fancy",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x41, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x42, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Pro",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x43, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x44, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Tech+",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x45, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Reb",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x46, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Color Free", DC_FAMILY_DIVESYSTEM_IDIVE, 0x50, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Color Fancy",DC_FAMILY_DIVESYSTEM_IDIVE, 0x51, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Color Easy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x52, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Color Pro",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x53, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Color Deep", DC_FAMILY_DIVESYSTEM_IDIVE, 0x54, DC_TRANSPORT_SERIAL, NULL},
-	{"Ratio",      "iDive Color Tech", DC_FAMILY_DIVESYSTEM_IDIVE, 0x55, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Color Tech+",DC_FAMILY_DIVESYSTEM_IDIVE, 0x55, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive Color Reb",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x56, DC_TRANSPORT_SERIAL, NULL},
 	{"Seac",       "Jack",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x1000, DC_TRANSPORT_SERIAL, NULL},
 	{"Seac",       "Guru",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x1002, DC_TRANSPORT_SERIAL, NULL},
 	/* Cochran Commander */
@@ -411,11 +423,17 @@ static int dc_filter_uwatec (dc_transport_t transport, const void *userdata)
 		{0x2e6c, 0x3211}, // G2 Console
 		{0xc251, 0x2006}, // Aladin Square
 	};
+	static const char *bluetooth[] = {
+		"G2",
+		"Aladin",
+	};
 
 	if (transport == DC_TRANSPORT_IRDA) {
 		return dc_filter_internal_name ((const char *) userdata, irda, C_ARRAY_SIZE(irda));
 	} else if (transport == DC_TRANSPORT_USBHID) {
 		return dc_filter_internal_usb ((const dc_usb_desc_t *) userdata, usbhid, C_ARRAY_SIZE(usbhid));
+	} else if (transport == DC_TRANSPORT_BLE) {
+		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
 	}
 
 	return 1;
@@ -427,9 +445,15 @@ static int dc_filter_suunto (dc_transport_t transport, const void *userdata)
 		{0x1493, 0x0030}, // Eon Steel
 		{0x1493, 0x0033}, // Eon Core
 	};
+	static const char *bluetooth[] = {
+		"EON Steel",
+		"EON Core",
+	};
 
 	if (transport == DC_TRANSPORT_USBHID) {
 		return dc_filter_internal_usb ((const dc_usb_desc_t *) userdata, usbhid, C_ARRAY_SIZE(usbhid));
+	} else if (transport == DC_TRANSPORT_BLE) {
+		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
 	}
 
 	return 1;
@@ -437,7 +461,7 @@ static int dc_filter_suunto (dc_transport_t transport, const void *userdata)
 
 static int dc_filter_hw (dc_transport_t transport, const void *userdata)
 {
-	if (transport == DC_TRANSPORT_BLUETOOTH) {
+	if (transport == DC_TRANSPORT_BLUETOOTH || transport == DC_TRANSPORT_BLE) {
 		return strncasecmp ((const char *) userdata, "OSTC", 4) == 0 ||
 			strncasecmp ((const char *) userdata, "FROG", 4) == 0;
 	} else if (transport == DC_TRANSPORT_SERIAL) {
@@ -457,7 +481,7 @@ static int dc_filter_shearwater (dc_transport_t transport, const void *userdata)
 		"Teric",
 	};
 
-	if (transport == DC_TRANSPORT_BLUETOOTH) {
+	if (transport == DC_TRANSPORT_BLUETOOTH || transport == DC_TRANSPORT_BLE) {
 		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
 	} else if (transport == DC_TRANSPORT_SERIAL) {
 		return dc_filter_internal_rfcomm ((const char *) userdata);
