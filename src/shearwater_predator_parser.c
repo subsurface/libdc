@@ -58,6 +58,7 @@
 #define LOG_RECORD_CLOSING_5       0x25
 #define LOG_RECORD_CLOSING_6       0x26
 #define LOG_RECORD_CLOSING_7       0x27
+#define LOG_RECORD_INFO_EVENT      0x30
 #define LOG_RECORD_FINAL           0xFF
 
 #define SZ_BLOCK   0x80
@@ -80,6 +81,8 @@
 
 #define PREDATOR 2
 #define PETREL   3
+
+#define INFO_EVENT_TAG_LOG 38
 
 #define UNDEFINED 0xFFFFFFFF
 
@@ -759,6 +762,32 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		if (pnf && data[offset] == LOG_RECORD_FINAL && data[offset + 1] == 0xFD)
 			break;
 
+		if (pnf && data[offset] == LOG_RECORD_INFO_EVENT) {
+			// additional events defined in PNF
+			INFO(abstract->context, "PNF INFO_EVENT ID %u time %u W1 %u W2 %u", data[offset + 1],
+											    array_uint32_be (data + offset + 4),
+											    array_uint32_be (data + offset + 8),
+											    array_uint32_be (data + offset + 12));
+			if (data[offset + 1] == INFO_EVENT_TAG_LOG) {
+				// this is a TAG
+				// its time is a unix timestamp, so we need to subtract the dive start time
+				unsigned int tag_time = array_uint32_be (data + offset + 4) - array_uint32_be (data + parser->opening[0] + 12);
+				unsigned int tag_heading = array_uint32_be (data + offset + 8);
+				unsigned int tag_type = array_uint32_be (data + offset + 12);
+				// heading is only valid if 0..360
+				// type is only valid if 0..5
+				if (tag_heading <= 360 && tag_type <= 5) {
+					// encode this as a bookmark event, using the flags to capture the type and value for heading
+					sample.event.type = SAMPLE_EVENT_BOOKMARK;
+					sample.event.time = tag_time;
+					sample.event.flags = (tag_type + 1) << SAMPLE_FLAGS_TYPE_SHIFT; // 0 means it isn't a tag
+					sample.event.value = tag_heading;
+					if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+				}
+			}
+			offset += parser->samplesize;
+			continue;
+		}
 		// Ignore blocks that aren't dive samples
 		if (pnf && data[offset] != LOG_RECORD_DIVE_SAMPLE) {
 			offset += parser->samplesize;
