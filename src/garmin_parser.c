@@ -1253,7 +1253,22 @@ garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigne
 		devinfo_p->serial = garmin->cache.serial;
 		devinfo_p->model = garmin->cache.product;
 	}
-	return garmin->cache.sub_sport >= 53 && garmin->cache.sub_sport <= 57;
+	switch (garmin->cache.sub_sport) {
+	case 53:	// Single-gas
+	case 54:	// Multi-gas
+	case 55:	// Gauge
+	case 56:	// Apnea
+	case 57:	// Apnea Hunt
+	case 63:	// CCR
+		return 1;
+	default:
+		// Even if we don't recognize the sub_sport,
+		// let's assume it's a dive if we've seen
+		// average depth in the  DIVE_SUMMARY record.
+		if (garmin->cache.AVGDEPTH)
+			return 1;
+		return 0;
+	}
 }
 
 static dc_status_t
