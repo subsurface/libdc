@@ -36,6 +36,7 @@
 #define VTX        0x4557
 #define I750TC     0x455A
 #define I770R      0x4651
+#define GEO40      0x4653
 
 #define MAXRETRIES 2
 #define MAXDELAY   16
@@ -875,7 +876,7 @@ oceanic_atom2_device_open (dc_device_t **out, dc_context_t *context, dc_iostream
 
 	// Get the correct baudrate.
 	unsigned int baudrate = 38400;
-	if (model == VTX || model == I750TC || model == PROPLUSX || model == I770R) {
+	if (model == VTX || model == I750TC || model == PROPLUSX || model == I770R || model == GEO40) {
 		baudrate = 115200;
 	}
 
@@ -989,7 +990,7 @@ oceanic_atom2_device_open (dc_device_t **out, dc_context_t *context, dc_iostream
 	} else if (OCEANIC_COMMON_MATCH (device->base.version, oceanic_default_version)) {
 		device->base.layout = &oceanic_default_layout;
 	} else {
-		WARNING (context, "Unsupported device detected!");
+		WARNING (context, "Unsupported device detected (%s)!", device->base.version);
 		device->base.layout = &oceanic_default_layout;
 		if (memcmp(device->base.version + 12, "256K", 4) == 0) {
 			device->base.layout = &oceanic_atom1_layout;
