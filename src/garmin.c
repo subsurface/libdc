@@ -124,19 +124,27 @@ static int name_cmp(const void *a, const void *b)
  *
  * Return number of files found.
 */
-static int get_file_list(DIR *dir, struct file_list *files)
+static int get_file_list(dc_device_t *abstract, DIR *dir, struct file_list *files)
 {
 	struct dirent *de;
 
+	DEBUG (abstract->context, "Iterating over Garmin files");
 	while ((de = readdir(dir)) != NULL) {
 		int len = strlen(de->d_name);
 		struct fit_name *entry;
+		const char *explain = NULL;
+
+		DEBUG (abstract->context, "  %s", de->d_name);
 
 		if (len < 5)
-			continue;
+			explain = "name too short";
 		if (len >= FIT_NAME_SIZE)
-			continue;
+			explain = "name too long";
 		if (strncasecmp(de->d_name + len - 4, ".FIT", 4))
+			explain = "name lacks FIT suffix";
+
+		DEBUG (abstract->context, "  %s - %s", de->d_name, explain ? explain : "adding to list");
+		if (explain)
 			continue;
 
 		if (files->nr == files->allocated) {
@@ -162,6 +170,7 @@ static int get_file_list(DIR *dir, struct file_list *files)
 		entry = files->array + files->nr++;
 		strncpy(entry->name, de->d_name, FIT_NAME_SIZE);
 	}
+	DEBUG (abstract->context, "Found %d files", files->nr);
 
 	qsort(files->array, files->nr, sizeof(struct fit_name), name_cmp);
 	return DC_STATUS_SUCCESS;
@@ -217,15 +226,18 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	int rc;
 
 	// Read the directory name from the iostream
-	rc = dc_iostream_read(device->iostream, &pathname, sizeof(pathname), &pathlen);
+	rc = dc_iostream_read(device->iostream, &pathname, sizeof(pathname)-1, &pathlen);
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
+	pathname[pathlen] = 0;
 
 	// The actual dives are under the "Garmin/Activity/" directory
 	// as FIT files, with names like "2018-08-20-10-23-30.fit".
 	// Make sure our buffer is big enough.
-	if (pathlen + strlen("/Garmin/Activity/") + FIT_NAME_SIZE + 2 > PATH_MAX)
+	if (pathlen + strlen("/Garmin/Activity/") + FIT_NAME_SIZE + 2 > PATH_MAX) {
+		ERROR (abstract->context, "Invalid Garmin base directory '%s'", pathname);
 		return DC_STATUS_IO;
+	}
 
 	if (pathlen && pathname[pathlen-1] != '/')
 		pathname[pathlen++] = '/';
@@ -233,11 +245,13 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	pathlen += strlen("Garmin/Activity");
 
 	dir = opendir(pathname);
-	if (!dir)
+	if (!dir) {
+		ERROR (abstract->context, "Failed to open directory '%s'.", pathname);
 		return DC_STATUS_IO;
+	}
 
 	// Get the list of FIT files
-	rc = get_file_list(dir, &files);
+	rc = get_file_list(abstract, dir, &files);
 	closedir(dir);
 	if (rc != DC_STATUS_SUCCESS || !files.nr) {
 		free(files.array);
@@ -253,6 +267,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 
 		// Found fingerprint, just cut the array short here
 		files.nr = i;
+		DEBUG (abstract->context, "Ignoring '%s' and older", name);
 		break;
 	}
 
