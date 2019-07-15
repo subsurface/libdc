@@ -28,6 +28,17 @@
 #include "platform.h"
 
 #define C_ARRAY_SIZE(array) (sizeof (array) / sizeof *(array))
+#define C_ARRAY_ITEMSIZE(array) (sizeof *(array))
+
+#define DC_FILTER_INTERNAL(key, values, isnullterminated, match) \
+	dc_filter_internal( \
+		key, \
+		values, \
+		C_ARRAY_SIZE(values) - isnullterminated, \
+		C_ARRAY_ITEMSIZE(values), \
+		match)
+
+typedef int (*dc_match_t)(const void *, const void *);
 
 static int dc_filter_uwatec (dc_transport_t transport, const void *userdata);
 static int dc_filter_suunto (dc_transport_t transport, const void *userdata);
@@ -36,6 +47,7 @@ static int dc_filter_hw (dc_transport_t transport, const void *userdata);
 static int dc_filter_tecdiving (dc_transport_t transport, const void *userdata);
 static int dc_filter_garmin (dc_transport_t transport, const void *userdata);
 static int dc_filter_mares (dc_transport_t transport, const void *userdata);
+static int dc_filter_divesystem (dc_transport_t transport, const void *userdata);
 
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
@@ -228,6 +240,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Aqualung", "i300C",               DC_FAMILY_OCEANIC_ATOM2, 0x4648, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
 	{"Aqualung", "i100",                DC_FAMILY_OCEANIC_ATOM2, 0x464E, DC_TRANSPORT_SERIAL, NULL},
 	{"Aqualung", "i770R",               DC_FAMILY_OCEANIC_ATOM2, 0x4651, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
+	{"Aqualung", "i550C",               DC_FAMILY_OCEANIC_ATOM2, 0x4652, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
 	{"Oceanic", "Geo 4.0",              DC_FAMILY_OCEANIC_ATOM2, 0x4653, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
 	/* Mares Nemo */
 	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0, DC_TRANSPORT_SERIAL, NULL},
@@ -321,12 +334,12 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"DiveSystem", "iDive Easy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x09, DC_TRANSPORT_SERIAL, NULL},
 	{"DiveSystem", "iDive X3M",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x0A, DC_TRANSPORT_SERIAL, NULL},
 	{"DiveSystem", "iDive Deep",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x0B, DC_TRANSPORT_SERIAL, NULL},
-	{"Ratio",      "iX3M Pro ",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x21, DC_TRANSPORT_SERIAL, NULL},
-	{"Ratio",      "iX3M Easy",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x22, DC_TRANSPORT_SERIAL, NULL},
-	{"Ratio",      "iX3M Deep",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x23, DC_TRANSPORT_SERIAL, NULL},
-	{"Ratio",      "iX3M Tech+",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x24, DC_TRANSPORT_SERIAL, NULL},
-	{"Ratio",      "iX3M Reb",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x25, DC_TRANSPORT_SERIAL, NULL},
-	{"Ratio",      "iX3M Fancy",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x26, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M GPS Pro ", DC_FAMILY_DIVESYSTEM_IDIVE, 0x21, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M GPS Easy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x22, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M GPS Deep", DC_FAMILY_DIVESYSTEM_IDIVE, 0x23, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M GPS Tech+",DC_FAMILY_DIVESYSTEM_IDIVE, 0x24, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M GPS Reb",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x25, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M GPS Fancy",DC_FAMILY_DIVESYSTEM_IDIVE, 0x26, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
 	{"Ratio",      "iX3M Pro Fancy",DC_FAMILY_DIVESYSTEM_IDIVE, 0x31, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M Pro Easy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x32, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M Pro Pro",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x33, DC_TRANSPORT_SERIAL, NULL},
@@ -363,60 +376,89 @@ static const dc_descriptor_t g_descriptors[] = {
 };
 
 static int
-dc_filter_internal_name (const char *name, const char *values[], size_t count)
+dc_match_name (const void *key, const void *value)
 {
-	if (name == NULL)
+	const char *k = (const char *) key;
+	const char *v = *(const char * const *) value;
+
+	return strcasecmp (k, v) == 0;
+}
+
+static int
+dc_match_prefix (const void *key, const void *value)
+{
+	const char *k = (const char *) key;
+	const char *v = *(const char * const *) value;
+
+	return strncasecmp (k, v, strlen (v)) == 0;
+}
+
+static int
+dc_match_devname (const void *key, const void *value)
+{
+	const char *k = (const char *) key;
+	const char *v = *(const char * const *) value;
+
+	return strncmp (k, v, strlen (v)) == 0;
+}
+
+static int
+dc_match_usb (const void *key, const void *value)
+{
+	const dc_usb_desc_t *k = (const dc_usb_desc_t *) key;
+	const dc_usb_desc_t *v = (const dc_usb_desc_t *) value;
+
+	return k->vid == v->vid && k->pid == v->pid;
+}
+
+static int
+dc_match_number_with_prefix (const void *key, const void *value)
+{
+	const char *str = (const char *) key;
+	const char *prefix = *(const char * const *) value;
+
+	size_t n = strlen (prefix);
+
+	if (strncmp (str, prefix, n) != 0) {
+		return 0;
+	}
+
+	while (str[n] != 0) {
+		const char c = str[n];
+		if (c < '0' || c > '9') {
+			return 0;
+		}
+		n++;
+	}
+
+	return 1;
+}
+
+static int
+dc_filter_internal (const void *key, const void *values, size_t count, size_t size, dc_match_t match)
+{
+	if (key == NULL)
 		return 0;
 
 	for (size_t i = 0; i < count; ++i) {
-		if (strcasecmp (name, values[i]) == 0) {
+		if (match (key, (const unsigned char *) values + i * size)) {
 			return 1;
 		}
 	}
 
-	return 0;
+	return count == 0;
 }
 
-static int
-dc_filter_internal_usb (const dc_usb_desc_t *desc, const dc_usb_desc_t values[], size_t count)
-{
-	if (desc == NULL)
-		return 0;
-
-	for (size_t i = 0; i < count; ++i) {
-		if (desc->vid == values[i].vid &&
-			desc->pid == values[i].pid) {
-			return 1;
-		}
-	}
-
-	return 0;
-}
-
-static int
-dc_filter_internal_rfcomm (const char *name)
-{
-	static const char *prefixes[] = {
+static const char * const rfcomm[] = {
 #if defined (__linux__)
-		"/dev/rfcomm",
+	"/dev/rfcomm",
 #endif
-		NULL
-	};
-
-	if (name == NULL)
-		return 0;
-
-	for (size_t i = 0; prefixes[i] != NULL; ++i) {
-		if (strncmp (name, prefixes[i], strlen (prefixes[i])) == 0)
-			return 1;
-	}
-
-	return prefixes[0] == NULL;
-}
+	NULL
+};
 
 static int dc_filter_uwatec (dc_transport_t transport, const void *userdata)
 {
-	static const char *irda[] = {
+	static const char * const irda[] = {
 		"Aladin Smart Com",
 		"Aladin Smart Pro",
 		"Aladin Smart Tec",
@@ -431,18 +473,18 @@ static int dc_filter_uwatec (dc_transport_t transport, const void *userdata)
 		{0x2e6c, 0x4201}, // G2 HUD
 		{0xc251, 0x2006}, // Aladin Square
 	};
-	static const char *bluetooth[] = {
+	static const char * const bluetooth[] = {
 		"G2",
 		"Aladin",
 		"HUD",
 	};
 
 	if (transport == DC_TRANSPORT_IRDA) {
-		return dc_filter_internal_name ((const char *) userdata, irda, C_ARRAY_SIZE(irda));
+		return DC_FILTER_INTERNAL (userdata, irda, 0, dc_match_name);
 	} else if (transport == DC_TRANSPORT_USBHID) {
-		return dc_filter_internal_usb ((const dc_usb_desc_t *) userdata, usbhid, C_ARRAY_SIZE(usbhid));
+		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usb);
 	} else if (transport == DC_TRANSPORT_BLE) {
-		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_name);
 	}
 
 	return 1;
@@ -455,18 +497,16 @@ static int dc_filter_suunto (dc_transport_t transport, const void *userdata)
 		{0x1493, 0x0033}, // Eon Core
 		{0x1493, 0x0035}, // D5
 	};
-	static const char *bluetooth[] = {
+	static const char * const bluetooth[] = {
 		"EON Steel",
 		"EON Core",
 		"Suunto D5",
 	};
 
 	if (transport == DC_TRANSPORT_USBHID) {
-		return dc_filter_internal_usb ((const dc_usb_desc_t *) userdata, usbhid, C_ARRAY_SIZE(usbhid));
+		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usb);
 	} else if (transport == DC_TRANSPORT_BLE) {
-		// This won't work for the D5 - the serial number is in the name,
-		// and that's not how dc_filter_internal_name() works
-		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_prefix);
 	}
 
 	return 1;
@@ -474,11 +514,15 @@ static int dc_filter_suunto (dc_transport_t transport, const void *userdata)
 
 static int dc_filter_hw (dc_transport_t transport, const void *userdata)
 {
+	static const char * const bluetooth[] = {
+		"OSTC",
+		"FROG",
+	};
+
 	if (transport == DC_TRANSPORT_BLUETOOTH || transport == DC_TRANSPORT_BLE) {
-		return strncasecmp ((const char *) userdata, "OSTC", 4) == 0 ||
-			strncasecmp ((const char *) userdata, "FROG", 4) == 0;
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_prefix);
 	} else if (transport == DC_TRANSPORT_SERIAL) {
-		return dc_filter_internal_rfcomm ((const char *) userdata);
+		return DC_FILTER_INTERNAL (userdata, rfcomm, 1, dc_match_devname);
 	}
 
 	return 1;
@@ -486,7 +530,7 @@ static int dc_filter_hw (dc_transport_t transport, const void *userdata)
 
 static int dc_filter_shearwater (dc_transport_t transport, const void *userdata)
 {
-	static const char *bluetooth[] = {
+	static const char * const bluetooth[] = {
 		"Predator",
 		"Petrel",
 		"Nerd",
@@ -495,9 +539,9 @@ static int dc_filter_shearwater (dc_transport_t transport, const void *userdata)
 	};
 
 	if (transport == DC_TRANSPORT_BLUETOOTH || transport == DC_TRANSPORT_BLE) {
-		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_name);
 	} else if (transport == DC_TRANSPORT_SERIAL) {
-		return dc_filter_internal_rfcomm ((const char *) userdata);
+		return DC_FILTER_INTERNAL (userdata, rfcomm, 1, dc_match_devname);
 	}
 
 	return 1;
@@ -505,14 +549,14 @@ static int dc_filter_shearwater (dc_transport_t transport, const void *userdata)
 
 static int dc_filter_tecdiving (dc_transport_t transport, const void *userdata)
 {
-	static const char *bluetooth[] = {
+	static const char * const bluetooth[] = {
 		"DiveComputer",
 	};
 
 	if (transport == DC_TRANSPORT_BLUETOOTH) {
-		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_name);
 	} else if (transport == DC_TRANSPORT_SERIAL) {
-		return dc_filter_internal_rfcomm ((const char *) userdata);
+		return DC_FILTER_INTERNAL (userdata, rfcomm, 1, dc_match_devname);
 	}
 
 	return 1;
@@ -525,7 +569,7 @@ static int dc_filter_garmin (dc_transport_t transport, const void *userdata)
 	};
 
 	if (transport == DC_TRANSPORT_USBSTORAGE) {
-		return dc_filter_internal_usb ((const dc_usb_desc_t *) userdata, usbhid, C_ARRAY_SIZE(usbhid));
+		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usb);
 	}
 
 	return 1;
@@ -533,12 +577,25 @@ static int dc_filter_garmin (dc_transport_t transport, const void *userdata)
 
 static int dc_filter_mares (dc_transport_t transport, const void *userdata)
 {
-	static const char *bluetooth[] = {
+	static const char * const bluetooth[] = {
 		"Mares bluelink pro",
 	};
 
 	if (transport == DC_TRANSPORT_BLE) {
-		return dc_filter_internal_name ((const char *) userdata, bluetooth, C_ARRAY_SIZE(bluetooth));
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_name);
+	}
+
+	return 1;
+}
+
+static int dc_filter_divesystem (dc_transport_t transport, const void *userdata)
+{
+	static const char * const bluetooth[] = {
+		"DS",
+	};
+
+	if (transport == DC_TRANSPORT_BLUETOOTH) {
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_number_with_prefix);
 	}
 
 	return 1;
