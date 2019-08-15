@@ -507,6 +507,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\deepblu.c"
+				>
+			</File>
+			<File
+				RelativePath="..\src\deepblu_parser.c"
+				>
+			</File>
+			<File
 				RelativePath="..\src\timer.c"
 				>
 			</File>
@@ -850,6 +858,10 @@
 			</File>
 			<File
 				RelativePath="..\src\garmin.h"
+				>
+			</File>
+			<File
+				RelativePath="..\src\deepblu.h"
 				>
 			</File>
 			<File

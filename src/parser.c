@@ -176,6 +176,9 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 	case DC_FAMILY_GARMIN:
 		rc = garmin_parser_create (&parser, context);
 		break;
+	case DC_FAMILY_DEEPBLU:
+		rc = deepblu_parser_create (&parser, context);
+		break;
 	default:
 		return DC_STATUS_INVALIDARGS;
 	}
