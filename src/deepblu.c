@@ -20,11 +20,31 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
 
 #include "deepblu.h"
 #include "context-private.h"
 #include "device-private.h"
 #include "array.h"
+
+// "Write state"?
+#define CMD_SETTIME	0x20	// Send 6 byte date-time, get single-byte 00x00 ack
+#define CMD_23		0x23	// Send 00/01 byte, get ack back? Some metric/imperial setting?
+
+// "Read dives"?
+#define CMD_GETDIVENR	0x40	// Send empty byte, get single-byte number of dives back
+#define CMD_GETDIVE	0x41	// Send dive number (1-nr) byte, get dive stat length byte back
+  #define RSP_DIVESTAT	0x42	//  .. followed by packets of dive stat for that dive of that length
+#define CMD_GETPROFILE	0x43	// Send dive number (1-nr) byte, get dive profile length BE word back
+  #define RSP_DIVEPROF  0x44	//  .. followed by packets of dive profile of that length
+
+// "Read state"?
+#define CMD_58		0x58	// Send empty byte, get single byte back ?? (0x52)
+#define CMD_59		0x59	// Send empty byte, get six bytes back (00 00 07 00 00 00)
+#define CMD_5b		0x5b	// Send empty byte, get six bytes back (00 21 00 14 00 01)
+#define CMD_5c		0x5c	// Send empty byte, get six bytes back (13 88 00 46 20 00)
+#define CMD_5d		0x5d	// Send empty byte, get six bytes back (19 00 23 0C 02 0E)
+#define CMD_5f		0x5f	// Send empty byte, get six bytes back (00 00 07 00 00 00)
 
 typedef struct deepblu_device_t {
 	dc_device_t base;
@@ -34,6 +54,7 @@ typedef struct deepblu_device_t {
 
 static dc_status_t deepblu_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
 static dc_status_t deepblu_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
+static dc_status_t deepblu_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
 static dc_status_t deepblu_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t deepblu_device_vtable = {
@@ -44,7 +65,7 @@ static const dc_device_vtable_t deepblu_device_vtable = {
 	NULL, /* write */
 	NULL, /* dump */
 	deepblu_device_foreach, /* foreach */
-	NULL, /* timesync */
+	deepblu_device_timesync, /* timesync */
 	deepblu_device_close, /* close */
 };
 
@@ -245,6 +266,50 @@ deepblu_recv_data(deepblu_device_t *device, const unsigned char expected, unsign
 	return DC_STATUS_SUCCESS;
 }
 
+// Common communication pattern: send a command, expect data back with the same
+// command byte.
+static dc_status_t
+deepblu_send_recv(deepblu_device_t *device, const unsigned char cmd,
+	const unsigned char *data, size_t data_size,
+	unsigned char *result, size_t result_size)
+{
+	dc_status_t status;
+	size_t got;
+
+	status = deepblu_send_cmd(device, cmd, data, data_size);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+	status = deepblu_recv_data(device, cmd, result, result_size, &got);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+	if (got != result_size) {
+		ERROR(device->base.context, "Deepblu result size didn't match expected (expected %zu, got %zu)",
+			result_size, got);
+		return DC_STATUS_IO;
+	}
+	return DC_STATUS_SUCCESS;
+}
+
+static dc_status_t
+deepblu_recv_bulk(deepblu_device_t *device, const unsigned char cmd, unsigned char *buf, size_t len)
+{
+	while (len) {
+		dc_status_t status;
+		size_t got;
+
+		status = deepblu_recv_data(device, cmd, buf, len, &got);
+		if (status != DC_STATUS_SUCCESS)
+			return status;
+		if (got > len) {
+			ERROR(device->base.context, "Deepblu bulk receive overflow");
+			return DC_STATUS_IO;
+		}
+		buf += got;
+		len -= got;
+	}
+	return DC_STATUS_SUCCESS;
+}
+
 dc_status_t
 deepblu_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *iostream)
 {
@@ -287,6 +352,36 @@ deepblu_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[
 	return DC_STATUS_SUCCESS;
 }
 
+static unsigned char bcd(int val)
+{
+	if (val >= 0 && val < 100) {
+		int high = val / 10;
+		int low = val % 10;
+		return (high << 4) | low;
+	}
+	return 0;
+}
+
+static dc_status_t
+deepblu_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
+{
+	deepblu_device_t *device = (deepblu_device_t *)abstract;
+	unsigned char result[1], data[6];
+	dc_status_t status;
+	size_t len;
+
+	data[0] = bcd(datetime->year - 2000);
+	data[1] = bcd(datetime->month);
+	data[2] = bcd(datetime->day);
+	data[3] = bcd(datetime->hour);
+	data[4] = bcd(datetime->minute);
+	data[5] = bcd(datetime->second);
+
+	// Maybe also check that we received one zero byte (ack?)
+	return deepblu_send_recv(device, CMD_SETTIME,
+			data, sizeof(data),
+			result, sizeof(result));
+}
 
 static dc_status_t
 deepblu_device_close (dc_device_t *abstract)
@@ -297,11 +392,64 @@ deepblu_device_close (dc_device_t *abstract)
 	return DC_STATUS_SUCCESS;
 }
 
+static const char zero[MAX_DATA];
+
+static dc_status_t
+deepblu_download_dive(deepblu_device_t *device, unsigned char nr, dc_dive_callback_t callback, void *userdata)
+{
+	unsigned char header_len;
+	unsigned char profilebytes[2];
+	unsigned int profile_len;
+	dc_status_t status;
+	char header[256];
+	unsigned char *profile;
+
+	status = deepblu_send_recv(device,  CMD_GETDIVE, &nr, 1, &header_len, 1);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+	status = deepblu_recv_bulk(device, RSP_DIVESTAT, header, header_len);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	status = deepblu_send_recv(device,  CMD_GETPROFILE, &nr, 1, profilebytes, sizeof(profilebytes));
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+	profile_len = (profilebytes[0] << 8) | profilebytes[1];
+
+	profile = malloc(profile_len);
+	if (!profile) {
+		ERROR (device->base.context, "Insufficient buffer space available.");
+		return DC_STATUS_NOMEMORY;
+	}
+
+	status = deepblu_recv_bulk(device, RSP_DIVEPROF, profile, profile_len);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	if (callback)
+		callback(profile, profile_len, header, header_len, userdata);
+
+	return DC_STATUS_SUCCESS;
+}
+
 static dc_status_t
 deepblu_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void *userdata)
 {
 	deepblu_device_t *device = (deepblu_device_t *) abstract;
+	unsigned char nrdives, val;
+	dc_status_t status;
+	int i;
 
-	ERROR (device->base.context, "Deepblu Cosmiq+ device_foreach called");
+	val = 0;
+	status = deepblu_send_recv(device,  CMD_GETDIVENR, &val, 1, &nrdives, 1);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	for (i = 1; i <= nrdives; i++) {
+		status = deepblu_download_dive(device, i, callback, userdata);
+		if (status != DC_STATUS_SUCCESS)
+			return status;
+	}
+
 	return DC_STATUS_SUCCESS;
 }
