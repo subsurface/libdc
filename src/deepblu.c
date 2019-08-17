@@ -340,6 +340,9 @@ deepblu_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[
 {
 	deepblu_device_t *device = (deepblu_device_t *)abstract;
 
+	ERROR (device->base.context, "Deepblu Cosmiq+ set_fingerprint called");
+	HEXDUMP(device->base.context, DC_LOGLEVEL_DEBUG, "set_fingerprint", data, size);
+
 	if (size && size != sizeof (device->fingerprint))
 		return DC_STATUS_INVALIDARGS;
 
@@ -348,7 +351,6 @@ deepblu_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[
 	else
 		memset (device->fingerprint, 0, sizeof (device->fingerprint));
 
-	ERROR (device->base.context, "Deepblu Cosmiq+ set_fingerprint called");
 	return DC_STATUS_SUCCESS;
 }
 
@@ -410,24 +412,28 @@ deepblu_download_dive(deepblu_device_t *device, unsigned char nr, dc_dive_callba
 	status = deepblu_recv_bulk(device, RSP_DIVESTAT, header, header_len);
 	if (status != DC_STATUS_SUCCESS)
 		return status;
+	memset(header + header_len, 0, 256 - header_len);
 
 	status = deepblu_send_recv(device,  CMD_GETPROFILE, &nr, 1, profilebytes, sizeof(profilebytes));
 	if (status != DC_STATUS_SUCCESS)
 		return status;
 	profile_len = (profilebytes[0] << 8) | profilebytes[1];
 
-	profile = malloc(profile_len);
+	profile = malloc(256 + profile_len);
 	if (!profile) {
 		ERROR (device->base.context, "Insufficient buffer space available.");
 		return DC_STATUS_NOMEMORY;
 	}
 
-	status = deepblu_recv_bulk(device, RSP_DIVEPROF, profile, profile_len);
+	// We make the dive data be 256 bytes of header, followed by the profile data
+	memcpy(profile, header, 256);
+
+	status = deepblu_recv_bulk(device, RSP_DIVEPROF, profile+256, profile_len);
 	if (status != DC_STATUS_SUCCESS)
 		return status;
 
 	if (callback)
-		callback(profile, profile_len, header, header_len, userdata);
+		callback(profile, profile_len+256, header, header_len, userdata);
 
 	return DC_STATUS_SUCCESS;
 }

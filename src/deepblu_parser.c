@@ -144,26 +144,89 @@ static void add_string_fmt(deepblu_parser_t *deepblu, const char *desc, const ch
 	add_string(deepblu, desc, buffer);
 }
 
+
+static double
+pressure_to_depth(unsigned int mbar)
+{
+	// Specific weight of seawater (millibar to cm)
+	const double specific_weight = 1.024 * 0.980665;
+
+	// Absolute pressure, subtract surface pressure
+	if (mbar < 1013)
+		return 0.0;
+	mbar -= 1013;
+	return mbar / specific_weight / 100.0;
+}
+
 static dc_status_t
 deepblu_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
 {
 	deepblu_parser_t *deepblu = (deepblu_parser_t *) abstract;
+	const unsigned char *hdr = data;
+	const unsigned char *profile = data + 256;
+	unsigned int divetime, maxpressure;
+
+	if (size < 256)
+		return DC_STATUS_IO;
+
+	divetime = hdr[12] + 256*hdr[13];	// Divetime in minutes
+	maxpressure = hdr[22] + 256*hdr[23];	// Maxpressure in millibar
 
 	deepblu->callback = NULL;
 	deepblu->userdata = NULL;
 	memset(&deepblu->cache, 0, sizeof(deepblu->cache));
 
+	ASSIGN_FIELD(DIVETIME, 60*divetime);
+	ASSIGN_FIELD(MAXDEPTH, pressure_to_depth(maxpressure));
+
 	ERROR (abstract->context, "Deepblu Cosmiq+ parser_set_data() called");
 	return DC_STATUS_SUCCESS;
 }
 
+// The layout of the header in the 'data' is
+//  0: LE16 dive number
+//  2: dive type byte?
+//  3: O2 percentage byte
+//  4: unknown
+//  5: unknown
+//  6: LE16 year
+//  8: day of month
+//  9: month
+// 10: minute
+// 11: hour
+// 12: LE16 dive time
+// 14: LE16 ??
+// 16: LE16 surface pressure?
+// 18: LE16 ??
+// 20: LE16 ??
+// 22: LE16 max depth pressure
+// 24: LE16 water temp
+// 26: LE16 ??
+// 28: LE16 ??
+// 30: LE16 ??
+// 32: LE16 ??
+// 34: LE16 ??
 static dc_status_t
 deepblu_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 {
 	deepblu_parser_t *deepblu = (deepblu_parser_t *) abstract;
+	const unsigned char *data = deepblu->base.data;
+	int len = deepblu->base.size;
+
+	if (len < 256)
+		return DC_STATUS_IO;
+	datetime->year = data[6] + (data[7] << 8);
+	datetime->day = data[8];
+	datetime->month = data[9];
+	datetime->minute = data[10];
+	datetime->hour = data[11];
+	datetime->second = 0;
+	datetime->timezone = DC_TIMEZONE_NONE;
+
+	HEXDUMP(abstract->context, DC_LOGLEVEL_DEBUG, "get_datetile", data, len);
 
 	ERROR (abstract->context, "Deepblu Cosmiq+ parser_get_datetime() called");
-	return DC_STATUS_UNSUPPORTED;
+	return DC_STATUS_SUCCESS;
 }
 
 static dc_status_t get_string_field(dc_field_string_t *strings, unsigned idx, dc_field_string_t *value)
@@ -231,9 +294,34 @@ static dc_status_t
 deepblu_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
 {
 	deepblu_parser_t *deepblu = (deepblu_parser_t *) abstract;
+	const unsigned char *data = deepblu->base.data;
+	int len = deepblu->base.size, i;
 
 	deepblu->callback = callback;
 	deepblu->userdata = userdata;
+
+	// Skip the header information
+	if (len < 256)
+		return DC_STATUS_IO;
+	data += 256;
+	len -= 256;
+
+	// The rest should be samples every 20s with temperature and depth
+	for (i = 0; i < len/4; i++) {
+		dc_sample_value_t sample = {0};
+		unsigned int temp = data[0]+256*data[1];
+		unsigned int pressure = data[2]+256*data[3];
+
+		data += 4;
+		sample.time = i*20;
+		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+
+		sample.depth = pressure_to_depth(pressure);
+		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+
+		sample.temperature = temp / 10.0;
+		if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+	}
 
 	ERROR (abstract->context, "Deepblu Cosmiq+ samples_foreach() called");
 	return DC_STATUS_SUCCESS;
