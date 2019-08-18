@@ -45,6 +45,9 @@ typedef struct deepblu_parser_t {
 	dc_sample_callback_t callback;
 	void *userdata;
 
+	// 20 sec for scuba, 1 sec for freedives
+	int sample_interval;
+
 	// Field cache
 	struct {
 		unsigned int initialized;
@@ -53,6 +56,8 @@ typedef struct deepblu_parser_t {
 		unsigned int DIVETIME;
 		double MAXDEPTH;
 		double AVGDEPTH;
+		double ATMOSPHERIC;
+		dc_divemode_t DIVEMODE;
 		unsigned int GASMIX_COUNT;
 		dc_salinity_t SALINITY;
 		dc_gasmix_t gasmix[MAXGASES];
@@ -106,7 +111,6 @@ deepblu_parser_create (dc_parser_t **out, dc_context_t *context)
 
 	*out = (dc_parser_t *) parser;
 
-	ERROR (context, "Deepblu Cosmiq+ parser_create() called");
 	return DC_STATUS_SUCCESS;
 }
 
@@ -169,17 +173,50 @@ deepblu_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsig
 	if (size < 256)
 		return DC_STATUS_IO;
 
-	divetime = hdr[12] + 256*hdr[13];	// Divetime in minutes
-	maxpressure = hdr[22] + 256*hdr[23];	// Maxpressure in millibar
-
 	deepblu->callback = NULL;
 	deepblu->userdata = NULL;
 	memset(&deepblu->cache, 0, sizeof(deepblu->cache));
 
-	ASSIGN_FIELD(DIVETIME, 60*divetime);
+	// LE16 at 0 is 'dive number'
+
+	// LE16 at 12 is the dive time
+	// It's in seconds for freedives, minutes for scuba/gauge
+	divetime = hdr[12] + 256*hdr[13];
+
+	// Byte at 2 is 'activity type' (2 = scuba, 3 = gauge, 4 = freedive)
+	// Byte at 3 is O2 percentage
+	switch (data[2]) {
+	case 2:
+		// SCUBA - divetime in minutes
+		divetime *= 60;
+		deepblu->cache.gasmix[0].oxygen = data[3];
+		deepblu->cache.initialized |= 1u << DC_FIELD_GASMIX;
+		ASSIGN_FIELD(GASMIX_COUNT, 1);
+		ASSIGN_FIELD(DIVEMODE, DC_DIVEMODE_OC);
+		break;
+	case 3:
+		// GAUGE - divetime in minutes
+		divetime *= 60;
+		ASSIGN_FIELD(DIVEMODE, DC_DIVEMODE_GAUGE);
+		break;
+	case 4:
+		// FREEDIVE - divetime in seconds
+		ASSIGN_FIELD(DIVEMODE, DC_DIVEMODE_FREEDIVE);
+		deepblu->sample_interval = 1;
+		break;
+	default:
+		ERROR (abstract->context, "Deepblu: unknown activity type '%02x'", data[2]);
+		break;
+	}
+
+	// Seems to be fixed at 20s for scuba, 1s for freedive
+	deepblu->sample_interval = hdr[26];
+
+	maxpressure = hdr[22] + 256*hdr[23];	// Maxpressure in millibar
+
+	ASSIGN_FIELD(DIVETIME, divetime);
 	ASSIGN_FIELD(MAXDEPTH, pressure_to_depth(maxpressure));
 
-	ERROR (abstract->context, "Deepblu Cosmiq+ parser_set_data() called");
 	return DC_STATUS_SUCCESS;
 }
 
@@ -223,9 +260,6 @@ deepblu_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 	datetime->second = 0;
 	datetime->timezone = DC_TIMEZONE_NONE;
 
-	HEXDUMP(abstract->context, DC_LOGLEVEL_DEBUG, "get_datetile", data, len);
-
-	ERROR (abstract->context, "Deepblu Cosmiq+ parser_get_datetime() called");
 	return DC_STATUS_SUCCESS;
 }
 
@@ -277,9 +311,9 @@ deepblu_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 	case DC_FIELD_SALINITY:
 		return field_value(value, SALINITY);
 	case DC_FIELD_ATMOSPHERIC:
-		return DC_STATUS_UNSUPPORTED;
+		return field_value(value, ATMOSPHERIC);
 	case DC_FIELD_DIVEMODE:
-		return DC_STATUS_UNSUPPORTED;
+		return field_value(value, DIVEMODE);
 	case DC_FIELD_TANK:
 		return DC_STATUS_UNSUPPORTED;
 	case DC_FIELD_STRING:
@@ -313,7 +347,7 @@ deepblu_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 		unsigned int pressure = data[2]+256*data[3];
 
 		data += 4;
-		sample.time = i*20;
+		sample.time = (i+1)*deepblu->sample_interval;
 		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
 
 		sample.depth = pressure_to_depth(pressure);
@@ -323,6 +357,5 @@ deepblu_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 		if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
 	}
 
-	ERROR (abstract->context, "Deepblu Cosmiq+ samples_foreach() called");
 	return DC_STATUS_SUCCESS;
 }
