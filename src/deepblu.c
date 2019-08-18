@@ -241,7 +241,7 @@ deepblu_recv_data(deepblu_device_t *device, const unsigned char expected, unsign
 	}
 
 	if (ndata >> 1 > size) {
-		ERROR(device->base.context, "Deepblu reply packet too big for buffer");
+		ERROR(device->base.context, "Deepblu reply packet too big for buffer (ndata=%d, size=%zu)", ndata, size);
 		return DC_STATUS_IO;
 	}
 
@@ -390,7 +390,6 @@ deepblu_device_close (dc_device_t *abstract)
 {
 	deepblu_device_t *device = (deepblu_device_t *) abstract;
 
-	ERROR (device->base.context, "Deepblu Cosmiq+ device close called");
 	return DC_STATUS_SUCCESS;
 }
 
@@ -441,6 +440,7 @@ deepblu_download_dive(deepblu_device_t *device, unsigned char nr, dc_dive_callba
 static dc_status_t
 deepblu_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void *userdata)
 {
+	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
 	deepblu_device_t *device = (deepblu_device_t *) abstract;
 	unsigned char nrdives, val;
 	dc_status_t status;
@@ -451,10 +451,19 @@ deepblu_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void
 	if (status != DC_STATUS_SUCCESS)
 		return status;
 
+	if (!nrdives)
+		return DC_STATUS_SUCCESS;
+
+	progress.maximum = nrdives;
+	progress.current = 0;
+	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
+
 	for (i = 1; i <= nrdives; i++) {
 		status = deepblu_download_dive(device, i, callback, userdata);
 		if (status != DC_STATUS_SUCCESS)
 			return status;
+		progress.current = i;
+		device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 	}
 
 	return DC_STATUS_SUCCESS;
