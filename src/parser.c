@@ -58,6 +58,7 @@
 #include "cochran_commander.h"
 #include "tecdiving_divecomputereu.h"
 #include "garmin.h"
+#include "deepblu.h"
 
 #include "context-private.h"
 #include "parser-private.h"
