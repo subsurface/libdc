@@ -189,7 +189,7 @@ deepblu_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsig
 	case 2:
 		// SCUBA - divetime in minutes
 		divetime *= 60;
-		deepblu->cache.gasmix[0].oxygen = data[3];
+		deepblu->cache.gasmix[0].oxygen = data[3] / 100.0;
 		deepblu->cache.initialized |= 1u << DC_FIELD_GASMIX;
 		ASSIGN_FIELD(GASMIX_COUNT, 1);
 		ASSIGN_FIELD(DIVEMODE, DC_DIVEMODE_OC);
