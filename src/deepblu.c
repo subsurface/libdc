@@ -27,7 +27,7 @@
 #include "device-private.h"
 #include "array.h"
 
-// "Write state"?
+// "Write state"
 #define CMD_SETTIME	0x20	// Send 6 byte date-time, get single-byte 00x00 ack
 #define CMD_23		0x23	// Send 00/01 byte, get ack back? Some metric/imperial setting?
 
@@ -38,18 +38,33 @@
 #define CMD_GETPROFILE	0x43	// Send dive number (1-nr) byte, get dive profile length BE word back
   #define RSP_DIVEPROF  0x44	//  .. followed by packets of dive profile of that length
 
-// "Read state"?
-#define CMD_58		0x58	// Send empty byte, get single byte back ?? (0x52)
+// "Read state"
+#define CMD_GETTIME	0x50	// Send empty byte, get six-byte bcd date-time back
+#define CMD_51		0x51	// Send empty byte, get four bytes back (03 dc 00 e3)
+#define CMD_52		0x52	// Send empty byte, get two bytes back (bf 8d)
+#define CMD_53		0x53	// Send empty byte, get six bytes back (0e 81 00 03 00 00)
+#define CMD_54		0x54	// Send empty byte, get byte back (00)
+#define CMD_55		0x55	// Send empty byte, get byte back (00)
+#define CMD_56		0x56	// Send empty byte, get byte back (00)
+#define CMD_57		0x57	// Send empty byte, get byte back (00)
+#define CMD_58		0x58	// Send empty byte, get byte back (52)
 #define CMD_59		0x59	// Send empty byte, get six bytes back (00 00 07 00 00 00)
+				//                                     (00 00 00 00 00 00)
+#define CMD_5a		0x5a	// Send empty byte, get six bytes back (23 1b 09 d8 37 c0)
 #define CMD_5b		0x5b	// Send empty byte, get six bytes back (00 21 00 14 00 01)
+				//                                     (00 00 00 14 00 01)
 #define CMD_5c		0x5c	// Send empty byte, get six bytes back (13 88 00 46 20 00)
+				//                                     (13 88 00 3c 15 00)
 #define CMD_5d		0x5d	// Send empty byte, get six bytes back (19 00 23 0C 02 0E)
+				//                                     (14 14 14 0c 01 0e)
 #define CMD_5f		0x5f	// Send empty byte, get six bytes back (00 00 07 00 00 00)
+
+#define COSMIQ_HDR_SIZE	36
 
 typedef struct deepblu_device_t {
 	dc_device_t base;
 	dc_iostream_t *iostream;
-	unsigned char fingerprint[8];
+	unsigned char fingerprint[COSMIQ_HDR_SIZE];
 } deepblu_device_t;
 
 static dc_status_t deepblu_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
@@ -412,6 +427,10 @@ deepblu_download_dive(deepblu_device_t *device, unsigned char nr, dc_dive_callba
 	if (status != DC_STATUS_SUCCESS)
 		return status;
 	memset(header + header_len, 0, 256 - header_len);
+
+	/* The header is the fingerprint. If we've already seen this header, we're done */
+	if (memcmp(header, device->fingerprint, sizeof (device->fingerprint)) == 0)
+		return DC_STATUS_DONE;
 
 	status = deepblu_send_recv(device,  CMD_GETPROFILE, &nr, 1, profilebytes, sizeof(profilebytes));
 	if (status != DC_STATUS_SUCCESS)
