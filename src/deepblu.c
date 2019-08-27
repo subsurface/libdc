@@ -431,8 +431,10 @@ deepblu_download_dive(deepblu_device_t *device, unsigned char nr, dc_dive_callba
 	if (status != DC_STATUS_SUCCESS)
 		return status;
 
-	if (callback)
-		callback(profile, profile_len+256, header, header_len, userdata);
+	if (callback) {
+		if (!callback(profile, profile_len+256, header, header_len, userdata))
+			return DC_STATUS_DONE;
+	}
 
 	return DC_STATUS_SUCCESS;
 }
@@ -459,9 +461,21 @@ deepblu_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void
 	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 
 	for (i = 1; i <= nrdives; i++) {
+		if (device_is_cancelled(abstract)) {
+			dc_status_set_error(&status, DC_STATUS_CANCELLED);
+			break;
+		}
+
 		status = deepblu_download_dive(device, i, callback, userdata);
-		if (status != DC_STATUS_SUCCESS)
+		switch (status) {
+		case DC_STATUS_DONE:
+			i = nrdives;
+			break;
+		case DC_STATUS_SUCCESS:
+			break;
+		default:
 			return status;
+		}
 		progress.current = i;
 		device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 	}
