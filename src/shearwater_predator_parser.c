@@ -77,6 +77,7 @@
 
 #define NGASMIXES 10
 #define MAXSTRINGS 32
+#define NTANKS    2
 #define NRECORDS  7
 
 #define PREDATOR 2
@@ -87,6 +88,18 @@
 #define UNDEFINED 0xFFFFFFFF
 
 typedef struct shearwater_predator_parser_t shearwater_predator_parser_t;
+
+typedef struct shearwater_predator_gasmix_t {
+	unsigned int oxygen;
+	unsigned int helium;
+} shearwater_predator_gasmix_t;
+
+typedef struct shearwater_predator_tank_t {
+	unsigned int enabled;
+	unsigned int beginpressure;
+	unsigned int endpressure;
+	unsigned int battery;
+} shearwater_predator_tank_t;
 
 struct shearwater_predator_parser_t {
 	dc_parser_t base;
@@ -103,8 +116,10 @@ struct shearwater_predator_parser_t {
 	unsigned int closing[NRECORDS];
 	unsigned int final;
 	unsigned int ngasmixes;
-	unsigned int oxygen[NGASMIXES];
-	unsigned int helium[NGASMIXES];
+	unsigned int ntanks;
+	shearwater_predator_gasmix_t gasmix[NGASMIXES];
+	shearwater_predator_tank_t tank[NTANKS];
+	unsigned int tankidx[NTANKS];
 	unsigned int calibrated;
 	double calibration[3];
 	unsigned int serial;
@@ -150,7 +165,7 @@ shearwater_predator_find_gasmix (shearwater_predator_parser_t *parser, unsigned 
 {
 	unsigned int i = 0;
 	while (i < parser->ngasmixes) {
-		if (o2 == parser->oxygen[i] && he == parser->helium[i])
+		if (o2 == parser->gasmix[i].oxygen && he == parser->gasmix[i].helium)
 			break;
 		i++;
 	}
@@ -203,8 +218,16 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 	parser->final = UNDEFINED;
 	parser->ngasmixes = 0;
 	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->oxygen[i] = 0;
-		parser->helium[i] = 0;
+		parser->gasmix[i].oxygen = 0;
+		parser->gasmix[i].helium = 0;
+	}
+	parser->ntanks = 0;
+	for (unsigned int i = 0; i < NTANKS; ++i) {
+		parser->tank[i].enabled = 0;
+		parser->tank[i].beginpressure = 0;
+		parser->tank[i].endpressure = 0;
+		parser->tank[i].battery = 0;
+		parser->tankidx[i] = i;
 	}
 	parser->calibrated = 0;
 	for (unsigned int i = 0; i < 3; ++i) {
@@ -253,8 +276,15 @@ shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char 
 	parser->final = UNDEFINED;
 	parser->ngasmixes = 0;
 	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->oxygen[i] = 0;
-		parser->helium[i] = 0;
+		parser->gasmix[i].oxygen = 0;
+		parser->gasmix[i].helium = 0;
+	}
+	parser->ntanks = 0;
+	for (unsigned int i = 0; i < NTANKS; ++i) {
+		parser->tank[i].enabled = 0;
+		parser->tank[i].beginpressure = 0;
+		parser->tank[i].endpressure = 0;
+		parser->tankidx[i] = i;
 	}
 	parser->calibrated = 0;
 	for (unsigned int i = 0; i < 3; ++i) {
@@ -332,32 +362,6 @@ add_string_fmt(shearwater_predator_parser_t *parser, const char *desc, const cha
 	return add_string(parser, desc, buffer);
 }
 
-// The Battery state is a big-endian word:
-//
-//  ffff = not paired / no comms for 90 s
-//  fffe = no comms for 30 s
-//
-// Otherwise:
-//   - top four bits are battery state (0 - normal, 1 - critical, 2 - warning)
-//   - bottom 12 bits are pressure in 2 psi increments (0..8k psi)
-//
-// This returns the state as a bitmask (so you can see all states it had
-// during the dive). Note that we currently do not report pairing and
-// communication lapses. Todo?
-static unsigned int
-battery_state(const unsigned char *data)
-{
-	unsigned int pressure = array_uint16_be(data);
-	unsigned int state;
-
-	if ((pressure & 0xFFF0) == 0xFFF0)
-		return 0;
-	state = pressure >> 12;
-	if (state > 2)
-		return 0;
-	return 1u << state;
-}
-
 // Show the battery state
 //
 // NOTE! Right now it only shows the most serious bit
@@ -370,6 +374,8 @@ battery_state(const unsigned char *data)
 static void
 add_battery_info(shearwater_predator_parser_t *parser, const char *desc, unsigned int state)
 {
+	// We don't know what other state bits than 0-2 mean
+	state &= 7;
 	if (state >= 1 && state <= 7) {
 		static const char *states[8] = {
 			"",		// 000 - No state bits, not used
@@ -447,6 +453,10 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	}
 	memset(parser->strings, 0, sizeof(parser->strings));
 
+	// Log versions before 6 weren't reliably stored in the data, but
+	// 6 is also the oldest version that we assume in our code
+	unsigned int logversion = 0;
+
 	// Verify the minimum length.
 	if (size < 2) {
 		ERROR (abstract->context, "Invalid data length.");
@@ -489,6 +499,9 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			parser->opening[i] = 0;
 			parser->closing[i] = size - footersize;
 		}
+
+		// Log version
+		logversion = data[127];
 	}
 
 	// Default dive mode.
@@ -496,12 +509,9 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 
 	// Get the gas mixes.
 	unsigned int ngasmixes = 0;
-	unsigned int oxygen[NGASMIXES] = {0};
-	unsigned int helium[NGASMIXES] = {0};
+	shearwater_predator_gasmix_t gasmix[NGASMIXES] = {0};
+	shearwater_predator_tank_t tank[NTANKS] = {0};
 	unsigned int o2_previous = 0, he_previous = 0;
-
-	// Transmitter battery levels
-	unsigned int t1_battery = 0, t2_battery = 0;
 
 	unsigned int offset = headersize;
 	unsigned int length = size - footersize;
@@ -529,7 +539,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 				// Find the gasmix in the list.
 				unsigned int idx = 0;
 				while (idx < ngasmixes) {
-					if (o2 == oxygen[idx] && he == helium[idx])
+					if (o2 == gasmix[idx].oxygen && he == gasmix[idx].helium)
 						break;
 					idx++;
 				}
@@ -540,8 +550,8 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 						ERROR (abstract->context, "Maximum number of gas mixes reached.");
 						return DC_STATUS_NOMEMORY;
 					}
-					oxygen[idx] = o2;
-					helium[idx] = he;
+					gasmix[idx].oxygen = o2;
+					gasmix[idx].helium = he;
 					ngasmixes = idx + 1;
 				}
 
@@ -549,16 +559,44 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 				he_previous = he;
 			}
 
-			// Transmitter battery levels
-			// T1 at offset 27, T2 at offset 19
-			t1_battery |= battery_state(data + offset + 27 + pnf);
-			t2_battery |= battery_state(data + offset + 19 + pnf);
+			// Tank pressure
+			if (logversion >= 7) {
+				const unsigned int idx[NTANKS] = {27, 19};
+				for (unsigned int i = 0; i < NTANKS; ++i) {
+					// Values above 0xFFF0 are special codes:
+					//    0xFFFF AI is off
+					//    0xFFFE No comms for 90 seconds+
+					//    0xFFFD No comms for 30 seconds
+					//    0xFFFC Transmitter not paired
+					// For regular values, the top 4 bits contain the battery
+					// level (0=normal, 1=critical, 2=warning), and the lower 12
+					// bits the tank pressure in units of 2 psi.
+					unsigned int pressure = array_uint16_be (data + offset + pnf + idx[i]);
+					if (pressure < 0xFFF0) {
+						unsigned int battery = 1u << (pressure >> 12);
+						pressure &= 0x0FFF;
+						if (!tank[i].enabled) {
+							tank[i].enabled = 1;
+							tank[i].beginpressure = pressure;
+							tank[i].endpressure = pressure;
+							tank[i].battery = 0;
+						}
+						tank[i].endpressure = pressure;
+						tank[i].battery |= battery;
+					}
+				}
+			}
 		} else if (type == LOG_RECORD_FREEDIVE_SAMPLE) {
 			// Freedive record
 			mode = DC_DIVEMODE_FREEDIVE;
 		} else if (type >= LOG_RECORD_OPENING_0 && type <= LOG_RECORD_OPENING_7) {
 			// Opening record
 			parser->opening[type - LOG_RECORD_OPENING_0] = offset;
+
+			// Log version
+			if (type == LOG_RECORD_OPENING_4) {
+				logversion = data[offset + 16];
+			}
 		} else if (type >= LOG_RECORD_CLOSING_0 && type <= LOG_RECORD_CLOSING_7) {
 			// Closing record
 			parser->closing[type - LOG_RECORD_CLOSING_0] = offset;
@@ -578,16 +616,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		}
 	}
 
-	// Log versions before 6 weren't reliably stored in the data, but
-	// 6 is also the oldest version that we assume in our code
-	unsigned int logversion = data[parser->opening[4] + (pnf ? 16 : 127)];
 	add_string_fmt(parser, "Logversion", "%d%s", logversion, pnf ? "(PNF)" : "");
-
-	// The transmitter battery levels are only valid for logversion 7+
-	if (logversion < 7) {
-		t1_battery = 0;
-		t2_battery = 0;
-	}
 
 	// Cache sensor calibration for later use
 	unsigned int nsensors = 0, ndefaults = 0;
@@ -632,8 +661,17 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	parser->footersize = footersize;
 	parser->ngasmixes = ngasmixes;
 	for (unsigned int i = 0; i < ngasmixes; ++i) {
-		parser->oxygen[i] = oxygen[i];
-		parser->helium[i] = helium[i];
+		parser->gasmix[i] = gasmix[i];
+	}
+	parser->ntanks = 0;
+	for (unsigned int i = 0; i < NTANKS; ++i) {
+		if (tank[i].enabled) {
+			parser->tankidx[i] = parser->ntanks;
+			parser->tank[parser->ntanks] = tank[i];
+			parser->ntanks++;
+		} else {
+			parser->tankidx[i] = UNDEFINED;
+		}
 	}
 	parser->mode = mode;
 	parser->units = data[parser->opening[0] + 8];
@@ -647,8 +685,8 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	add_deco_model(parser, data);
 	add_battery_type(parser, data);
 	add_string_fmt(parser, "Battery at end", "%.1f V", data[9] / 10.0);
-	add_battery_info(parser, "T1 battery", t1_battery);
-	add_battery_info(parser, "T2 battery", t2_battery);
+	add_battery_info(parser, "T1 battery", tank[0].battery);
+	add_battery_info(parser, "T2 battery", tank[1].battery);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -666,6 +704,7 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 		return rc;
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
+	dc_tank_t *tank = (dc_tank_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
 	dc_field_string_t *string = (dc_field_string_t *) value;
 
@@ -689,9 +728,20 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			*((unsigned int *) value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
-			gasmix->oxygen = parser->oxygen[flags] / 100.0;
-			gasmix->helium = parser->helium[flags] / 100.0;
+			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
+			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
+			break;
+		case DC_FIELD_TANK_COUNT:
+			*((unsigned int *) value) = parser->ntanks;
+			break;
+		case DC_FIELD_TANK:
+			tank->type = DC_TANKVOLUME_NONE;
+			tank->volume = 0.0;
+			tank->workpressure = 0.0;
+			tank->beginpressure = parser->tank[flags].beginpressure * 2 * PSI / BAR;
+			tank->endpressure   = parser->tank[flags].endpressure   * 2 * PSI / BAR;
+			tank->gasmix = DC_GASMIX_UNKNOWN;
 			break;
 		case DC_FIELD_SALINITY:
 			if (parser->density == 1000)
@@ -906,28 +956,24 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 			// for logversion 7 and newer (introduced for Perdix AI)
 			// detect tank pressure
 			if (parser->logversion >= 7) {
-				// Tank pressure
-				// Values above 0xFFF0 are special codes:
-				//    0xFFFF AI is off
-				//    0xFFFE No comms for 90 seconds+
-				//    0xFFFD No comms for 30 seconds
-				//    0xFFFC Transmitter not paired
-				// For regular values, the top 4 bits contain the battery
-				// level (0=normal, 1=critical, 2=warning), and the lower 12
-				// bits the tank pressure in units of 2 psi.
-				unsigned int pressure = array_uint16_be (data + offset + pnf + 27);
-				if (pressure < 0xFFF0) {
-					pressure &= 0x0FFF;
-					sample.pressure.tank = 0;
-					sample.pressure.value = pressure * 2 * PSI / BAR;
-					if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
-				}
-				pressure = array_uint16_be (data + offset + pnf + 19);
-				if (pressure < 0xFFF0) {
-					pressure &= 0x0FFF;
-					sample.pressure.tank = 1;
-					sample.pressure.value = pressure * 2 * PSI / BAR;
-					if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+				const unsigned int idx[NTANKS] = {27, 19};
+				for (unsigned int i = 0; i < NTANKS; ++i) {
+					// Tank pressure
+					// Values above 0xFFF0 are special codes:
+					//    0xFFFF AI is off
+					//    0xFFFE No comms for 90 seconds+
+					//    0xFFFD No comms for 30 seconds
+					//    0xFFFC Transmitter not paired
+					// For regular values, the top 4 bits contain the battery
+					// level (0=normal, 1=critical, 2=warning), and the lower 12
+					// bits the tank pressure in units of 2 psi.
+					unsigned int pressure = array_uint16_be (data + offset + pnf + idx[i]);
+					if (pressure < 0xFFF0) {
+						pressure &= 0x0FFF;
+						sample.pressure.tank = parser->tankidx[i];
+						sample.pressure.value = pressure * 2 * PSI / BAR;
+						if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+					}
 				}
 
 				// Gas time remaining in minutes
