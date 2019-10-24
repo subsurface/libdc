@@ -78,7 +78,7 @@
 #define NGASMIXES 10
 #define MAXSTRINGS 32
 #define NTANKS    2
-#define NRECORDS  7
+#define NRECORDS  8
 
 #define PREDATOR 2
 #define PETREL   3

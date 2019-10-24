@@ -139,6 +139,7 @@ static const oceanic_common_version_t oceanic_default_version[] = {
 	{"ELITET31 \0\0 512K"},
 	{"DATAMASK \0\0 512K"},
 	{"COMPMASK \0\0 512K"},
+	{"OCEGEO40 \0\0 512K"},
 };
 
 static const oceanic_common_version_t sherwood_wisdom_version[] = {
@@ -878,7 +879,7 @@ oceanic_atom2_device_open (dc_device_t **out, dc_context_t *context, dc_iostream
 
 	// Get the correct baudrate.
 	unsigned int baudrate = 38400;
-	if (model == VTX || model == I750TC || model == PROPLUSX || model == I770R || model == GEO40) {
+	if (model == VTX || model == I750TC || model == PROPLUSX || model == I770R) {
 		baudrate = 115200;
 	}
 
