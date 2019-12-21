@@ -49,6 +49,14 @@
 #define HEADER  1
 #define PROFILE 2
 
+#define TEMPERATURE 0
+#define DECO        1
+#define GF          2
+#define PPO2        3
+#define DECOPLAN    4
+#define CNS         5
+#define TANK        6
+
 #define OSTC_ZHL16_OC    0
 #define OSTC_GAUGE       1
 #define OSTC_ZHL16_CC    2
@@ -74,6 +82,16 @@
 #define OSTC4      0x3B
 
 #define UNSUPPORTED 0xFFFFFFFF
+
+#define OSTC3FW(major,minor) ( \
+		(((major) & 0xFF) << 8) | \
+		((minor) & 0xFF))
+
+#define OSTC4FW(major,minor,micro,beta) ( \
+		(((major) & 0x1F) << 11) | \
+		(((minor) & 0x1F) >> 6) | \
+		(((micro) & 0x1F) << 1) | \
+		((beta) & 0x01))
 
 typedef struct hw_ostc_sample_info_t {
 	unsigned int type;
@@ -370,9 +388,9 @@ hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsign
 
 
 dc_status_t
-hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int hwos)
+hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
 {
-	return hw_ostc_parser_create_internal (out, context, serial, hwos, 0);
+	return hw_ostc_parser_create_internal (out, context, serial, 0, 0);
 }
 
 dc_status_t
@@ -757,21 +775,21 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 		if (info[i].divisor) {
 			switch (info[i].type) {
-			case 0: // Temperature
-			case 1: // Deco / NDL
-			case 6: // Tank pressure
+			case TEMPERATURE:
+			case DECO:
+			case TANK:
 				if (info[i].size != 2) {
 					ERROR(abstract->context, "Unexpected sample size.");
 					return DC_STATUS_DATAFORMAT;
 				}
 				break;
-			case 3: // ppO2
+			case PPO2:
 				if (info[i].size != 3 && info[i].size != 9) {
 					ERROR(abstract->context, "Unexpected sample size.");
 					return DC_STATUS_DATAFORMAT;
 				}
 				break;
-			case 5: // CNS
+			case CNS:
 				if (info[i].size != 1 && info[i].size != 2) {
 					ERROR(abstract->context, "Unexpected sample size.");
 					return DC_STATUS_DATAFORMAT;
@@ -978,6 +996,17 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 		for (unsigned int i = 0; i < nconfig; ++i) {
 			if (info[i].divisor && (nsamples % info[i].divisor) == 0) {
 				if (length < info[i].size) {
+					// Due to a bug in the hwOS Tech firmware v3.03 to v3.07, and
+					// the hwOS Sport firmware v10.57 to v10.63, the ppO2 divisor
+					// is sometimes not correctly reset to zero when no ppO2
+					// samples are being recorded.
+					if (info[i].type == PPO2 && parser->hwos && parser->model != OSTC4 &&
+						((firmware >= OSTC3FW(3,3) && firmware <= OSTC3FW(3,7)) ||
+						(firmware >= OSTC3FW(10,57) && firmware <= OSTC3FW(10,63)))) {
+						WARNING (abstract->context, "Reset invalid ppO2 divisor to zero.");
+						info[i].divisor = 0;
+						continue;
+					}
 					ERROR (abstract->context, "Buffer overflow detected!");
 					return DC_STATUS_DATAFORMAT;
 				}
@@ -986,15 +1015,15 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				unsigned int count = 0;
 				unsigned int value = 0;
 				switch (info[i].type) {
-				case 0: // Temperature (0.1 °C).
+				case TEMPERATURE:
 					value = array_uint16_le (data + offset);
 					sample.temperature = value / 10.0;
 					if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
 					break;
-				case 1: // Deco / NDL
+				case DECO:
 					// Due to a firmware bug, the deco/ndl info is incorrect for
 					// all OSTC4 dives with a firmware older than version 1.0.8.
-					if (parser->model == OSTC4 && firmware < 0x0810)
+					if (parser->model == OSTC4 && firmware < OSTC4FW(1,0,8,0))
 						break;
 					if (data[offset]) {
 						sample.deco.type = DC_DECO_DECOSTOP;
@@ -1006,7 +1035,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 					sample.deco.time = data[offset + 1] * 60;
 					if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
 					break;
-				case 3: // ppO2 (0.01 bar).
+				case PPO2:
 					for (unsigned int j = 0; j < 3; ++j) {
 						if (info[i].size == 3) {
 							ppo2[j] = data[offset + j];
@@ -1023,18 +1052,24 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 						}
 					}
 					break;
-				case 5: // CNS
+				case CNS:
 					if (info[i].size == 2)
 						sample.cns = array_uint16_le (data + offset) / 100.0;
 					else
 						sample.cns = data[offset] / 100.0;
 					if (callback) callback (DC_SAMPLE_CNS, sample, userdata);
 					break;
-				case 6: // Tank pressure
+				case TANK:
 					value = array_uint16_le (data + offset);
 					if (value != 0) {
 						sample.pressure.tank = tank;
-						sample.pressure.value = value / 10.0;
+						sample.pressure.value = value;
+						// The hwOS Sport firmware used a resolution of
+						// 0.1 bar between versions 10.40 and 10.50.
+						if (parser->hwos && parser->model != OSTC4 &&
+							(firmware >= OSTC3FW(10,40) && firmware <= OSTC3FW(10,50))) {
+							sample.pressure.value /= 10.0;
+						}
 						if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
 					}
 					break;

@@ -124,7 +124,8 @@ static const oceanic_common_version_t oceanic_atom2b_version[] = {
 	{"AQUAI300 \0\0 512K"},
 	{"HOLLDG03 \0\0 512K"},
 	{"AQUAI100 \0\0 512K"},
-	{"AQUA300C \0\0 \0\0\0\0"},
+	{"AQUA300C \0\0 512K"},
+	{"OCEGEO40 \0\0 512K"},
 };
 
 static const oceanic_common_version_t oceanic_atom2c_version[] = {
@@ -139,7 +140,6 @@ static const oceanic_common_version_t oceanic_default_version[] = {
 	{"ELITET31 \0\0 512K"},
 	{"DATAMASK \0\0 512K"},
 	{"COMPMASK \0\0 512K"},
-	{"OCEGEO40 \0\0 512K"},
 };
 
 static const oceanic_common_version_t sherwood_wisdom_version[] = {
