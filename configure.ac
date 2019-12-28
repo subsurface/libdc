@@ -190,6 +190,7 @@ AX_APPEND_COMPILE_FLAGS([ \
 	-Wno-unused-but-set-variable \
 	-Wno-pointer-sign \
 	-Wno-shadow \
+	-fmacro-prefix-map='$(top_srcdir)/'= \
 ])
 
 # Windows specific compiler options.
