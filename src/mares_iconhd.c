@@ -482,8 +482,8 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_
 		goto error_free;
 	}
 
-	// Set the timeout for receiving data (1000 ms).
-	status = dc_iostream_set_timeout (device->iostream, 1000);
+	// Set the timeout for receiving data (3s = 3000 ms, the BLE dongle can be slow).
+	status = dc_iostream_set_timeout (device->iostream, 3000);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the timeout.");
 		goto error_free;
