@@ -41,6 +41,7 @@ Makefile.in
 /examples/atom2
 /examples/d9
 /examples/darwin
+/examples/dctool
 /examples/edy
 /examples/eon
 /examples/frog
