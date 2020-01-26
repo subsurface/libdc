@@ -43,8 +43,6 @@ struct dc_iostream_vtable_t {
 
 	dc_status_t (*set_timeout) (dc_iostream_t *iostream, int timeout);
 
-	dc_status_t (*set_latency) (dc_iostream_t *iostream, unsigned int value);
-
 	dc_status_t (*set_break) (dc_iostream_t *iostream, unsigned int value);
 
 	dc_status_t (*set_dtr) (dc_iostream_t *iostream, unsigned int value);
@@ -57,9 +55,13 @@ struct dc_iostream_vtable_t {
 
 	dc_status_t (*configure) (dc_iostream_t *iostream, unsigned int baudrate, unsigned int databits, dc_parity_t parity, dc_stopbits_t stopbits, dc_flowcontrol_t flowcontrol);
 
+	dc_status_t (*poll) (dc_iostream_t *iostream, int timeout);
+
 	dc_status_t (*read) (dc_iostream_t *iostream, void *data, size_t size, size_t *actual);
 
 	dc_status_t (*write) (dc_iostream_t *iostream, const void *data, size_t size, size_t *actual);
+
+	dc_status_t (*ioctl) (dc_iostream_t *iostream, unsigned int request, void *data, size_t size);
 
 	dc_status_t (*flush) (dc_iostream_t *iostream);
 
@@ -68,8 +70,6 @@ struct dc_iostream_vtable_t {
 	dc_status_t (*sleep) (dc_iostream_t *iostream, unsigned int milliseconds);
 
 	dc_status_t (*close) (dc_iostream_t *iostream);
-
-	const char *(*get_name) (dc_iostream_t *iostream);
 };
 
 dc_iostream_t *

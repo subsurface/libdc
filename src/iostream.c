@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include <assert.h>
 
+#include <libdivecomputer/ioctl.h>
+
 #include "iostream-private.h"
 #include "context-private.h"
 #include "platform.h"
@@ -83,17 +85,6 @@ dc_iostream_set_timeout (dc_iostream_t *iostream, int timeout)
 	INFO (iostream->context, "Timeout: value=%i", timeout);
 
 	return iostream->vtable->set_timeout (iostream, timeout);
-}
-
-dc_status_t
-dc_iostream_set_latency (dc_iostream_t *iostream, unsigned int value)
-{
-	if (iostream == NULL || iostream->vtable->set_latency == NULL)
-		return DC_STATUS_SUCCESS;
-
-	INFO (iostream->context, "Latency: value=%i", value);
-
-	return iostream->vtable->set_latency (iostream, value);
 }
 
 dc_status_t
@@ -184,6 +175,17 @@ dc_iostream_configure (dc_iostream_t *iostream, unsigned int baudrate, unsigned 
 }
 
 dc_status_t
+dc_iostream_poll (dc_iostream_t *iostream, int timeout)
+{
+	if (iostream == NULL || iostream->vtable->poll == NULL)
+		return DC_STATUS_SUCCESS;
+
+	INFO (iostream->context, "Poll: value=%i", timeout);
+
+	return iostream->vtable->poll (iostream, timeout);
+}
+
+dc_status_t
 dc_iostream_read (dc_iostream_t *iostream, void *data, size_t size, size_t *actual)
 {
 	if (actual)
@@ -257,6 +259,40 @@ dc_iostream_write (dc_iostream_t *iostream, const void *data, size_t size, size_
 }
 
 dc_status_t
+dc_iostream_ioctl (dc_iostream_t *iostream, unsigned int request, void *data, size_t size)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+
+	if (iostream == NULL || iostream->vtable->ioctl == NULL)
+		return DC_STATUS_SUCCESS;
+
+	// The size should match the size encoded in the ioctl request,
+	// unless it's a variable size request.
+	if (size != DC_IOCTL_SIZE(request) &&
+		!(DC_IOCTL_DIR(request) != DC_IOCTL_DIR_NONE && DC_IOCTL_SIZE(request) == 0)) {
+		ERROR (iostream->context, "Invalid size for ioctl request 0x%08x (" DC_PRINTF_SIZE ").", request, size);
+		return DC_STATUS_INVALIDARGS;
+	}
+
+	INFO (iostream->context, "Ioctl: request=0x%08x (dir=%u, type=%u, nr=%u, size=%u)",
+		request,
+		DC_IOCTL_DIR(request), DC_IOCTL_TYPE(request),
+		DC_IOCTL_NR(request), DC_IOCTL_SIZE(request));
+
+	if (DC_IOCTL_DIR(request) & DC_IOCTL_DIR_WRITE) {
+		HEXDUMP (iostream->context, DC_LOGLEVEL_INFO, "Ioctl write", (unsigned char *) data, size);
+	}
+
+	status = iostream->vtable->ioctl (iostream, request, data, size);
+
+	if (DC_IOCTL_DIR(request) & DC_IOCTL_DIR_READ) {
+		HEXDUMP (iostream->context, DC_LOGLEVEL_INFO, "Ioctl read", (unsigned char *) data, size);
+	}
+
+	return status;
+}
+
+dc_status_t
 dc_iostream_flush (dc_iostream_t *iostream)
 {
 	if (iostream == NULL || iostream->vtable->flush == NULL)
@@ -304,16 +340,4 @@ dc_iostream_close (dc_iostream_t *iostream)
 	dc_iostream_deallocate (iostream);
 
 	return status;
-}
-
-const char *
-dc_iostream_get_name (dc_iostream_t *iostream)
-{
-	if (iostream == NULL)
-		return NULL;
-
-	if (iostream->vtable->get_name)
-		return iostream->vtable->get_name (iostream);
-
-	return NULL;
 }

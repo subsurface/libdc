@@ -7,8 +7,10 @@ libdivecomputer_HEADERS = 	\
 	descriptor.h \
 	iterator.h \
 	iostream.h \
+	ioctl.h \
 	serial.h \
 	bluetooth.h \
+	ble.h \
 	irda.h \
 	usbhid.h \
 	custom.h \

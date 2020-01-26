@@ -109,10 +109,16 @@ dc_status_t
 dc_socket_get_available (dc_iostream_t *iostream, size_t *value);
 
 dc_status_t
+dc_socket_poll (dc_iostream_t *iostream, int timeout);
+
+dc_status_t
 dc_socket_read (dc_iostream_t *iostream, void *data, size_t size, size_t *actual);
 
 dc_status_t
 dc_socket_write (dc_iostream_t *iostream, const void *data, size_t size, size_t *actual);
+
+dc_status_t
+dc_socket_ioctl (dc_iostream_t *iostream, unsigned int request, void *data, size_t size);
 
 dc_status_t
 dc_socket_sleep (dc_iostream_t *abstract, unsigned int timeout);

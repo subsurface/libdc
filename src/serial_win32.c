@@ -36,15 +36,16 @@ static dc_status_t dc_serial_iterator_next (dc_iterator_t *iterator, void *item)
 static dc_status_t dc_serial_iterator_free (dc_iterator_t *iterator);
 
 static dc_status_t dc_serial_set_timeout (dc_iostream_t *iostream, int timeout);
-static dc_status_t dc_serial_set_latency (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_break (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_dtr (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_rts (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_get_lines (dc_iostream_t *iostream, unsigned int *value);
 static dc_status_t dc_serial_get_available (dc_iostream_t *iostream, size_t *value);
 static dc_status_t dc_serial_configure (dc_iostream_t *iostream, unsigned int baudrate, unsigned int databits, dc_parity_t parity, dc_stopbits_t stopbits, dc_flowcontrol_t flowcontrol);
+static dc_status_t dc_serial_poll (dc_iostream_t *iostream, int timeout);
 static dc_status_t dc_serial_read (dc_iostream_t *iostream, void *data, size_t size, size_t *actual);
 static dc_status_t dc_serial_write (dc_iostream_t *iostream, const void *data, size_t size, size_t *actual);
+static dc_status_t dc_serial_ioctl (dc_iostream_t *iostream, unsigned int request, void *data, size_t size);
 static dc_status_t dc_serial_flush (dc_iostream_t *iostream);
 static dc_status_t dc_serial_purge (dc_iostream_t *iostream, dc_direction_t direction);
 static dc_status_t dc_serial_sleep (dc_iostream_t *iostream, unsigned int milliseconds);
@@ -75,6 +76,11 @@ typedef struct dc_serial_t {
 	 */
 	DCB dcb;
 	COMMTIMEOUTS timeouts;
+
+	HANDLE hReadWrite, hPoll;
+	OVERLAPPED overlapped;
+	DWORD events;
+	BOOL pending;
 } dc_serial_t;
 
 static const dc_iterator_vtable_t dc_serial_iterator_vtable = {
@@ -86,15 +92,16 @@ static const dc_iterator_vtable_t dc_serial_iterator_vtable = {
 static const dc_iostream_vtable_t dc_serial_vtable = {
 	sizeof(dc_serial_t),
 	dc_serial_set_timeout, /* set_timeout */
-	dc_serial_set_latency, /* set_latency */
 	dc_serial_set_break, /* set_break */
 	dc_serial_set_dtr, /* set_dtr */
 	dc_serial_set_rts, /* set_rts */
 	dc_serial_get_lines, /* get_lines */
 	dc_serial_get_available, /* get_available */
 	dc_serial_configure, /* configure */
+	dc_serial_poll, /* poll */
 	dc_serial_read, /* read */
 	dc_serial_write, /* write */
+	dc_serial_ioctl, /* ioctl */
 	dc_serial_flush, /* flush */
 	dc_serial_purge, /* purge */
 	dc_serial_sleep, /* sleep */
@@ -282,18 +289,41 @@ dc_serial_open (dc_iostream_t **out, dc_context_t *context, const char *name)
 		return DC_STATUS_NOMEMORY;
 	}
 
+	// Default values.
+	memset(&device->overlapped, 0, sizeof(device->overlapped));
+	device->events = 0;
+	device->pending = FALSE;
+
+	// Create a manual reset event for I/O.
+	device->hReadWrite = CreateEvent (NULL, TRUE, FALSE, NULL);
+	if (device->hReadWrite == INVALID_HANDLE_VALUE) {
+		DWORD errcode = GetLastError ();
+		SYSERROR (context, errcode);
+		status = syserror (errcode);
+		goto error_free;
+	}
+
+	// Create a manual reset event for polling.
+	device->hPoll = CreateEvent (NULL, TRUE, FALSE, NULL);
+	if (device->hPoll == INVALID_HANDLE_VALUE) {
+		DWORD errcode = GetLastError ();
+		SYSERROR (context, errcode);
+		status = syserror (errcode);
+		goto error_free_readwrite;
+	}
+
 	// Open the device.
 	device->hFile = CreateFileA (devname,
 			GENERIC_READ | GENERIC_WRITE, 0,
 			NULL, // No security attributes.
 			OPEN_EXISTING,
-			0, // Non-overlapped I/O.
+			FILE_FLAG_OVERLAPPED,
 			NULL);
 	if (device->hFile == INVALID_HANDLE_VALUE) {
 		DWORD errcode = GetLastError ();
 		SYSERROR (context, errcode);
 		status = syserror (errcode);
-		goto error_free;
+		goto error_free_poll;
 	}
 
 	// Retrieve the current communication settings and timeouts,
@@ -308,12 +338,24 @@ dc_serial_open (dc_iostream_t **out, dc_context_t *context, const char *name)
 		goto error_close;
 	}
 
+	// Enable event monitoring.
+	if (!SetCommMask (device->hFile, EV_RXCHAR)) {
+		DWORD errcode = GetLastError ();
+		SYSERROR (context, errcode);
+		status = syserror (errcode);
+		goto error_close;
+	}
+
 	*out = (dc_iostream_t *) device;
 
 	return DC_STATUS_SUCCESS;
 
 error_close:
 	CloseHandle (device->hFile);
+error_free_poll:
+	CloseHandle (device->hPoll);
+error_free_readwrite:
+	CloseHandle (device->hReadWrite);
 error_free:
 	dc_iostream_deallocate ((dc_iostream_t *) device);
 	return status;
@@ -324,6 +366,9 @@ dc_serial_close (dc_iostream_t *abstract)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_serial_t *device = (dc_serial_t *) abstract;
+
+	// Disable event monitoring.
+	SetCommMask (device->hFile, 0);
 
 	// Restore the initial communication settings and timeouts.
 	if (!SetCommState (device->hFile, &device->dcb) ||
@@ -339,6 +384,9 @@ dc_serial_close (dc_iostream_t *abstract)
 		SYSERROR (abstract->context, errcode);
 		dc_status_set_error(&status, syserror (errcode));
 	}
+
+	CloseHandle (device->hPoll);
+	CloseHandle (device->hReadWrite);
 
 	return status;
 }
@@ -497,8 +545,60 @@ dc_serial_set_timeout (dc_iostream_t *abstract, int timeout)
 }
 
 static dc_status_t
-dc_serial_set_latency (dc_iostream_t *abstract, unsigned int value)
+dc_serial_poll (dc_iostream_t *abstract, int timeout)
 {
+	dc_serial_t *device = (dc_serial_t *) abstract;
+
+	while (1) {
+		COMSTAT stats;
+		if (!ClearCommError (device->hFile, NULL, &stats)) {
+			DWORD errcode = GetLastError ();
+			SYSERROR (abstract->context, errcode);
+			return syserror (errcode);
+		}
+
+		if (stats.cbInQue)
+			break;
+
+		if (!device->pending) {
+			memset(&device->overlapped, 0, sizeof(device->overlapped));
+			device->overlapped.hEvent = device->hPoll;
+			device->events = 0;
+			if (!WaitCommEvent (device->hFile, &device->events, &device->overlapped)) {
+				DWORD errcode = GetLastError ();
+				if (errcode != ERROR_IO_PENDING) {
+					SYSERROR (abstract->context, errcode);
+					return syserror (errcode);
+				}
+				device->pending = TRUE;
+			}
+		}
+
+		if (device->pending) {
+			DWORD errcode = 0;
+			DWORD rc = WaitForSingleObject (device->hPoll, timeout >= 0 ? (DWORD) timeout : INFINITE);
+			switch (rc) {
+			case WAIT_OBJECT_0:
+				break;
+			case WAIT_TIMEOUT:
+				return DC_STATUS_TIMEOUT;
+			default:
+				errcode = GetLastError ();
+				SYSERROR (abstract->context, errcode);
+				return syserror (errcode);
+			}
+		}
+
+		DWORD dummy = 0;
+		if (!GetOverlappedResult (device->hFile, &device->overlapped, &dummy, TRUE)) {
+			DWORD errcode = GetLastError ();
+			SYSERROR (abstract->context, errcode);
+			return syserror (errcode);
+		}
+
+		device->pending = FALSE;
+	}
+
 	return DC_STATUS_SUCCESS;
 }
 
@@ -509,7 +609,19 @@ dc_serial_read (dc_iostream_t *abstract, void *data, size_t size, size_t *actual
 	dc_serial_t *device = (dc_serial_t *) abstract;
 	DWORD dwRead = 0;
 
-	if (!ReadFile (device->hFile, data, size, &dwRead, NULL)) {
+	OVERLAPPED overlapped = {0};
+	overlapped.hEvent = device->hReadWrite;
+
+	if (!ReadFile (device->hFile, data, size, NULL, &overlapped)) {
+		DWORD errcode = GetLastError ();
+		if (errcode != ERROR_IO_PENDING) {
+			SYSERROR (abstract->context, errcode);
+			status = syserror (errcode);
+			goto out;
+		}
+	}
+
+	if (!GetOverlappedResult (device->hFile, &overlapped, &dwRead, TRUE)) {
 		DWORD errcode = GetLastError ();
 		SYSERROR (abstract->context, errcode);
 		status = syserror (errcode);
@@ -534,7 +646,19 @@ dc_serial_write (dc_iostream_t *abstract, const void *data, size_t size, size_t 
 	dc_serial_t *device = (dc_serial_t *) abstract;
 	DWORD dwWritten = 0;
 
-	if (!WriteFile (device->hFile, data, size, &dwWritten, NULL)) {
+	OVERLAPPED overlapped = {0};
+	overlapped.hEvent = device->hReadWrite;
+
+	if (!WriteFile (device->hFile, data, size, NULL, &overlapped)) {
+		DWORD errcode = GetLastError ();
+		if (errcode != ERROR_IO_PENDING) {
+			SYSERROR (abstract->context, errcode);
+			status = syserror (errcode);
+			goto out;
+		}
+	}
+
+	if (!GetOverlappedResult (device->hFile, &overlapped, &dwWritten, TRUE)) {
 		DWORD errcode = GetLastError ();
 		SYSERROR (abstract->context, errcode);
 		status = syserror (errcode);
@@ -550,6 +674,17 @@ out:
 		*actual = dwWritten;
 
 	return status;
+}
+
+static dc_status_t
+dc_serial_ioctl (dc_iostream_t *abstract, unsigned int request, void *data, size_t size)
+{
+	switch (request) {
+	case DC_IOCTL_SERIAL_SET_LATENCY:
+		return DC_STATUS_SUCCESS;
+	default:
+		return DC_STATUS_UNSUPPORTED;
+	}
 }
 
 static dc_status_t

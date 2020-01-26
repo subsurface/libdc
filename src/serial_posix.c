@@ -67,15 +67,16 @@ static dc_status_t dc_serial_iterator_next (dc_iterator_t *iterator, void *item)
 static dc_status_t dc_serial_iterator_free (dc_iterator_t *iterator);
 
 static dc_status_t dc_serial_set_timeout (dc_iostream_t *iostream, int timeout);
-static dc_status_t dc_serial_set_latency (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_break (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_dtr (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_set_rts (dc_iostream_t *iostream, unsigned int value);
 static dc_status_t dc_serial_get_lines (dc_iostream_t *iostream, unsigned int *value);
 static dc_status_t dc_serial_get_available (dc_iostream_t *iostream, size_t *value);
 static dc_status_t dc_serial_configure (dc_iostream_t *iostream, unsigned int baudrate, unsigned int databits, dc_parity_t parity, dc_stopbits_t stopbits, dc_flowcontrol_t flowcontrol);
+static dc_status_t dc_serial_poll (dc_iostream_t *iostream, int timeout);
 static dc_status_t dc_serial_read (dc_iostream_t *iostream, void *data, size_t size, size_t *actual);
 static dc_status_t dc_serial_write (dc_iostream_t *iostream, const void *data, size_t size, size_t *actual);
+static dc_status_t dc_serial_ioctl (dc_iostream_t *iostream, unsigned int request, void *data, size_t size);
 static dc_status_t dc_serial_flush (dc_iostream_t *iostream);
 static dc_status_t dc_serial_purge (dc_iostream_t *iostream, dc_direction_t direction);
 static dc_status_t dc_serial_sleep (dc_iostream_t *iostream, unsigned int milliseconds);
@@ -116,15 +117,16 @@ static const dc_iterator_vtable_t dc_serial_iterator_vtable = {
 static const dc_iostream_vtable_t dc_serial_vtable = {
 	sizeof(dc_serial_t),
 	dc_serial_set_timeout, /* set_timeout */
-	dc_serial_set_latency, /* set_latency */
 	dc_serial_set_break, /* set_break */
 	dc_serial_set_dtr, /* set_dtr */
 	dc_serial_set_rts, /* set_rts */
 	dc_serial_get_lines, /* get_lines */
 	dc_serial_get_available, /* get_available */
 	dc_serial_configure, /* configure */
+	dc_serial_poll, /* poll */
 	dc_serial_read, /* read */
 	dc_serial_write, /* write */
+	dc_serial_ioctl, /* ioctl */
 	dc_serial_flush, /* flush */
 	dc_serial_purge, /* purge */
 	dc_serial_sleep, /* sleep */
@@ -664,6 +666,42 @@ dc_serial_set_latency (dc_iostream_t *abstract, unsigned int milliseconds)
 }
 
 static dc_status_t
+dc_serial_poll (dc_iostream_t *abstract, int timeout)
+{
+	dc_serial_t *device = (dc_serial_t *) abstract;
+	int rc = 0;
+
+	do {
+		fd_set fds;
+		FD_ZERO (&fds);
+		FD_SET (device->fd, &fds);
+
+		struct timeval tv, *ptv = NULL;
+		if (timeout > 0) {
+			tv.tv_sec  = (timeout / 1000);
+			tv.tv_usec = (timeout % 1000) * 1000;
+			ptv = &tv;
+		} else if (timeout == 0) {
+			tv.tv_sec  = 0;
+			tv.tv_usec = 0;
+			ptv = &tv;
+		}
+
+		rc = select (device->fd + 1, &fds, NULL, NULL, ptv);
+	} while (rc < 0 && errno == EINTR);
+
+	if (rc < 0) {
+		int errcode = errno;
+		SYSERROR (abstract->context, errcode);
+		return syserror (errcode);
+	} else if (rc == 0) {
+		return DC_STATUS_TIMEOUT;
+	} else {
+		return DC_STATUS_SUCCESS;
+	}
+}
+
+static dc_status_t
 dc_serial_read (dc_iostream_t *abstract, void *data, size_t size, size_t *actual)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
@@ -809,6 +847,17 @@ out:
 		*actual = nbytes;
 
 	return status;
+}
+
+static dc_status_t
+dc_serial_ioctl (dc_iostream_t *abstract, unsigned int request, void *data, size_t size)
+{
+	switch (request) {
+	case DC_IOCTL_SERIAL_SET_LATENCY:
+		return dc_serial_set_latency (abstract, *(unsigned int *) data);
+	default:
+		return DC_STATUS_UNSUPPORTED;
+	}
 }
 
 static dc_status_t
