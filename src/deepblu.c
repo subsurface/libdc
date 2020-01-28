@@ -345,8 +345,6 @@ deepblu_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *io
 	memset(device->fingerprint, 0, sizeof(device->fingerprint));
 
 	*out = (dc_device_t *) device;
-
-	ERROR (context, "Deepblu Cosmiq+ open called");
 	return DC_STATUS_SUCCESS;
 }
 
@@ -355,7 +353,6 @@ deepblu_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[
 {
 	deepblu_device_t *device = (deepblu_device_t *)abstract;
 
-	ERROR (device->base.context, "Deepblu Cosmiq+ set_fingerprint called");
 	HEXDUMP(device->base.context, DC_LOGLEVEL_DEBUG, "set_fingerprint", data, size);
 
 	if (size && size != sizeof (device->fingerprint))
