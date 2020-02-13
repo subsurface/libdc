@@ -153,6 +153,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Scubapro", "Mantis",              DC_FAMILY_UWATEC_SMART, 0x20, DC_TRANSPORT_SERIAL, NULL},
 	{"Scubapro", "Aladin Square",       DC_FAMILY_UWATEC_SMART, 0x22, DC_TRANSPORT_USBHID, dc_filter_uwatec},
 	{"Scubapro", "Chromis",             DC_FAMILY_UWATEC_SMART, 0x24, DC_TRANSPORT_SERIAL, NULL},
+	{"Scubapro", "Aladin A1",           DC_FAMILY_UWATEC_SMART, 0x25, DC_TRANSPORT_BLE, dc_filter_uwatec},
 	{"Scubapro", "Mantis 2",            DC_FAMILY_UWATEC_SMART, 0x26, DC_TRANSPORT_SERIAL, NULL},
 	{"Scubapro", "G2",                  DC_FAMILY_UWATEC_SMART, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
 	{"Scubapro", "G2 Console",          DC_FAMILY_UWATEC_SMART, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
@@ -246,6 +247,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Aqualung", "i550C",               DC_FAMILY_OCEANIC_ATOM2, 0x4652, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Oceanic",  "Geo 4.0",             DC_FAMILY_OCEANIC_ATOM2, 0x4653, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Oceanic",  "Veo 4.0",             DC_FAMILY_OCEANIC_ATOM2, 0x4654, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
+	{"Sherwood", "Wisdom 4",            DC_FAMILY_OCEANIC_ATOM2, 0x4655, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Oceanic",  "Pro Plus 4",          DC_FAMILY_OCEANIC_ATOM2, 0x4656, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	/* Mares Nemo */
 	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0, DC_TRANSPORT_SERIAL, NULL},
@@ -498,6 +500,7 @@ static int dc_filter_uwatec (dc_transport_t transport, const void *userdata)
 		"G2",
 		"Aladin",
 		"HUD",
+		"A1",
 	};
 
 	if (transport == DC_TRANSPORT_IRDA) {
@@ -634,6 +637,7 @@ static int dc_filter_oceanic (dc_transport_t transport, const void *userdata)
 		0x4652, // Aqualung i550C
 		0x4653, // Oceanic Geo 4.0
 		0x4654, // Oceanic Veo 4.0
+		0x4655, // Sherwood Wisdom 4
 		0x4656, // Oceanic Pro Plus 4
 	};
 
