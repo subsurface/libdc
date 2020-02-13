@@ -37,6 +37,7 @@
 #include "parser-private.h"
 #include "array.h"
 #include "platform.h"
+#include "field-cache.h"
 
 #define C_ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
 
@@ -78,31 +79,11 @@ struct type_desc {
 };
 
 #define MAXTYPE 512
-#define MAXGASES 16
-#define MAXSTRINGS 32
 
 typedef struct suunto_eonsteel_parser_t {
 	dc_parser_t base;
 	struct type_desc type_desc[MAXTYPE];
-	// field cache
-	struct {
-		unsigned int initialized;
-		unsigned int divetime;
-		double maxdepth;
-		double avgdepth;
-		unsigned int ngases;
-		dc_gasmix_t gasmix[MAXGASES];
-		dc_salinity_t salinity;
-		double surface_pressure;
-		dc_divemode_t divemode;
-		double lowsetpoint;
-		double highsetpoint;
-		double customsetpoint;
-		dc_field_string_t strings[MAXSTRINGS];
-		dc_tankinfo_t tankinfo[MAXGASES];
-		double tanksize[MAXGASES];
-		double tankworkingpressure[MAXGASES];
-	} cache;
+	struct dc_field_cache cache;
 } suunto_eonsteel_parser_t;
 
 typedef int (*eon_data_cb_t)(unsigned short type, const struct type_desc *desc, const unsigned char *data, int len, void *user);
@@ -602,7 +583,7 @@ static void sample_gas_switch_event(struct sample_data *info, unsigned short idx
 	suunto_eonsteel_parser_t *eon = info->eon;
 	dc_sample_value_t sample = {0};
 
-	if (idx < 1 || idx > eon->cache.ngases)
+	if (idx < 1 || idx > eon->cache.GASMIX_COUNT)
 		return;
 
 	sample.gasmix = idx - 1;
@@ -965,24 +946,6 @@ suunto_eonsteel_parser_samples_foreach(dc_parser_t *abstract, dc_sample_callback
 	return DC_STATUS_SUCCESS;
 }
 
-static dc_status_t get_string_field(suunto_eonsteel_parser_t *eon, unsigned idx, dc_field_string_t *value)
-{
-	if (idx < MAXSTRINGS) {
-		dc_field_string_t *res = eon->cache.strings+idx;
-		if (res->desc && res->value) {
-			*value = *res;
-			return DC_STATUS_SUCCESS;
-		}
-
-	}
-	return DC_STATUS_UNSUPPORTED;
-}
-
-// Ugly define thing makes the code much easier to read
-// I'd love to use __typeof__, but that's a gcc'ism
-#define field_value(p, set) \
-	memcpy((p), &(set), sizeof(set))
-
 static dc_status_t
 suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsigned int flags, void *value)
 {
@@ -995,33 +958,27 @@ suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsi
 
 	switch (type) {
 	case DC_FIELD_DIVETIME:
-		field_value(value, eon->cache.divetime);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, DIVETIME);
 	case DC_FIELD_MAXDEPTH:
-		field_value(value, eon->cache.maxdepth);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, MAXDEPTH);
 	case DC_FIELD_AVGDEPTH:
-		field_value(value, eon->cache.avgdepth);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, AVGDEPTH);
 	case DC_FIELD_GASMIX_COUNT:
 	case DC_FIELD_TANK_COUNT:
-		field_value(value, eon->cache.ngases);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, GASMIX_COUNT);
 	case DC_FIELD_GASMIX:
 		if (flags >= MAXGASES)
 			return DC_STATUS_UNSUPPORTED;
-		field_value(value, eon->cache.gasmix[flags]);
-		break;
+		return DC_FIELD_INDEX(eon->cache, value, GASMIX, flags);
 	case DC_FIELD_SALINITY:
-		field_value(value, eon->cache.salinity);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, SALINITY);
 	case DC_FIELD_ATMOSPHERIC:
-		field_value(value, eon->cache.surface_pressure);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, ATMOSPHERIC);
 	case DC_FIELD_DIVEMODE:
-		field_value(value, eon->cache.divemode);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, DIVEMODE);
 	case DC_FIELD_TANK:
+		if (flags >= MAXGASES)
+			return DC_STATUS_UNSUPPORTED;
 		/*
 		 * Sadly it seems that the EON Steel doesn't tell us whether
 		 * we get imperial or metric data - the only indication is
@@ -1052,7 +1009,7 @@ suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsi
 		}
 		break;
 	case DC_FIELD_STRING:
-		return get_string_field(eon, flags, (dc_field_string_t *)value);
+		return dc_field_get_string(&eon->cache, flags, (dc_field_string_t *)value);
 	default:
 		return DC_STATUS_UNSUPPORTED;
 	}
@@ -1081,7 +1038,7 @@ suunto_eonsteel_parser_get_datetime(dc_parser_t *parser, dc_datetime_t *datetime
 // time in ms
 static void add_time_field(suunto_eonsteel_parser_t *eon, unsigned short time_delta_ms)
 {
-	eon->cache.divetime += time_delta_ms;
+	eon->cache.DIVETIME += time_delta_ms;
 }
 
 // depth in cm
@@ -1089,8 +1046,8 @@ static void set_depth_field(suunto_eonsteel_parser_t *eon, unsigned short d)
 {
 	if (d != 0xffff) {
 		double depth = d / 100.0;
-		if (depth > eon->cache.maxdepth)
-			eon->cache.maxdepth = depth;
+		if (depth > eon->cache.MAXDEPTH)
+			eon->cache.MAXDEPTH = depth;
 		eon->cache.initialized |= 1 << DC_FIELD_MAXDEPTH;
 	}
 }
@@ -1108,16 +1065,16 @@ static void set_depth_field(suunto_eonsteel_parser_t *eon, unsigned short d)
 //
 // We may later turn the METRIC tank size into IMPERIAL if we
 // get a working pressure and non-integral size
-static int add_gas_type(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, unsigned char type)
+static dc_status_t add_gas_type(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, unsigned char type)
 {
-	int idx = eon->cache.ngases;
+	int idx = eon->cache.GASMIX_COUNT;
 	dc_tankinfo_t tankinfo = DC_TANKINFO_METRIC;
 	char *name;
 
 	if (idx >= MAXGASES)
-		return 0;
+		return DC_STATUS_SUCCESS;
 
-	eon->cache.ngases = idx+1;
+	eon->cache.GASMIX_COUNT = idx+1;
 	name = lookup_enum(desc, type);
 	if (!name)
 		DEBUG(eon->base.context, "Unable to look up gas type %u in %s", type, desc->format);
@@ -1135,82 +1092,46 @@ static int add_gas_type(suunto_eonsteel_parser_t *eon, const struct type_desc *d
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX_COUNT;
 	eon->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
 	free(name);
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
 // "sml.DeviceLog.Header.Diving.Gases.Gas.Oxygen"
 // O2 percentage as a byte
-static int add_gas_o2(suunto_eonsteel_parser_t *eon, unsigned char o2)
+static dc_status_t add_gas_o2(suunto_eonsteel_parser_t *eon, unsigned char o2)
 {
-	int idx = eon->cache.ngases-1;
+	int idx = eon->cache.GASMIX_COUNT-1;
 	if (idx >= 0)
-		eon->cache.gasmix[idx].oxygen = o2 / 100.0;
+		eon->cache.GASMIX[idx].oxygen = o2 / 100.0;
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX;
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
 // "sml.DeviceLog.Header.Diving.Gases.Gas.Helium"
 // He percentage as a byte
-static int add_gas_he(suunto_eonsteel_parser_t *eon, unsigned char he)
+static dc_status_t add_gas_he(suunto_eonsteel_parser_t *eon, unsigned char he)
 {
-	int idx = eon->cache.ngases-1;
+	int idx = eon->cache.GASMIX_COUNT-1;
 	if (idx >= 0)
-		eon->cache.gasmix[idx].helium = he / 100.0;
+		eon->cache.GASMIX[idx].helium = he / 100.0;
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX;
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
-static int add_gas_size(suunto_eonsteel_parser_t *eon, float l)
+static dc_status_t add_gas_size(suunto_eonsteel_parser_t *eon, float l)
 {
-	int idx = eon->cache.ngases-1;
+	int idx = eon->cache.GASMIX_COUNT-1;
 	if (idx >= 0)
 		eon->cache.tanksize[idx] = l;
 	eon->cache.initialized |= 1 << DC_FIELD_TANK;
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
-static int add_gas_workpressure(suunto_eonsteel_parser_t *eon, float wp)
+static dc_status_t add_gas_workpressure(suunto_eonsteel_parser_t *eon, float wp)
 {
-	int idx = eon->cache.ngases-1;
+	int idx = eon->cache.GASMIX_COUNT-1;
 	if (idx >= 0)
 		eon->cache.tankworkingpressure[idx] = wp;
-	return 0;
-}
-
-static int add_string(suunto_eonsteel_parser_t *eon, const char *desc, const char *value)
-{
-	int i;
-
-	eon->cache.initialized |= 1 << DC_FIELD_STRING;
-	for (i = 0; i < MAXSTRINGS; i++) {
-		dc_field_string_t *str = eon->cache.strings+i;
-		if (str->desc)
-			continue;
-		str->desc = desc;
-		str->value = strdup(value);
-		break;
-	}
-	return 0;
-}
-
-static int add_string_fmt(suunto_eonsteel_parser_t *eon, const char *desc, const char *fmt, ...)
-{
-	char buffer[256];
-	va_list ap;
-
-	/*
-	 * We ignore the return value from vsnprintf, and we
-	 * always NUL-terminate the destination buffer ourselves.
-	 *
-	 * That way we don't have to worry about random bad legacy
-	 * implementations.
-	 */
-	va_start(ap, fmt);
-	buffer[sizeof(buffer)-1] = 0;
-	(void) vsnprintf(buffer, sizeof(buffer)-1, fmt, ap);
-	va_end(ap);
-
-	return add_string(eon, desc, buffer);
+	return DC_STATUS_SUCCESS;
 }
 
 static float get_le32_float(const unsigned char *src)
@@ -1232,21 +1153,22 @@ static float get_le32_float(const unsigned char *src)
 //   Info.SW
 //   Name
 //   SerialNumber
-static int traverse_device_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc,
-                                  const unsigned char *data, int len)
+static dc_status_t traverse_device_fields(suunto_eonsteel_parser_t *eon,
+                                          const struct type_desc *desc,
+                                          const unsigned char *data, int len)
 {
 	const char *name = desc->desc + strlen("sml.DeviceLog.Device.");
 	if (!strcmp(name, "SerialNumber"))
-		return add_string(eon, "Serial", data);
+		return dc_field_add_string(&eon->cache, "Serial", data);
 	if (!strcmp(name, "Info.HW"))
-		return add_string(eon, "HW Version", data);
+		return dc_field_add_string(&eon->cache, "HW Version", data);
 	if (!strcmp(name, "Info.SW"))
-		return add_string(eon, "FW Version", data);
+		return dc_field_add_string(&eon->cache, "FW Version", data);
 	if (!strcmp(name, "Info.BatteryAtStart"))
-		return add_string(eon, "Battery at start", data);
+		return dc_field_add_string(&eon->cache, "Battery at start", data);
 	if (!strcmp(name, "Info.BatteryAtEnd"))
-		return add_string(eon, "Battery at end", data);
-	return 0;
+		return dc_field_add_string(&eon->cache, "Battery at end", data);
+	return DC_STATUS_SUCCESS;
 }
 
 // "sml.DeviceLog.Header.Diving.Gases"
@@ -1262,8 +1184,9 @@ static int traverse_device_fields(suunto_eonsteel_parser_t *eon, const struct ty
 //   .Gas.EndPressure (float32,precision=0)
 //   .Gas.TransmitterStartBatteryCharge (int8,precision=2)
 //   .Gas.TransmitterEndBatteryCharge (int8,precision=2)
-static int traverse_gas_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc,
-                               const unsigned char *data, int len)
+static dc_status_t traverse_gas_fields(suunto_eonsteel_parser_t *eon,
+                                       const struct type_desc *desc,
+                                       const unsigned char *data, int len)
 {
 	const char *name = desc->desc + strlen("sml.DeviceLog.Header.Diving.Gases");
 
@@ -1277,7 +1200,7 @@ static int traverse_gas_fields(suunto_eonsteel_parser_t *eon, const struct type_
 		return add_gas_he(eon, data[0]);
 
 	if (!strcmp(name, ".Gas.TransmitterID"))
-		return add_string(eon, "Transmitter ID", data);
+		return dc_field_add_string(&eon->cache, "Transmitter ID", data);
 
 	if (!strcmp(name, ".Gas.TankSize"))
 		return add_gas_size(eon, get_le32_float(data));
@@ -1295,12 +1218,12 @@ static int traverse_gas_fields(suunto_eonsteel_parser_t *eon, const struct type_
 		return 0;
 
 	if (!strcmp(name, ".Gas.TransmitterStartBatteryCharge"))
-		return add_string_fmt(eon, "Transmitter Battery at start", "%d %%", data[0]);
+		return dc_field_add_string_fmt(&eon->cache, "Transmitter Battery at start", "%d %%", data[0]);
 
 	if (!strcmp(name, ".Gas.TransmitterEndBatteryCharge"))
-		return add_string_fmt(eon, "Transmitter Battery at end", "%d %%", data[0]);
+		return dc_field_add_string_fmt(&eon->cache, "Transmitter Battery at end", "%d %%", data[0]);
 
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
 
@@ -1341,8 +1264,9 @@ static int traverse_gas_fields(suunto_eonsteel_parser_t *eon, const struct type_
 //   EndTissue.Helium+Pressure (uint32)
 //   EndTissue.RgbmNitrogen (float32,precision=3)
 //   EndTissue.RgbmHelium (float32,precision=3)
-static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc,
-                                  const unsigned char *data, int len)
+static dc_status_t traverse_diving_fields(suunto_eonsteel_parser_t *eon,
+                                          const struct type_desc *desc,
+                                          const unsigned char *data, int len)
 {
 	const char *name = desc->desc + strlen("sml.DeviceLog.Header.Diving.");
 
@@ -1351,27 +1275,25 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 
 	if (!strcmp(name, "SurfacePressure")) {
 		unsigned int pressure = array_uint32_le(data); // in SI units - Pascal
-		eon->cache.surface_pressure = pressure / 100000.0; // bar
-		eon->cache.initialized |= 1 << DC_FIELD_ATMOSPHERIC;
-		return 0;
+		DC_ASSIGN_FIELD(eon->cache, ATMOSPHERIC, pressure / 100000.0); // bar
+		return DC_STATUS_SUCCESS;
 	}
 
 	if (!strcmp(name, "Algorithm"))
-		return add_string(eon, "Deco algorithm", data);
+		return dc_field_add_string(&eon->cache, "Deco algorithm", data);
 
 	if (!strcmp(name, "DiveMode")) {
 		if (!strncmp((const char *)data, "CCR", 3)) {
-			eon->cache.divemode = DC_DIVEMODE_CCR;
-			eon->cache.initialized |= 1 << DC_FIELD_DIVEMODE;
+			DC_ASSIGN_FIELD(eon->cache, DIVEMODE, DC_DIVEMODE_CCR);
 		}
-		return add_string(eon, "Dive Mode", data);
+		return dc_field_add_string(&eon->cache, "Dive Mode", data);
 	}
 
 	/* Signed byte of conservatism (-2 .. +2) */
 	if (!strcmp(name, "Conservatism")) {
 		int val = *(signed char *)data;
 
-		return add_string_fmt(eon, "Personal Adjustment", "P%d", val);
+		return dc_field_add_string_fmt(&eon->cache, "Personal Adjustment", "P%d", val);
 	}
 
 	if (!strcmp(name, "LowSetPoint")) {
@@ -1390,15 +1312,15 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 	// Let's just agree to ignore seconds
 	if (!strcmp(name, "DesaturationTime")) {
 		unsigned int time = array_uint32_le(data) / 60;
-		return add_string_fmt(eon, "Desaturation Time", "%d:%02d", time / 60, time % 60);
+		return dc_field_add_string_fmt(&eon->cache, "Desaturation Time", "%d:%02d", time / 60, time % 60);
 	}
 
 	if (!strcmp(name, "SurfaceTime")) {
 		unsigned int time = array_uint32_le(data) / 60;
-		return add_string_fmt(eon, "Surface Time", "%d:%02d", time / 60, time % 60);
+		return dc_field_add_string_fmt(&eon->cache, "Surface Time", "%d:%02d", time / 60, time % 60);
 	}
 
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
 // "Header" fields are:
@@ -1410,8 +1332,9 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 //   Duration (uint32)
 //   PauseDuration (uint32)
 //   SampleInterval (uint8)
-static int traverse_header_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc,
-                                  const unsigned char *data, int len)
+static dc_status_t traverse_header_fields(suunto_eonsteel_parser_t *eon,
+                                          const struct type_desc *desc,
+                                          const unsigned char *data, int len)
 {
 	const char *name = desc->desc + strlen("sml.DeviceLog.Header.");
 
@@ -1420,17 +1343,17 @@ static int traverse_header_fields(suunto_eonsteel_parser_t *eon, const struct ty
 
 	if (!strcmp(name, "Depth.Max")) {
 		double d = get_le32_float(data);
-		if (d > eon->cache.maxdepth)
-			eon->cache.maxdepth = d;
-		return 0;
+		if (d > eon->cache.MAXDEPTH)
+			DC_ASSIGN_FIELD(eon->cache, MAXDEPTH, d);
+		return DC_STATUS_SUCCESS;
 	}
 	if (!strcmp(name, "DateTime"))
-		return add_string(eon, "Dive ID", data);
+		return dc_field_add_string(&eon->cache, "Dive ID", data);
 
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
-static int traverse_dynamic_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, const unsigned char *data, int len)
+static dc_status_t traverse_dynamic_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, const unsigned char *data, int len)
 {
 	const char *name = desc->desc;
 
@@ -1445,7 +1368,7 @@ static int traverse_dynamic_fields(suunto_eonsteel_parser_t *eon, const struct t
 			}
 		}
 	}
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
 /*
@@ -1500,7 +1423,7 @@ static void initialize_field_caches(suunto_eonsteel_parser_t *eon)
 
 	// The internal time fields are in ms and have to be added up
 	// like that. At the end, we translate it back to seconds.
-	eon->cache.divetime /= 1000;
+	eon->cache.DIVETIME /= 1000;
 }
 
 static void show_descriptor(suunto_eonsteel_parser_t *eon, int nr, struct type_desc *desc)
