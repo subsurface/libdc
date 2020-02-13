@@ -28,6 +28,7 @@
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"
+#include "field-cache.h"
 
 #define C_ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
 
@@ -96,64 +97,33 @@ typedef struct garmin_parser_t {
 	struct type_desc type_desc[MAXTYPE];
 
 	// Field cache
+	unsigned int initialized;
+	unsigned int sub_sport;
+	unsigned int serial;
+	unsigned int product;
+	unsigned int firmware;
+	unsigned int protocol;
+	unsigned int profile;
+	unsigned int time;
+	int utc_offset, time_offset;
+
+	// I count nine (!) different GPS fields Hmm.
+	// Reporting all of them just to try to figure
+	// out what is what.
 	struct {
-		unsigned int initialized;
-		unsigned int sub_sport;
-		unsigned int serial;
-		unsigned int product;
-		unsigned int firmware;
-		unsigned int protocol;
-		unsigned int profile;
-		unsigned int time;
-		int utc_offset, time_offset;
-
-		// dc_get_field() data
-		unsigned int DIVETIME;
-		double MAXDEPTH;
-		double AVGDEPTH;
-		unsigned int GASMIX_COUNT;
-		dc_salinity_t SALINITY;
-		dc_gasmix_t gasmix[MAXGASES];
-
-		// I count nine (!) different GPS fields Hmm.
-		// Reporting all of them just to try to figure
-		// out what is what.
 		struct {
-			struct {
-				struct pos entry, exit;
-				struct pos NE, SW; // NE, SW corner
-			} SESSION;
-			struct {
-				struct pos entry, exit;
-				struct pos some, other;
-			} LAP;
-			struct pos RECORD;
-		} gps;
+			struct pos entry, exit;
+			struct pos NE, SW; // NE, SW corner
+		} SESSION;
+		struct {
+			struct pos entry, exit;
+			struct pos some, other;
+		} LAP;
+		struct pos RECORD;
+	} gps;
 
-		dc_salinity_t salinity;
-		double surface_pressure;
-		dc_divemode_t divemode;
-		double lowsetpoint;
-		double highsetpoint;
-		double customsetpoint;
-		dc_field_string_t strings[MAXSTRINGS];
-		dc_tankinfo_t tankinfo[MAXGASES];
-		double tanksize[MAXGASES];
-		double tankworkingpressure[MAXGASES];
-	} cache;
+	struct dc_field_cache cache;
 } garmin_parser_t;
-
-// I *really* need to make this generic
-static void add_string(garmin_parser_t *garmin, const char *desc, const char *data);
-static void add_string_fmt(garmin_parser_t *garmin, const char *desc, const char *fmt, ...);
-
-/*
- * Macro to make it easy to set DC_FIELD_xyz values
- */
-#define ASSIGN_FIELD(name, value) do { \
-	garmin->cache.initialized |= 1u << DC_FIELD_##name; \
-	garmin->cache.name = (value); \
-} while (0)
 
 typedef int (*garmin_data_cb_t)(unsigned char type, const unsigned char *data, int len, void *user);
 
@@ -239,20 +209,17 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 			int enabled = record->gas_status > 0;
 			int index = record->index;
 			if (enabled && index < MAXGASES) {
-				garmin->cache.gasmix[index] = record->gasmix;
-				garmin->cache.GASMIX_COUNT = index+1;
+				DC_ASSIGN_IDX(garmin->cache, GASMIX, index, record->gasmix);
+				DC_ASSIGN_FIELD(garmin->cache, GASMIX_COUNT, index+1);
 			}
-			garmin->cache.initialized |= 1 << DC_FIELD_GASMIX;
-			garmin->cache.initialized |= 1 << DC_FIELD_GASMIX_COUNT;
-			garmin->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
 		}
 		if (pending & RECORD_DEVICE_INFO && record->device_index == 0) {
-			garmin->cache.firmware = record->firmware;
-			garmin->cache.serial = record->serial;
-			garmin->cache.product = record->product;
+			garmin->firmware = record->firmware;
+			garmin->serial = record->serial;
+			garmin->product = record->product;
 		}
 		if (pending & RECORD_DECO_MODEL)
-			add_string_fmt(garmin, "Deco model", "Buhlmann ZHL-16C %u/%u", record->gf_low, record->gf_high);
+			dc_field_add_string_fmt(&garmin->cache, "Deco model", "Buhlmann ZHL-16C %u/%u", record->gf_low, record->gf_high);
 		return;
 	}
 
@@ -304,34 +271,6 @@ garmin_parser_create (dc_parser_t **out, dc_context_t *context)
 	*out = (dc_parser_t *) parser;
 
 	return DC_STATUS_SUCCESS;
-}
-
-static void add_string(garmin_parser_t *garmin, const char *desc, const char *value)
-{
-	int i;
-
-	garmin->cache.initialized |= 1 << DC_FIELD_STRING;
-	for (i = 0; i < MAXSTRINGS; i++) {
-		dc_field_string_t *str = garmin->cache.strings+i;
-		if (str->desc)
-			continue;
-		str->desc = desc;
-		str->value = strdup(value);
-		break;
-	}
-}
-
-static void add_string_fmt(garmin_parser_t *garmin, const char *desc, const char *fmt, ...)
-{
-	char buffer[256];
-	va_list ap;
-
-	va_start(ap, fmt);
-	buffer[sizeof(buffer)-1] = 0;
-	(void) vsnprintf(buffer, sizeof(buffer)-1, fmt, ap);
-	va_end(ap);
-
-	add_string(garmin, desc, buffer);
 }
 
 #define DECLARE_FIT_TYPE(name, ctype, inval) \
@@ -419,9 +358,9 @@ DECLARE_FIELD(ANY, timestamp, UINT32)
 		dc_sample_value_t sample = {0};
 
 		// Turn the timestamp relative to the beginning of the dive
-		if (data < garmin->cache.time)
+		if (data < garmin->time)
 			return;
-		data -= garmin->cache.time;
+		data -= garmin->time;
 
 		// Did we already do this?
 		if (data < garmin->record_data.time)
@@ -446,30 +385,30 @@ DECLARE_FIELD(FILE, number, UINT16) { }
 DECLARE_FIELD(FILE, other_time, UINT32) { }
 
 // SESSION msg
-DECLARE_FIELD(SESSION, start_time, UINT32) { garmin->cache.time = data; }
-DECLARE_FIELD(SESSION, start_pos_lat, SINT32)	{ garmin->cache.gps.SESSION.entry.lat = data; }
-DECLARE_FIELD(SESSION, start_pos_long, SINT32)	{ garmin->cache.gps.SESSION.entry.lon = data; }
-DECLARE_FIELD(SESSION, nec_pos_lat, SINT32)	{ garmin->cache.gps.SESSION.NE.lat = data; }
-DECLARE_FIELD(SESSION, nec_pos_long, SINT32)	{ garmin->cache.gps.SESSION.NE.lon = data; }
-DECLARE_FIELD(SESSION, swc_pos_lat, SINT32)	{ garmin->cache.gps.SESSION.SW.lat = data; }
-DECLARE_FIELD(SESSION, swc_pos_long, SINT32)	{ garmin->cache.gps.SESSION.SW.lon = data; }
-DECLARE_FIELD(SESSION, exit_pos_lat, SINT32)	{ garmin->cache.gps.SESSION.exit.lat = data; }
-DECLARE_FIELD(SESSION, exit_pos_long, SINT32)	{ garmin->cache.gps.SESSION.exit.lon = data; }
+DECLARE_FIELD(SESSION, start_time, UINT32) { garmin->time = data; }
+DECLARE_FIELD(SESSION, start_pos_lat, SINT32)	{ garmin->gps.SESSION.entry.lat = data; }
+DECLARE_FIELD(SESSION, start_pos_long, SINT32)	{ garmin->gps.SESSION.entry.lon = data; }
+DECLARE_FIELD(SESSION, nec_pos_lat, SINT32)	{ garmin->gps.SESSION.NE.lat = data; }
+DECLARE_FIELD(SESSION, nec_pos_long, SINT32)	{ garmin->gps.SESSION.NE.lon = data; }
+DECLARE_FIELD(SESSION, swc_pos_lat, SINT32)	{ garmin->gps.SESSION.SW.lat = data; }
+DECLARE_FIELD(SESSION, swc_pos_long, SINT32)	{ garmin->gps.SESSION.SW.lon = data; }
+DECLARE_FIELD(SESSION, exit_pos_lat, SINT32)	{ garmin->gps.SESSION.exit.lat = data; }
+DECLARE_FIELD(SESSION, exit_pos_long, SINT32)	{ garmin->gps.SESSION.exit.lon = data; }
 
 // LAP msg
 DECLARE_FIELD(LAP, start_time, UINT32) { }
-DECLARE_FIELD(LAP, start_pos_lat, SINT32)	{ garmin->cache.gps.LAP.entry.lat = data; }
-DECLARE_FIELD(LAP, start_pos_long, SINT32)	{ garmin->cache.gps.LAP.entry.lon = data; }
-DECLARE_FIELD(LAP, end_pos_lat, SINT32)		{ garmin->cache.gps.LAP.exit.lat = data; }
-DECLARE_FIELD(LAP, end_pos_long, SINT32)	{ garmin->cache.gps.LAP.exit.lon = data; }
-DECLARE_FIELD(LAP, some_pos_lat, SINT32)	{ garmin->cache.gps.LAP.some.lat = data; }
-DECLARE_FIELD(LAP, some_pos_long, SINT32)	{ garmin->cache.gps.LAP.some.lon = data; }
-DECLARE_FIELD(LAP, other_pos_lat, SINT32)	{ garmin->cache.gps.LAP.other.lat = data; }
-DECLARE_FIELD(LAP, other_pos_long, SINT32)	{ garmin->cache.gps.LAP.other.lon = data; }
+DECLARE_FIELD(LAP, start_pos_lat, SINT32)	{ garmin->gps.LAP.entry.lat = data; }
+DECLARE_FIELD(LAP, start_pos_long, SINT32)	{ garmin->gps.LAP.entry.lon = data; }
+DECLARE_FIELD(LAP, end_pos_lat, SINT32)		{ garmin->gps.LAP.exit.lat = data; }
+DECLARE_FIELD(LAP, end_pos_long, SINT32)	{ garmin->gps.LAP.exit.lon = data; }
+DECLARE_FIELD(LAP, some_pos_lat, SINT32)	{ garmin->gps.LAP.some.lat = data; }
+DECLARE_FIELD(LAP, some_pos_long, SINT32)	{ garmin->gps.LAP.some.lon = data; }
+DECLARE_FIELD(LAP, other_pos_lat, SINT32)	{ garmin->gps.LAP.other.lat = data; }
+DECLARE_FIELD(LAP, other_pos_long, SINT32)	{ garmin->gps.LAP.other.lon = data; }
 
 // RECORD msg
-DECLARE_FIELD(RECORD, position_lat, SINT32)	{ garmin->cache.gps.RECORD.lat = data; }
-DECLARE_FIELD(RECORD, position_long, SINT32)	{ garmin->cache.gps.RECORD.lon = data; }
+DECLARE_FIELD(RECORD, position_lat, SINT32)	{ garmin->gps.RECORD.lat = data; }
+DECLARE_FIELD(RECORD, position_long, SINT32)	{ garmin->gps.RECORD.lon = data; }
 DECLARE_FIELD(RECORD, altitude, UINT16) { }		// 5 *m + 500 ?
 DECLARE_FIELD(RECORD, heart_rate, UINT8)		// bpm
 {
@@ -535,8 +474,8 @@ DECLARE_FIELD(RECORD, cns_load, UINT8)
 DECLARE_FIELD(RECORD, n2_load, UINT16) { }		// percent
 
 // DEVICE_SETTINGS
-DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->cache.utc_offset = (SINT32) data; }	// wrong type in FIT
-DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->cache.time_offset = (SINT32) data; }	// wrong type in FIT
+DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->utc_offset = (SINT32) data; }	// wrong type in FIT
+DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->time_offset = (SINT32) data; }	// wrong type in FIT
 
 // DEVICE_INFO
 // collect the data and then use the record if it is for device_index 0
@@ -562,7 +501,7 @@ DECLARE_FIELD(DEVICE_INFO, firmware, UINT16)
 }
 
 // SPORT
-DECLARE_FIELD(SPORT, sub_sport, ENUM) { garmin->cache.sub_sport = (ENUM) data; }
+DECLARE_FIELD(SPORT, sub_sport, ENUM) { garmin->sub_sport = (ENUM) data; }
 
 // DIVE_GAS - uses msg index
 DECLARE_FIELD(DIVE_GAS, helium, UINT8)
@@ -582,8 +521,8 @@ DECLARE_FIELD(DIVE_GAS, status, ENUM)
 }
 
 // DIVE_SUMMARY
-DECLARE_FIELD(DIVE_SUMMARY, avg_depth, UINT32) { ASSIGN_FIELD(AVGDEPTH, data / 1000.0); }
-DECLARE_FIELD(DIVE_SUMMARY, max_depth, UINT32) { ASSIGN_FIELD(MAXDEPTH, data / 1000.0); }
+DECLARE_FIELD(DIVE_SUMMARY, avg_depth, UINT32) { DC_ASSIGN_FIELD(garmin->cache, AVGDEPTH, data / 1000.0); }
+DECLARE_FIELD(DIVE_SUMMARY, max_depth, UINT32) { DC_ASSIGN_FIELD(garmin->cache, MAXDEPTH, data / 1000.0); }
 DECLARE_FIELD(DIVE_SUMMARY, surface_interval, UINT32) { }	// sec
 DECLARE_FIELD(DIVE_SUMMARY, start_cns, UINT8) { }		// percent
 DECLARE_FIELD(DIVE_SUMMARY, end_cns, UINT8) { }			// percent
@@ -591,7 +530,7 @@ DECLARE_FIELD(DIVE_SUMMARY, start_n2, UINT16) { }		// percent
 DECLARE_FIELD(DIVE_SUMMARY, end_n2, UINT16) { }			// percent
 DECLARE_FIELD(DIVE_SUMMARY, o2_toxicity, UINT16) { }		// OTUs
 DECLARE_FIELD(DIVE_SUMMARY, dive_number, UINT32) { }
-DECLARE_FIELD(DIVE_SUMMARY, bottom_time, UINT32) { ASSIGN_FIELD(DIVETIME, data / 1000); }
+DECLARE_FIELD(DIVE_SUMMARY, bottom_time, UINT32) { DC_ASSIGN_FIELD(garmin->cache, DIVETIME, data / 1000); }
 
 // DIVE_SETTINGS
 DECLARE_FIELD(DIVE_SETTINGS, name, STRING) { }
@@ -1163,8 +1102,8 @@ traverse_data(struct garmin_parser_t *garmin)
 	if (hdrsize < 12 || datasize > len || datasize + hdrsize + 2 > len)
 		return DC_STATUS_IO;
 
-	garmin->cache.protocol = protocol;
-	garmin->cache.profile = profile;
+	garmin->protocol = protocol;
+	garmin->profile = profile;
 
 	data += hdrsize;
 	time = 0;
@@ -1235,7 +1174,7 @@ static void add_gps_string(garmin_parser_t *garmin, const char *desc, struct pos
 		tmp *= 1000000;
 		lonfrac = tmp >> 32;
 
-		add_string_fmt(garmin, desc, "%s%d.%06d, %s%d.%06d",
+		dc_field_add_string_fmt(&garmin->cache, desc, "%s%d.%06d, %s%d.%06d",
 			latsign ? "-" : "", lat, latfrac,
 			lonsign ? "-" : "", lon, lonfrac);
 	}
@@ -1249,11 +1188,11 @@ garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigne
 	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
 
 	if (devinfo_p) {
-		devinfo_p->firmware = garmin->cache.firmware;
-		devinfo_p->serial = garmin->cache.serial;
-		devinfo_p->model = garmin->cache.product;
+		devinfo_p->firmware = garmin->firmware;
+		devinfo_p->serial = garmin->serial;
+		devinfo_p->model = garmin->product;
 	}
-	switch (garmin->cache.sub_sport) {
+	switch (garmin->sub_sport) {
 	case 53:	// Single-gas
 	case 54:	// Multi-gas
 	case 55:	// Gauge
@@ -1283,18 +1222,18 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 
 	traverse_data(garmin);
 	// These seem to be the "real" GPS dive coordinates
-	add_gps_string(garmin, "GPS1", &garmin->cache.gps.SESSION.entry);
-	add_gps_string(garmin, "GPS2", &garmin->cache.gps.SESSION.exit);
+	add_gps_string(garmin, "GPS1", &garmin->gps.SESSION.entry);
+	add_gps_string(garmin, "GPS2", &garmin->gps.SESSION.exit);
 
-	add_gps_string(garmin, "Session NE corner GPS", &garmin->cache.gps.SESSION.NE);
-	add_gps_string(garmin, "Session SW corner GPS", &garmin->cache.gps.SESSION.SW);
+	add_gps_string(garmin, "Session NE corner GPS", &garmin->gps.SESSION.NE);
+	add_gps_string(garmin, "Session SW corner GPS", &garmin->gps.SESSION.SW);
 
-	add_gps_string(garmin, "Lap entry GPS", &garmin->cache.gps.LAP.entry);
-	add_gps_string(garmin, "Lap exit GPS", &garmin->cache.gps.LAP.exit);
-	add_gps_string(garmin, "Lap some GPS", &garmin->cache.gps.LAP.some);
-	add_gps_string(garmin, "Lap other GPS", &garmin->cache.gps.LAP.other);
+	add_gps_string(garmin, "Lap entry GPS", &garmin->gps.LAP.entry);
+	add_gps_string(garmin, "Lap exit GPS", &garmin->gps.LAP.exit);
+	add_gps_string(garmin, "Lap some GPS", &garmin->gps.LAP.some);
+	add_gps_string(garmin, "Lap other GPS", &garmin->gps.LAP.other);
 
-	add_gps_string(garmin, "Record GPS", &garmin->cache.gps.RECORD);
+	add_gps_string(garmin, "Record GPS", &garmin->gps.RECORD);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -1304,10 +1243,10 @@ static dc_status_t
 garmin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 {
 	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
-	dc_ticks_t time = 631065600 + (dc_ticks_t) garmin->cache.time;
+	dc_ticks_t time = 631065600 + (dc_ticks_t) garmin->time;
 
 	// Show local time (time_offset)
-	dc_datetime_gmtime(datetime, time + garmin->cache.time_offset);
+	dc_datetime_gmtime(datetime, time + garmin->time_offset);
 	datetime->timezone = DC_TIMEZONE_NONE;
 
 	return DC_STATUS_SUCCESS;
@@ -1325,13 +1264,6 @@ static dc_status_t get_string_field(dc_field_string_t *strings, unsigned idx, dc
 	return DC_STATUS_UNSUPPORTED;
 }
 
-// Ugly define thing makes the code much easier to read
-// I'd love to use __typeof__, but that's a gcc'ism
-#define field_value(p, NAME) \
-	(memcpy((p), &garmin->cache.NAME, sizeof(garmin->cache.NAME)), DC_STATUS_SUCCESS)
-// Hacky hack hack
-#define GASMIX gasmix[flags]
-
 static dc_status_t
 garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
 {
@@ -1339,6 +1271,8 @@ garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned i
 
 	if (!value)
 		return DC_STATUS_INVALIDARGS;
+	if (type == DC_FIELD_TANK_COUNT)
+		type = DC_FIELD_GASMIX_COUNT;
 
 	/* This whole sequence should be standardized */
 	if (!(garmin->cache.initialized & (1 << type)))
@@ -1346,20 +1280,19 @@ garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned i
 
 	switch (type) {
 	case DC_FIELD_DIVETIME:
-		return field_value(value, DIVETIME);
+		return DC_FIELD_VALUE(garmin->cache, value, DIVETIME);
 	case DC_FIELD_MAXDEPTH:
-		return field_value(value, MAXDEPTH);
+		return DC_FIELD_VALUE(garmin->cache, value, MAXDEPTH);
 	case DC_FIELD_AVGDEPTH:
-		return field_value(value, AVGDEPTH);
+		return DC_FIELD_VALUE(garmin->cache, value, AVGDEPTH);
 	case DC_FIELD_GASMIX_COUNT:
-	case DC_FIELD_TANK_COUNT:
-		return field_value(value, GASMIX_COUNT);
+		return DC_FIELD_VALUE(garmin->cache, value, GASMIX_COUNT);
 	case DC_FIELD_GASMIX:
 		if (flags >= MAXGASES)
 			return DC_STATUS_UNSUPPORTED;
-		return field_value(value, GASMIX);
+		return DC_FIELD_INDEX(garmin->cache, value, GASMIX, flags);
 	case DC_FIELD_SALINITY:
-		return field_value(value, SALINITY);
+		return DC_FIELD_VALUE(garmin->cache, value, SALINITY);
 	case DC_FIELD_ATMOSPHERIC:
 		return DC_STATUS_UNSUPPORTED;
 	case DC_FIELD_DIVEMODE:
@@ -1367,7 +1300,7 @@ garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned i
 	case DC_FIELD_TANK:
 		return DC_STATUS_UNSUPPORTED;
 	case DC_FIELD_STRING:
-		return get_string_field(garmin->cache.strings, flags, (dc_field_string_t *)value);
+		return dc_field_get_string(&garmin->cache, flags, (dc_field_string_t *)value);
 	default:
 		return DC_STATUS_UNSUPPORTED;
 	}
