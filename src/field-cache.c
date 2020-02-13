@@ -13,7 +13,7 @@
  * dynamically on the stack or whatever without having to
  * worry about it.
  */
-void dc_field_add_string(dc_field_cache_t *cache, const char *desc, const char *value)
+dc_status_t dc_field_add_string(dc_field_cache_t *cache, const char *desc, const char *value)
 {
 	int i;
 
@@ -22,23 +22,33 @@ void dc_field_add_string(dc_field_cache_t *cache, const char *desc, const char *
 		dc_field_string_t *str = cache->strings+i;
 		if (str->desc)
 			continue;
-		str->desc = desc;
 		str->value = strdup(value);
-		break;
+		if (!str->value)
+			return DC_STATUS_NOMEMORY;
+		str->desc = desc;
+		return DC_STATUS_SUCCESS;
 	}
+	return DC_STATUS_INVALIDARGS;
 }
 
-void dc_field_add_string_fmt(dc_field_cache_t *cache, const char *desc, const char *fmt, ...)
+dc_status_t dc_field_add_string_fmt(dc_field_cache_t *cache, const char *desc, const char *fmt, ...)
 {
 	char buffer[256];
 	va_list ap;
 
+	/*
+	 * We ignore the return value from vsnprintf, and we
+	 * always NUL-terminate the destination buffer ourselves.
+	 *
+	 * That way we don't have to worry about random bad legacy
+	 * implementations.
+	 */
 	va_start(ap, fmt);
 	buffer[sizeof(buffer)-1] = 0;
 	(void) vsnprintf(buffer, sizeof(buffer)-1, fmt, ap);
 	va_end(ap);
 
-	dc_field_add_string(cache, desc, buffer);
+	return dc_field_add_string(cache, desc, buffer);
 }
 
 dc_status_t dc_field_get_string(dc_field_cache_t *cache, unsigned idx, dc_field_string_t *value)

@@ -5,6 +5,7 @@
 typedef struct dc_field_cache {
 	unsigned int initialized;
 
+	// DC_GET_FIELD_xyz
 	unsigned int DIVETIME;
 	double MAXDEPTH;
 	double AVGDEPTH;
@@ -14,11 +15,24 @@ typedef struct dc_field_cache {
 	dc_salinity_t SALINITY;
 	dc_gasmix_t GASMIX[MAXGASES];
 
+	// misc - clean me up!
+	double lowsetpoint;
+	double highsetpoint;
+	double customsetpoint;
+
+	// This (slong with GASMIX) should be something like
+	//     dc_tank_t TANK[MAXGASES]
+	// but that's for later
+	dc_tankinfo_t tankinfo[MAXGASES];
+	double tanksize[MAXGASES];
+	double tankworkingpressure[MAXGASES];
+
+	// DC_GET_FIELD_STRING
 	dc_field_string_t strings[MAXSTRINGS];
 } dc_field_cache_t;
 
-void dc_field_add_string(dc_field_cache_t *, const char *desc, const char *data);
-void dc_field_add_string_fmt(dc_field_cache_t *, const char *desc, const char *fmt, ...);
+dc_status_t dc_field_add_string(dc_field_cache_t *, const char *desc, const char *data);
+dc_status_t dc_field_add_string_fmt(dc_field_cache_t *, const char *desc, const char *fmt, ...);
 dc_status_t dc_field_get_string(dc_field_cache_t *, unsigned idx, dc_field_string_t *value);
 
 /*
