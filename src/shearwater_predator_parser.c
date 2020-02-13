@@ -35,6 +35,7 @@
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"
+#include "field-cache.h"
 
 #define ISINSTANCE(parser)	( \
 	dc_parser_isinstance((parser), &shearwater_predator_parser_vtable) || \
@@ -123,13 +124,12 @@ struct shearwater_predator_parser_t {
 	unsigned int calibrated;
 	double calibration[3];
 	unsigned int serial;
-	dc_divemode_t mode;
 	unsigned int units;
 	unsigned int atmospheric;
 	unsigned int density;
 
-	/* String fields */
-	dc_field_string_t strings[MAXSTRINGS];
+	/* Generic field cache */
+	struct dc_field_cache cache;
 };
 
 static dc_status_t shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -233,10 +233,11 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 	for (unsigned int i = 0; i < 3; ++i) {
 		parser->calibration[i] = 0.0;
 	}
-	parser->mode = DC_DIVEMODE_OC;
 	parser->units = METRIC;
 	parser->density = 1025;
 	parser->atmospheric = ATM / (BAR / 1000);
+
+	DC_ASSIGN_FIELD(parser->cache, DIVEMODE, DC_DIVEMODE_OC);
 
 	*out = (dc_parser_t *) parser;
 
@@ -290,10 +291,11 @@ shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char 
 	for (unsigned int i = 0; i < 3; ++i) {
 		parser->calibration[i] = 0.0;
 	}
-	parser->mode = DC_DIVEMODE_OC;
 	parser->units = METRIC;
 	parser->density = 1025;
 	parser->atmospheric = ATM / (BAR / 1000);
+
+	DC_ASSIGN_FIELD(parser->cache, DIVEMODE, DC_DIVEMODE_OC);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -318,48 +320,6 @@ shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *d
 	datetime->timezone = DC_TIMEZONE_NONE;
 
 	return DC_STATUS_SUCCESS;
-}
-
-/*
- * These string cache interfaces should be some generic
- * library rather than copied for all the dive computers.
- *
- * This is just copied from the EON Steel code.
- */
-static void
-add_string(shearwater_predator_parser_t *parser, const char *desc, const char *value)
-{
-	int i;
-
-	for (i = 0; i < MAXSTRINGS; i++) {
-		dc_field_string_t *str = parser->strings+i;
-		if (str->desc)
-			continue;
-		str->desc = desc;
-		str->value = strdup(value);
-		break;
-	}
-}
-
-static void
-add_string_fmt(shearwater_predator_parser_t *parser, const char *desc, const char *fmt, ...)
-{
-	char buffer[256];
-	va_list ap;
-
-	/*
-	 * We ignore the return value from vsnprintf, and we
-	 * always NUL-terminate the destination buffer ourselves.
-	 *
-	 * That way we don't have to worry about random bad legacy
-	 * implementations.
-	 */
-	va_start(ap, fmt);
-	buffer[sizeof(buffer)-1] = 0;
-	(void) vsnprintf(buffer, sizeof(buffer)-1, fmt, ap);
-	va_end(ap);
-
-	return add_string(parser, desc, buffer);
 }
 
 // Show the battery state
@@ -387,7 +347,7 @@ add_battery_info(shearwater_predator_parser_t *parser, const char *desc, unsigne
 			"critical",	// 110 - warning and critical
 			"critical",	// 111 - normal, warning and critical
 		};
-		add_string(parser, desc, states[state]);
+		dc_field_add_string(&parser->cache, desc, states[state]);
 	}
 }
 
@@ -399,16 +359,16 @@ add_deco_model(shearwater_predator_parser_t *parser, const unsigned char *data)
 
 	switch	(data[idx_deco_model]) {
 	case 0:
-		add_string_fmt(parser, "Deco model", "GF %u/%u", data[4], data[5]);
+		dc_field_add_string_fmt(&parser->cache, "Deco model", "GF %u/%u", data[4], data[5]);
 		break;
 	case 1:
-		add_string_fmt(parser, "Deco model", "VPM-B +%u", data[idx_deco_model + 1]);
+		dc_field_add_string_fmt(&parser->cache, "Deco model", "VPM-B +%u", data[idx_deco_model + 1]);
 		break;
 	case 2:
-		add_string_fmt(parser, "Deco model", "VPM-B/GFS +%u %u%%", data[idx_deco_model + 1], data[idx_gfs]);
+		dc_field_add_string_fmt(&parser->cache, "Deco model", "VPM-B/GFS +%u %u%%", data[idx_deco_model + 1], data[idx_gfs]);
 		break;
 	default:
-		add_string_fmt(parser, "Deco model", "Unknown model %d", data[idx_deco_model]);
+		dc_field_add_string_fmt(&parser->cache, "Deco model", "Unknown model %d", data[idx_deco_model]);
 	}
 }
 
@@ -421,22 +381,22 @@ add_battery_type(shearwater_predator_parser_t *parser, const unsigned char *data
 	unsigned int idx_battery_type = parser->pnf ? parser->opening[4] + 9 : 120;
 	switch (data[idx_battery_type]) {
 	case 1:
-		add_string(parser, "Battery type", "1.5V Alkaline");
+		dc_field_add_string(&parser->cache, "Battery type", "1.5V Alkaline");
 		break;
 	case 2:
-		add_string(parser, "Battery type", "1.5V Lithium");
+		dc_field_add_string(&parser->cache, "Battery type", "1.5V Lithium");
 		break;
 	case 3:
-		add_string(parser, "Battery type", "1.2V NiMH");
+		dc_field_add_string(&parser->cache, "Battery type", "1.2V NiMH");
 		break;
 	case 4:
-		add_string(parser, "Battery type", "3.6V Saft");
+		dc_field_add_string(&parser->cache, "Battery type", "3.6V Saft");
 		break;
 	case 5:
-		add_string(parser, "Battery type", "3.7V Li-Ion");
+		dc_field_add_string(&parser->cache, "Battery type", "3.7V Li-Ion");
 		break;
 	default:
-		add_string_fmt(parser, "Battery type", "unknown type %d", data[idx_battery_type]);
+		dc_field_add_string_fmt(&parser->cache, "Battery type", "unknown type %d", data[idx_battery_type]);
 		break;
 	}
 }
@@ -451,7 +411,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	if (parser->cached) {
 		return DC_STATUS_SUCCESS;
 	}
-	memset(parser->strings, 0, sizeof(parser->strings));
+	memset(&parser->cache, 0, sizeof(parser->cache));
 
 	// Log versions before 6 weren't reliably stored in the data, but
 	// 6 is also the oldest version that we assume in our code
@@ -616,7 +576,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		}
 	}
 
-	add_string_fmt(parser, "Logversion", "%d%s", logversion, pnf ? "(PNF)" : "");
+	dc_field_add_string_fmt(&parser->cache, "Logversion", "%d%s", logversion, pnf ? "(PNF)" : "");
 
 	// Cache sensor calibration for later use
 	unsigned int nsensors = 0, ndefaults = 0;
@@ -647,11 +607,11 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		WARNING (abstract->context, "Disabled all O2 sensors due to a default calibration value.");
 		parser->calibrated = 0;
 		if (mode != DC_DIVEMODE_OC)
-			add_string(parser, "PPO2 source", "voted/averaged");
+			dc_field_add_string(&parser->cache, "PPO2 source", "voted/averaged");
 	} else {
 		parser->calibrated = data[base];
 		if (mode != DC_DIVEMODE_OC)
-			add_string(parser, "PPO2 source", "cells");
+			dc_field_add_string(&parser->cache, "PPO2 source", "cells");
 	}
 
 	// Cache the data for later use.
@@ -673,18 +633,19 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			parser->tankidx[i] = UNDEFINED;
 		}
 	}
-	parser->mode = mode;
 	parser->units = data[parser->opening[0] + 8];
 	parser->atmospheric = array_uint16_be (data + parser->opening[1] + (parser->pnf ? 16 : 47));
 	parser->density = array_uint16_be (data + parser->opening[3] + (parser->pnf ? 3 : 83));
 	parser->cached = 1;
 
-	add_string_fmt(parser, "Serial", "%08x", parser->serial);
+	DC_ASSIGN_FIELD(parser->cache, DIVEMODE, mode);
+
+	dc_field_add_string_fmt(&parser->cache, "Serial", "%08x", parser->serial);
 	// bytes 1-31 are identical in all formats
-	add_string_fmt(parser, "FW Version", "%2x", data[19]);
+	dc_field_add_string_fmt(&parser->cache, "FW Version", "%2x", data[19]);
 	add_deco_model(parser, data);
 	add_battery_type(parser, data);
-	add_string_fmt(parser, "Battery at end", "%.1f V", data[9] / 10.0);
+	dc_field_add_string_fmt(&parser->cache, "Battery at end", "%.1f V", data[9] / 10.0);
 	add_battery_info(parser, "T1 battery", tank[0].battery);
 	add_battery_info(parser, "T2 battery", tank[1].battery);
 
@@ -754,17 +715,9 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			*((double *) value) = parser->atmospheric / 1000.0;
 			break;
 		case DC_FIELD_DIVEMODE:
-			*((dc_divemode_t *) value) = parser->mode;
-			break;
+			return DC_FIELD_VALUE(parser->cache, value, DIVEMODE);
 		case DC_FIELD_STRING:
-			if (flags < MAXSTRINGS) {
-				dc_field_string_t *p = parser->strings + flags;
-				if (p->desc) {
-					*string = *p;
-					break;
-				}
-			}
-			return DC_STATUS_UNSUPPORTED;
+			return dc_field_get_string(&parser->cache, flags, string);
 		default:
 			return DC_STATUS_UNSUPPORTED;
 		}
