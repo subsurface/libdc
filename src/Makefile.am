@@ -69,6 +69,7 @@ libdivecomputer_la_SOURCES = \
 	rbstream.h rbstream.c \
 	checksum.h checksum.c \
 	array.h array.c \
+	field-cache.h field-cache.c \
 	buffer.c \
 	cochran_commander.h cochran_commander.c cochran_commander_parser.c \
 	tecdiving_divecomputereu.h tecdiving_divecomputereu.c tecdiving_divecomputereu_parser.c \

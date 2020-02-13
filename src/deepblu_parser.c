@@ -28,16 +28,13 @@
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"
+#include "field-cache.h"
 
 #define C_ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
 
 #define MAXFIELDS 128
 
 struct msg_desc;
-
-#define MAXTYPE 16
-#define MAXGASES 16
-#define MAXSTRINGS 32
 
 typedef struct deepblu_parser_t {
 	dc_parser_t base;
@@ -48,36 +45,9 @@ typedef struct deepblu_parser_t {
 	// 20 sec for scuba, 1 sec for freedives
 	int sample_interval;
 
-	// Field cache
-	struct {
-		unsigned int initialized;
-
-		// dc_get_field() data
-		unsigned int DIVETIME;
-		double MAXDEPTH;
-		double AVGDEPTH;
-		double ATMOSPHERIC;
-		dc_divemode_t DIVEMODE;
-		unsigned int GASMIX_COUNT;
-		dc_salinity_t SALINITY;
-		dc_gasmix_t gasmix[MAXGASES];
-
-		dc_field_string_t strings[MAXSTRINGS];
-	} cache;
+	// Common fields
+	struct dc_field_cache cache;
 } deepblu_parser_t;
-
-// I *really* need to make this generic
-static void add_string(deepblu_parser_t *deepblu, const char *desc, const char *data);
-static void add_string_fmt(deepblu_parser_t *deepblu, const char *desc, const char *fmt, ...);
-
-/*
- * Macro to make it easy to set DC_FIELD_xyz values
- */
-#define ASSIGN_FIELD(name, value) do { \
-	deepblu->cache.initialized |= 1u << DC_FIELD_##name; \
-	deepblu->cache.name = (value); \
-} while (0)
-
 
 static dc_status_t deepblu_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t deepblu_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
@@ -114,41 +84,6 @@ deepblu_parser_create (dc_parser_t **out, dc_context_t *context)
 	return DC_STATUS_SUCCESS;
 }
 
-/*
- * FIXME! This should all be generic.
- *
- * Now it's just copied between all the different
- * dive computers that support the strings..
- */
-static void add_string(deepblu_parser_t *deepblu, const char *desc, const char *value)
-{
-	int i;
-
-	deepblu->cache.initialized |= 1 << DC_FIELD_STRING;
-	for (i = 0; i < MAXSTRINGS; i++) {
-		dc_field_string_t *str = deepblu->cache.strings+i;
-		if (str->desc)
-			continue;
-		str->desc = desc;
-		str->value = strdup(value);
-		break;
-	}
-}
-
-static void add_string_fmt(deepblu_parser_t *deepblu, const char *desc, const char *fmt, ...)
-{
-	char buffer[256];
-	va_list ap;
-
-	va_start(ap, fmt);
-	buffer[sizeof(buffer)-1] = 0;
-	(void) vsnprintf(buffer, sizeof(buffer)-1, fmt, ap);
-	va_end(ap);
-
-	add_string(deepblu, desc, buffer);
-}
-
-
 static double
 pressure_to_depth(unsigned int mbar)
 {
@@ -169,6 +104,7 @@ deepblu_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsig
 	const unsigned char *hdr = data;
 	const unsigned char *profile = data + 256;
 	unsigned int divetime, maxpressure;
+	dc_gasmix_t gasmix = {0, };
 
 	if (size < 256)
 		return DC_STATUS_IO;
@@ -189,19 +125,19 @@ deepblu_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsig
 	case 2:
 		// SCUBA - divetime in minutes
 		divetime *= 60;
-		deepblu->cache.gasmix[0].oxygen = data[3] / 100.0;
-		deepblu->cache.initialized |= 1u << DC_FIELD_GASMIX;
-		ASSIGN_FIELD(GASMIX_COUNT, 1);
-		ASSIGN_FIELD(DIVEMODE, DC_DIVEMODE_OC);
+		gasmix.oxygen = data[3] / 100.0;
+		DC_ASSIGN_IDX(deepblu->cache, GASMIX, 0, gasmix);
+		DC_ASSIGN_FIELD(deepblu->cache, GASMIX_COUNT, 1);
+		DC_ASSIGN_FIELD(deepblu->cache, DIVEMODE, DC_DIVEMODE_OC);
 		break;
 	case 3:
 		// GAUGE - divetime in minutes
 		divetime *= 60;
-		ASSIGN_FIELD(DIVEMODE, DC_DIVEMODE_GAUGE);
+		DC_ASSIGN_FIELD(deepblu->cache, DIVEMODE, DC_DIVEMODE_GAUGE);
 		break;
 	case 4:
 		// FREEDIVE - divetime in seconds
-		ASSIGN_FIELD(DIVEMODE, DC_DIVEMODE_FREEDIVE);
+		DC_ASSIGN_FIELD(deepblu->cache, DIVEMODE, DC_DIVEMODE_FREEDIVE);
 		deepblu->sample_interval = 1;
 		break;
 	default:
@@ -214,8 +150,8 @@ deepblu_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsig
 
 	maxpressure = hdr[22] + 256*hdr[23];	// Maxpressure in millibar
 
-	ASSIGN_FIELD(DIVETIME, divetime);
-	ASSIGN_FIELD(MAXDEPTH, pressure_to_depth(maxpressure));
+	DC_ASSIGN_FIELD(deepblu->cache, DIVETIME, divetime);
+	DC_ASSIGN_FIELD(deepblu->cache, MAXDEPTH, pressure_to_depth(maxpressure));
 
 	return DC_STATUS_SUCCESS;
 }
@@ -263,25 +199,6 @@ deepblu_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 	return DC_STATUS_SUCCESS;
 }
 
-static dc_status_t get_string_field(dc_field_string_t *strings, unsigned idx, dc_field_string_t *value)
-{
-	if (idx < MAXSTRINGS) {
-		dc_field_string_t *res = strings+idx;
-		if (res->desc && res->value) {
-			*value = *res;
-			return DC_STATUS_SUCCESS;
-		}
-	}
-	return DC_STATUS_UNSUPPORTED;
-}
-
-// Ugly define thing makes the code much easier to read
-// I'd love to use __typeof__, but that's a gcc'ism
-#define field_value(p, NAME) \
-	(memcpy((p), &deepblu->cache.NAME, sizeof(deepblu->cache.NAME)), DC_STATUS_SUCCESS)
-// Hacky hack hack
-#define GASMIX gasmix[flags]
-
 static dc_status_t
 deepblu_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
 {
@@ -296,28 +213,28 @@ deepblu_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 
 	switch (type) {
 	case DC_FIELD_DIVETIME:
-		return field_value(value, DIVETIME);
+		return DC_FIELD_VALUE(deepblu->cache, value, DIVETIME);
 	case DC_FIELD_MAXDEPTH:
-		return field_value(value, MAXDEPTH);
+		return DC_FIELD_VALUE(deepblu->cache, value, MAXDEPTH);
 	case DC_FIELD_AVGDEPTH:
-		return field_value(value, AVGDEPTH);
+		return DC_FIELD_VALUE(deepblu->cache, value, AVGDEPTH);
 	case DC_FIELD_GASMIX_COUNT:
 	case DC_FIELD_TANK_COUNT:
-		return field_value(value, GASMIX_COUNT);
+		return DC_FIELD_VALUE(deepblu->cache, value, GASMIX_COUNT);
 	case DC_FIELD_GASMIX:
 		if (flags >= MAXGASES)
 			return DC_STATUS_UNSUPPORTED;
-		return field_value(value, GASMIX);
+		return DC_FIELD_INDEX(deepblu->cache, value, GASMIX, flags);
 	case DC_FIELD_SALINITY:
-		return field_value(value, SALINITY);
+		return DC_FIELD_VALUE(deepblu->cache, value, SALINITY);
 	case DC_FIELD_ATMOSPHERIC:
-		return field_value(value, ATMOSPHERIC);
+		return DC_FIELD_VALUE(deepblu->cache, value, ATMOSPHERIC);
 	case DC_FIELD_DIVEMODE:
-		return field_value(value, DIVEMODE);
+		return DC_FIELD_VALUE(deepblu->cache, value, DIVEMODE);
 	case DC_FIELD_TANK:
 		return DC_STATUS_UNSUPPORTED;
 	case DC_FIELD_STRING:
-		return get_string_field(deepblu->cache.strings, flags, (dc_field_string_t *)value);
+		return dc_field_get_string(&deepblu->cache, flags, (dc_field_string_t *)value);
 	default:
 		return DC_STATUS_UNSUPPORTED;
 	}
