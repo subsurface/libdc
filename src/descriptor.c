@@ -306,8 +306,8 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Cressi", "Newton",   DC_FAMILY_CRESSI_LEONARDO, 5, DC_TRANSPORT_SERIAL, NULL},
 	{"Cressi", "Drake",    DC_FAMILY_CRESSI_LEONARDO, 6, DC_TRANSPORT_SERIAL, NULL},
 	/* Cressi Goa */
-	{"Cressi", "Cartesio", DC_FAMILY_CRESSI_GOA, 1, DC_TRANSPORT_SERIAL, NULL},
-	{"Cressi", "Goa",      DC_FAMILY_CRESSI_GOA, 2, DC_TRANSPORT_SERIAL, NULL},
+	{"Cressi", "Cartesio", DC_FAMILY_CRESSI_GOA, 1, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
+	{"Cressi", "Goa",      DC_FAMILY_CRESSI_GOA, 2, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
 	/* Zeagle N2iTiON3 */
 	{"Zeagle",    "N2iTiON3",   DC_FAMILY_ZEAGLE_N2ITION3, 0, DC_TRANSPORT_SERIAL, NULL},
 	{"Apeks",     "Quantum X",  DC_FAMILY_ZEAGLE_N2ITION3, 0, DC_TRANSPORT_SERIAL, NULL},
