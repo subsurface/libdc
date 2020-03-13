@@ -260,6 +260,9 @@ dc_iostream_write (dc_iostream_t *iostream, const void *data, size_t size, size_
 		if (status != DC_STATUS_SUCCESS)
 			return status;
 
+		if (!nbytes)
+			return DC_STATUS_IO;
+
 		data = (void *)(nbytes + (char *)data);
 		size -= nbytes;
 	}
