@@ -216,6 +216,15 @@ dc_iostream_read (dc_iostream_t *iostream, void *data, size_t size, size_t *actu
 			return status;
 
 		/*
+		 * Defensive check: if the read() function returned
+		 * zero bytes, don't loop forever - give up with a
+		 * timeout. Jef pointed out that the subsurface
+		 * qt_serial_read() function can cause this badness..
+		 */
+		if (!nbytes)
+			return DC_STATUS_TIMEOUT;
+
+		/*
 		 * Continue reading to fill up the whole buffer,
 		 * since the reader is not able to handle a
 		 * partial result.
