@@ -29,6 +29,7 @@
 #include "parser-private.h"
 #include "array.h"
 #include "platform.h"
+#include "field-cache.h"
 
 #define C_ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
 
@@ -70,37 +71,14 @@ struct type_desc {
 };
 
 #define MAXTYPE 512
-#define MAXGASES 16
 
 typedef struct suunto_eonsteel_parser_t {
 	dc_parser_t base;
 	struct type_desc type_desc[MAXTYPE];
-	// field cache
-	struct {
-		unsigned int initialized;
-		unsigned int divetime;
-		double maxdepth;
-		double avgdepth;
-		unsigned int ngases;
-		dc_gasmix_t gasmix[MAXGASES];
-		dc_salinity_t salinity;
-		double surface_pressure;
-		dc_divemode_t divemode;
-		double lowsetpoint;
-		double highsetpoint;
-		double customsetpoint;
-		dc_tankinfo_t tankinfo[MAXGASES];
-		double tanksize[MAXGASES];
-		double tankworkingpressure[MAXGASES];
-	} cache;
+	struct dc_field_cache cache;
 } suunto_eonsteel_parser_t;
 
 typedef int (*eon_data_cb_t)(unsigned short type, const struct type_desc *desc, const unsigned char *data, int len, void *user);
-
-typedef struct eon_event_t {
-	const char *name;
-	parser_sample_event_t type;
-} eon_event_t;
 
 static const struct {
 	const char *name;
@@ -165,16 +143,6 @@ static enum eon_sample lookup_descriptor_type(suunto_eonsteel_parser_t *eon, str
 			return type_translation[i].type;
 	}
 	return ES_none;
-}
-
-static parser_sample_event_t lookup_event(const char *name, const eon_event_t events[], size_t n)
-{
-	for (size_t i = 0; i < n; ++i) {
-		if (!strcasecmp(name, events[i].name))
-			return events[i].type;
-	}
-
-	return SAMPLE_EVENT_NONE;
 }
 
 static const char *desc_type_name(enum eon_sample type)
@@ -468,8 +436,6 @@ struct sample_data {
 
 	/* We gather up deco and cylinder pressure information */
 	int gasnr;
-	int tts, ndl;
-	double ceiling;
 };
 
 static void sample_time(struct sample_data *info, unsigned short time_delta)
@@ -507,7 +473,6 @@ static void sample_ndl(struct sample_data *info, short ndl)
 {
 	dc_sample_value_t sample = {0};
 
-	info->ndl = ndl;
 	if (ndl < 0)
 		return;
 
@@ -518,14 +483,27 @@ static void sample_ndl(struct sample_data *info, short ndl)
 
 static void sample_tts(struct sample_data *info, unsigned short tts)
 {
-	if (tts != 0xffff)
-		info->tts = tts;
+	if (tts != 0xffff) {
+		dc_sample_value_t sample = {0};
+		sample.time = tts;
+		if (info->callback) info->callback(DC_SAMPLE_TTS, sample, info->userdata);
+	}
 }
 
 static void sample_ceiling(struct sample_data *info, unsigned short ceiling)
 {
-	if (ceiling != 0xffff)
-		info->ceiling = ceiling / 100.0;
+	if (ceiling != 0xffff) {
+		dc_sample_value_t sample = {0};
+
+		// We don't actually have a time for the
+		// deco stop, we just have a ceiling.
+		//
+		// We'll just say it's one minute.
+		sample.deco.type = DC_DECO_DECOSTOP;
+		sample.deco.time = ceiling ? 60 : 0;
+		sample.deco.depth = ceiling / 100.0;
+		if (info->callback) info->callback(DC_SAMPLE_DECO, sample, info->userdata);
+	}
 }
 
 static void sample_heading(struct sample_data *info, unsigned short heading)
@@ -597,7 +575,7 @@ static void sample_gas_switch_event(struct sample_data *info, unsigned short idx
 	suunto_eonsteel_parser_t *eon = info->eon;
 	dc_sample_value_t sample = {0};
 
-	if (idx < 1 || idx > eon->cache.ngases)
+	if (idx < 1 || idx > eon->cache.GASMIX_COUNT)
 		return;
 
 	sample.gasmix = idx - 1;
@@ -681,26 +659,17 @@ static void sample_event_state_type(const struct type_desc *desc, struct sample_
 static void sample_event_state_value(const struct type_desc *desc, struct sample_data *info, unsigned char value)
 {
 	dc_sample_value_t sample = {0};
-	static const eon_event_t states[] = {
-		{"Wet Outside",                SAMPLE_EVENT_NONE},
-		{"Below Wet Activation Depth", SAMPLE_EVENT_NONE},
-		{"Below Surface",              SAMPLE_EVENT_NONE},
-		{"Dive Active",                SAMPLE_EVENT_NONE},
-		{"Surface Calculation",        SAMPLE_EVENT_NONE},
-		{"Tank pressure available",    SAMPLE_EVENT_NONE},
-		{"Closed Circuit Mode",        SAMPLE_EVENT_NONE},
-	};
 	const char *name;
 
 	name = info->state_type;
 	if (!name)
 		return;
 
-	sample.event.type = lookup_event(name, states, C_ARRAY_SIZE(states));
-	if (sample.event.type == SAMPLE_EVENT_NONE)
-		return;
-
+	sample.event.type = SAMPLE_EVENT_STRING;
+	sample.event.name = name;
 	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	sample.event.flags |= 1 << SAMPLE_FLAGS_SEVERITY_SHIFT;
+
 	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
 }
 
@@ -712,25 +681,6 @@ static void sample_event_notify_type(const struct type_desc *desc, struct sample
 
 static void sample_event_notify_value(const struct type_desc *desc, struct sample_data *info, unsigned char value)
 {
-	static const eon_event_t notifications[] = {
-		{"NoFly Time",         SAMPLE_EVENT_NONE},
-		{"Depth",              SAMPLE_EVENT_NONE},
-		{"Surface Time",       SAMPLE_EVENT_NONE},
-		{"Tissue Level",       SAMPLE_EVENT_TISSUELEVEL},
-		{"Deco",               SAMPLE_EVENT_NONE},
-		{"Deco Window",        SAMPLE_EVENT_NONE},
-		{"Safety Stop Ahead",  SAMPLE_EVENT_NONE},
-		{"Safety Stop",        SAMPLE_EVENT_SAFETYSTOP},
-		{"Safety Stop Broken", SAMPLE_EVENT_CEILING_SAFETYSTOP},
-		{"Deep Stop Ahead",    SAMPLE_EVENT_NONE},
-		{"Deep Stop",          SAMPLE_EVENT_DEEPSTOP},
-		{"Dive Time",          SAMPLE_EVENT_DIVETIME},
-		{"Gas Available",      SAMPLE_EVENT_NONE},
-		{"SetPoint Switch",    SAMPLE_EVENT_NONE},
-		{"Diluent Hypoxia",    SAMPLE_EVENT_NONE},
-		{"Air Time",           SAMPLE_EVENT_NONE},
-		{"Tank Pressure",      SAMPLE_EVENT_NONE},
-	};
 	dc_sample_value_t sample = {0};
 	const char *name;
 
@@ -738,11 +688,11 @@ static void sample_event_notify_value(const struct type_desc *desc, struct sampl
 	if (!name)
 		return;
 
-	sample.event.type = lookup_event(name, notifications, C_ARRAY_SIZE(notifications));
-	if (sample.event.type == SAMPLE_EVENT_NONE)
-		return;
-
+	sample.event.type = SAMPLE_EVENT_STRING;
+	sample.event.name = name;
 	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	sample.event.flags |= 2 << SAMPLE_FLAGS_SEVERITY_SHIFT;
+
 	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
 }
 
@@ -755,22 +705,6 @@ static void sample_event_warning_type(const struct type_desc *desc, struct sampl
 
 static void sample_event_warning_value(const struct type_desc *desc, struct sample_data *info, unsigned char value)
 {
-	static const eon_event_t warnings[] = {
-		{"ICD Penalty",           SAMPLE_EVENT_NONE},
-		{"Deep Stop Penalty",     SAMPLE_EVENT_VIOLATION},
-		{"Mandatory Safety Stop", SAMPLE_EVENT_SAFETYSTOP_MANDATORY},
-		{"OTU250",                SAMPLE_EVENT_NONE},
-		{"OTU300",                SAMPLE_EVENT_NONE},
-		{"CNS80%",                SAMPLE_EVENT_NONE},
-		{"CNS100%",               SAMPLE_EVENT_NONE},
-		{"Max.Depth",             SAMPLE_EVENT_MAXDEPTH},
-		{"Air Time",              SAMPLE_EVENT_AIRTIME},
-		{"Tank Pressure",         SAMPLE_EVENT_NONE},
-		{"Safety Stop Broken",    SAMPLE_EVENT_CEILING_SAFETYSTOP},
-		{"Deep Stop Broken",      SAMPLE_EVENT_CEILING_SAFETYSTOP},
-		{"Ceiling Broken",        SAMPLE_EVENT_CEILING},
-		{"PO2 High",              SAMPLE_EVENT_PO2},
-	};
 	dc_sample_value_t sample = {0};
 	const char *name;
 
@@ -778,11 +712,11 @@ static void sample_event_warning_value(const struct type_desc *desc, struct samp
 	if (!name)
 		return;
 
-	sample.event.type = lookup_event(name, warnings, C_ARRAY_SIZE(warnings));
-	if (sample.event.type == SAMPLE_EVENT_NONE)
-		return;
-
+	sample.event.type = SAMPLE_EVENT_STRING;
+	sample.event.name = name;
 	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	sample.event.flags |= 3 << SAMPLE_FLAGS_SEVERITY_SHIFT;
+
 	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
 }
 
@@ -795,27 +729,18 @@ static void sample_event_alarm_type(const struct type_desc *desc, struct sample_
 
 static void sample_event_alarm_value(const struct type_desc *desc, struct sample_data *info, unsigned char value)
 {
-	static const eon_event_t alarms[] = {
-		{"Mandatory Safety Stop Broken", SAMPLE_EVENT_CEILING_SAFETYSTOP},
-		{"Ascent Speed",                 SAMPLE_EVENT_ASCENT},
-		{"Diluent Hyperoxia",            SAMPLE_EVENT_NONE},
-		{"Violated Deep Stop",           SAMPLE_EVENT_VIOLATION},
-		{"Ceiling Broken",               SAMPLE_EVENT_CEILING},
-		{"PO2 High",                     SAMPLE_EVENT_PO2},
-		{"PO2 Low",                      SAMPLE_EVENT_PO2},
-	};
-	dc_sample_value_t sample = {0};
 	const char *name;
+	dc_sample_value_t sample = {0};
 
 	name = info->alarm_type;
 	if (!name)
 		return;
 
-	sample.event.type = lookup_event(name, alarms, C_ARRAY_SIZE(alarms));
-	if (sample.event.type == SAMPLE_EVENT_NONE)
-		return;
-
+	sample.event.type = SAMPLE_EVENT_STRING;
+	sample.event.name = name;
 	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
+	sample.event.flags |= 4 << SAMPLE_FLAGS_SEVERITY_SHIFT;
+
 	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
 }
 
@@ -976,10 +901,6 @@ static int traverse_samples(unsigned short type, const struct type_desc *desc, c
 	if (desc->size > len)
 		ERROR(eon->base.context, "Got %d bytes of data for '%s' that wants %d bytes", len, desc->desc, desc->size);
 
-	info->ndl = -1;
-	info->tts = 0;
-	info->ceiling = 0.0;
-
 	for (i = 0; i < EON_MAX_GROUP; i++) {
 		enum eon_sample type = desc->type[i];
 		int bytes = handle_sample_type(desc, info, type, data);
@@ -993,15 +914,6 @@ static int traverse_samples(unsigned short type, const struct type_desc *desc, c
 		data += bytes;
 		len -= bytes;
 		used += bytes;
-	}
-
-	if (info->ndl < 0 && (info->tts || info->ceiling)) {
-		dc_sample_value_t sample = {0};
-
-		sample.deco.type = DC_DECO_DECOSTOP;
-		sample.deco.time = info->tts;
-		sample.deco.depth = info->ceiling;
-		if (info->callback) info->callback(DC_SAMPLE_DECO, sample, info->userdata);
 	}
 
 	// Warn if there are left-over bytes for something we did use part of
@@ -1026,11 +938,6 @@ suunto_eonsteel_parser_samples_foreach(dc_parser_t *abstract, dc_sample_callback
 	return DC_STATUS_SUCCESS;
 }
 
-// Ugly define thing makes the code much easier to read
-// I'd love to use __typeof__, but that's a gcc'ism
-#define field_value(p, set) \
-	memcpy((p), &(set), sizeof(set))
-
 static dc_status_t
 suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsigned int flags, void *value)
 {
@@ -1043,33 +950,27 @@ suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsi
 
 	switch (type) {
 	case DC_FIELD_DIVETIME:
-		field_value(value, eon->cache.divetime);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, DIVETIME);
 	case DC_FIELD_MAXDEPTH:
-		field_value(value, eon->cache.maxdepth);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, MAXDEPTH);
 	case DC_FIELD_AVGDEPTH:
-		field_value(value, eon->cache.avgdepth);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, AVGDEPTH);
 	case DC_FIELD_GASMIX_COUNT:
 	case DC_FIELD_TANK_COUNT:
-		field_value(value, eon->cache.ngases);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, GASMIX_COUNT);
 	case DC_FIELD_GASMIX:
 		if (flags >= MAXGASES)
 			return DC_STATUS_UNSUPPORTED;
-		field_value(value, eon->cache.gasmix[flags]);
-		break;
+		return DC_FIELD_INDEX(eon->cache, value, GASMIX, flags);
 	case DC_FIELD_SALINITY:
-		field_value(value, eon->cache.salinity);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, SALINITY);
 	case DC_FIELD_ATMOSPHERIC:
-		field_value(value, eon->cache.surface_pressure);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, ATMOSPHERIC);
 	case DC_FIELD_DIVEMODE:
-		field_value(value, eon->cache.divemode);
-		break;
+		return DC_FIELD_VALUE(eon->cache, value, DIVEMODE);
 	case DC_FIELD_TANK:
+		if (flags >= MAXGASES)
+			return DC_STATUS_UNSUPPORTED;
 		/*
 		 * Sadly it seems that the EON Steel doesn't tell us whether
 		 * we get imperial or metric data - the only indication is
@@ -1094,11 +995,13 @@ suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsi
 		 * We need to have workpressure and a valid tank. In that case,
 		 * a fractional tank size implies imperial.
 		 */
-		if (tank->workpressure && (tank->type == DC_TANKVOLUME_METRIC)) {
+		if (tank->workpressure && (tank->type & DC_TANKINFO_METRIC)) {
 			if (fabs(tank->volume - rint(tank->volume)) > 0.001)
-				tank->type = DC_TANKVOLUME_IMPERIAL;
+				tank->type += DC_TANKINFO_IMPERIAL - DC_TANKINFO_METRIC;
 		}
 		break;
+	case DC_FIELD_STRING:
+		return dc_field_get_string(&eon->cache, flags, (dc_field_string_t *)value);
 	default:
 		return DC_STATUS_UNSUPPORTED;
 	}
@@ -1127,7 +1030,7 @@ suunto_eonsteel_parser_get_datetime(dc_parser_t *parser, dc_datetime_t *datetime
 // time in ms
 static void add_time_field(suunto_eonsteel_parser_t *eon, unsigned short time_delta_ms)
 {
-	eon->cache.divetime += time_delta_ms;
+	eon->cache.DIVETIME += time_delta_ms;
 }
 
 // depth in cm
@@ -1135,8 +1038,8 @@ static void set_depth_field(suunto_eonsteel_parser_t *eon, unsigned short d)
 {
 	if (d != 0xffff) {
 		double depth = d / 100.0;
-		if (depth > eon->cache.maxdepth)
-			eon->cache.maxdepth = depth;
+		if (depth > eon->cache.MAXDEPTH)
+			eon->cache.MAXDEPTH = depth;
 		eon->cache.initialized |= 1 << DC_FIELD_MAXDEPTH;
 	}
 }
@@ -1149,28 +1052,28 @@ static void set_depth_field(suunto_eonsteel_parser_t *eon, unsigned short d)
 //   "enum:0=Off,1=Primary,2=?,3=Diluent"
 //   "enum:0=Off,1=Primary,3=Diluent,4=Oxygen"
 //
-// We turn that into the DC_TANKVOLUME data here, but
+// We turn that into the DC_TANKINFO data here, but
 // initially consider all non-off tanks to me METRIC.
 //
 // We may later turn the METRIC tank size into IMPERIAL if we
 // get a working pressure and non-integral size
-static int add_gas_type(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, unsigned char type)
+static dc_status_t add_gas_type(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, unsigned char type)
 {
-	int idx = eon->cache.ngases;
+	int idx = eon->cache.GASMIX_COUNT;
 	dc_tankinfo_t tankinfo = DC_TANKINFO_METRIC;
 	char *name;
 
 	if (idx >= MAXGASES)
-		return 0;
+		return DC_STATUS_SUCCESS;
 
-	eon->cache.ngases = idx+1;
+	eon->cache.GASMIX_COUNT = idx+1;
 	name = lookup_enum(desc, type);
 	if (!name)
 		DEBUG(eon->base.context, "Unable to look up gas type %u in %s", type, desc->format);
 	else if (!strcasecmp(name, "Diluent"))
-		;
+		tankinfo |= DC_TANKINFO_CC_DILUENT;
 	else if (!strcasecmp(name, "Oxygen"))
-		;
+		tankinfo |= DC_TANKINFO_CC_O2;
 	else if (!strcasecmp(name, "None"))
 		tankinfo = DC_TANKVOLUME_NONE;
 	else if (strcasecmp(name, "Primary"))
@@ -1181,46 +1084,46 @@ static int add_gas_type(suunto_eonsteel_parser_t *eon, const struct type_desc *d
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX_COUNT;
 	eon->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
 	free(name);
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
 // "sml.DeviceLog.Header.Diving.Gases.Gas.Oxygen"
 // O2 percentage as a byte
-static int add_gas_o2(suunto_eonsteel_parser_t *eon, unsigned char o2)
+static dc_status_t add_gas_o2(suunto_eonsteel_parser_t *eon, unsigned char o2)
 {
-	int idx = eon->cache.ngases-1;
+	int idx = eon->cache.GASMIX_COUNT-1;
 	if (idx >= 0)
-		eon->cache.gasmix[idx].oxygen = o2 / 100.0;
+		eon->cache.GASMIX[idx].oxygen = o2 / 100.0;
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX;
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
 // "sml.DeviceLog.Header.Diving.Gases.Gas.Helium"
 // He percentage as a byte
-static int add_gas_he(suunto_eonsteel_parser_t *eon, unsigned char he)
+static dc_status_t add_gas_he(suunto_eonsteel_parser_t *eon, unsigned char he)
 {
-	int idx = eon->cache.ngases-1;
+	int idx = eon->cache.GASMIX_COUNT-1;
 	if (idx >= 0)
-		eon->cache.gasmix[idx].helium = he / 100.0;
+		eon->cache.GASMIX[idx].helium = he / 100.0;
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX;
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
-static int add_gas_size(suunto_eonsteel_parser_t *eon, float l)
+static dc_status_t add_gas_size(suunto_eonsteel_parser_t *eon, float l)
 {
-	int idx = eon->cache.ngases-1;
+	int idx = eon->cache.GASMIX_COUNT-1;
 	if (idx >= 0)
 		eon->cache.tanksize[idx] = l;
 	eon->cache.initialized |= 1 << DC_FIELD_TANK;
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
-static int add_gas_workpressure(suunto_eonsteel_parser_t *eon, float wp)
+static dc_status_t add_gas_workpressure(suunto_eonsteel_parser_t *eon, float wp)
 {
-	int idx = eon->cache.ngases-1;
+	int idx = eon->cache.GASMIX_COUNT-1;
 	if (idx >= 0)
 		eon->cache.tankworkingpressure[idx] = wp;
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
 static float get_le32_float(const unsigned char *src)
@@ -1242,12 +1145,22 @@ static float get_le32_float(const unsigned char *src)
 //   Info.SW
 //   Name
 //   SerialNumber
-static int traverse_device_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc,
-                                  const unsigned char *data, int len)
+static dc_status_t traverse_device_fields(suunto_eonsteel_parser_t *eon,
+                                          const struct type_desc *desc,
+                                          const unsigned char *data, int len)
 {
 	const char *name = desc->desc + strlen("sml.DeviceLog.Device.");
-
-	return 0;
+	if (!strcmp(name, "SerialNumber"))
+		return dc_field_add_string(&eon->cache, "Serial", data);
+	if (!strcmp(name, "Info.HW"))
+		return dc_field_add_string(&eon->cache, "HW Version", data);
+	if (!strcmp(name, "Info.SW"))
+		return dc_field_add_string(&eon->cache, "FW Version", data);
+	if (!strcmp(name, "Info.BatteryAtStart"))
+		return dc_field_add_string(&eon->cache, "Battery at start", data);
+	if (!strcmp(name, "Info.BatteryAtEnd"))
+		return dc_field_add_string(&eon->cache, "Battery at end", data);
+	return DC_STATUS_SUCCESS;
 }
 
 // "sml.DeviceLog.Header.Diving.Gases"
@@ -1263,8 +1176,9 @@ static int traverse_device_fields(suunto_eonsteel_parser_t *eon, const struct ty
 //   .Gas.EndPressure (float32,precision=0)
 //   .Gas.TransmitterStartBatteryCharge (int8,precision=2)
 //   .Gas.TransmitterEndBatteryCharge (int8,precision=2)
-static int traverse_gas_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc,
-                               const unsigned char *data, int len)
+static dc_status_t traverse_gas_fields(suunto_eonsteel_parser_t *eon,
+                                       const struct type_desc *desc,
+                                       const unsigned char *data, int len)
 {
 	const char *name = desc->desc + strlen("sml.DeviceLog.Header.Diving.Gases");
 
@@ -1277,13 +1191,31 @@ static int traverse_gas_fields(suunto_eonsteel_parser_t *eon, const struct type_
 	if (!strcmp(name, ".Gas.Helium"))
 		return add_gas_he(eon, data[0]);
 
+	if (!strcmp(name, ".Gas.TransmitterID"))
+		return dc_field_add_string(&eon->cache, "Transmitter ID", data);
+
 	if (!strcmp(name, ".Gas.TankSize"))
 		return add_gas_size(eon, get_le32_float(data));
 
 	if (!strcmp(name, ".Gas.TankFillPressure"))
 		return add_gas_workpressure(eon, get_le32_float(data));
 
-	return 0;
+	// There is a bug with older transmitters, where the transmitter
+	// battery charge returns zero. Rather than returning that bogus
+	// data, just don't return any battery charge information at all.
+	//
+	// Make sure to add all non-battery-charge field checks above this
+	// test, so that it doesn't trigger for anything else.
+	if (!data[0])
+		return 0;
+
+	if (!strcmp(name, ".Gas.TransmitterStartBatteryCharge"))
+		return dc_field_add_string_fmt(&eon->cache, "Transmitter Battery at start", "%d %%", data[0]);
+
+	if (!strcmp(name, ".Gas.TransmitterEndBatteryCharge"))
+		return dc_field_add_string_fmt(&eon->cache, "Transmitter Battery at end", "%d %%", data[0]);
+
+	return DC_STATUS_SUCCESS;
 }
 
 
@@ -1324,8 +1256,9 @@ static int traverse_gas_fields(suunto_eonsteel_parser_t *eon, const struct type_
 //   EndTissue.Helium+Pressure (uint32)
 //   EndTissue.RgbmNitrogen (float32,precision=3)
 //   EndTissue.RgbmHelium (float32,precision=3)
-static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc,
-                                  const unsigned char *data, int len)
+static dc_status_t traverse_diving_fields(suunto_eonsteel_parser_t *eon,
+                                          const struct type_desc *desc,
+                                          const unsigned char *data, int len)
 {
 	const char *name = desc->desc + strlen("sml.DeviceLog.Header.Diving.");
 
@@ -1334,17 +1267,25 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 
 	if (!strcmp(name, "SurfacePressure")) {
 		unsigned int pressure = array_uint32_le(data); // in SI units - Pascal
-		eon->cache.surface_pressure = pressure / 100000.0; // bar
-		eon->cache.initialized |= 1 << DC_FIELD_ATMOSPHERIC;
-		return 0;
+		DC_ASSIGN_FIELD(eon->cache, ATMOSPHERIC, pressure / 100000.0); // bar
+		return DC_STATUS_SUCCESS;
 	}
+
+	if (!strcmp(name, "Algorithm"))
+		return dc_field_add_string(&eon->cache, "Deco algorithm", data);
 
 	if (!strcmp(name, "DiveMode")) {
 		if (!strncmp((const char *)data, "CCR", 3)) {
-			eon->cache.divemode = DC_DIVEMODE_CCR;
-			eon->cache.initialized |= 1 << DC_FIELD_DIVEMODE;
+			DC_ASSIGN_FIELD(eon->cache, DIVEMODE, DC_DIVEMODE_CCR);
 		}
-		return 0;
+		return dc_field_add_string(&eon->cache, "Dive Mode", data);
+	}
+
+	/* Signed byte of conservatism (-2 .. +2) */
+	if (!strcmp(name, "Conservatism")) {
+		int val = *(signed char *)data;
+
+		return dc_field_add_string_fmt(&eon->cache, "Personal Adjustment", "P%d", val);
 	}
 
 	if (!strcmp(name, "LowSetPoint")) {
@@ -1359,7 +1300,19 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 		return 0;
 	}
 
-	return 0;
+	// Time recoded in seconds.
+	// Let's just agree to ignore seconds
+	if (!strcmp(name, "DesaturationTime")) {
+		unsigned int time = array_uint32_le(data) / 60;
+		return dc_field_add_string_fmt(&eon->cache, "Desaturation Time", "%d:%02d", time / 60, time % 60);
+	}
+
+	if (!strcmp(name, "SurfaceTime")) {
+		unsigned int time = array_uint32_le(data) / 60;
+		return dc_field_add_string_fmt(&eon->cache, "Surface Time", "%d:%02d", time / 60, time % 60);
+	}
+
+	return DC_STATUS_SUCCESS;
 }
 
 // "Header" fields are:
@@ -1371,8 +1324,9 @@ static int traverse_diving_fields(suunto_eonsteel_parser_t *eon, const struct ty
 //   Duration (uint32)
 //   PauseDuration (uint32)
 //   SampleInterval (uint8)
-static int traverse_header_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc,
-                                  const unsigned char *data, int len)
+static dc_status_t traverse_header_fields(suunto_eonsteel_parser_t *eon,
+                                          const struct type_desc *desc,
+                                          const unsigned char *data, int len)
 {
 	const char *name = desc->desc + strlen("sml.DeviceLog.Header.");
 
@@ -1381,15 +1335,17 @@ static int traverse_header_fields(suunto_eonsteel_parser_t *eon, const struct ty
 
 	if (!strcmp(name, "Depth.Max")) {
 		double d = get_le32_float(data);
-		if (d > eon->cache.maxdepth)
-			eon->cache.maxdepth = d;
-		return 0;
+		if (d > eon->cache.MAXDEPTH)
+			DC_ASSIGN_FIELD(eon->cache, MAXDEPTH, d);
+		return DC_STATUS_SUCCESS;
 	}
+	if (!strcmp(name, "DateTime"))
+		return dc_field_add_string(&eon->cache, "Dive ID", data);
 
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
-static int traverse_dynamic_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, const unsigned char *data, int len)
+static dc_status_t traverse_dynamic_fields(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, const unsigned char *data, int len)
 {
 	const char *name = desc->desc;
 
@@ -1404,7 +1360,7 @@ static int traverse_dynamic_fields(suunto_eonsteel_parser_t *eon, const struct t
 			}
 		}
 	}
-	return 0;
+	return DC_STATUS_SUCCESS;
 }
 
 /*
@@ -1428,6 +1384,8 @@ static int traverse_sample_fields(suunto_eonsteel_parser_t *eon, const struct ty
 			set_depth_field(eon, array_uint16_le(data));
 			data += 2;
 			continue;
+		default:
+			break;
 		}
 		break;
 	}
@@ -1457,7 +1415,7 @@ static void initialize_field_caches(suunto_eonsteel_parser_t *eon)
 
 	// The internal time fields are in ms and have to be added up
 	// like that. At the end, we translate it back to seconds.
-	eon->cache.divetime /= 1000;
+	eon->cache.DIVETIME /= 1000;
 }
 
 static void show_descriptor(suunto_eonsteel_parser_t *eon, int nr, struct type_desc *desc)
