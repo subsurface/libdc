@@ -188,43 +188,86 @@ dc_iostream_poll (dc_iostream_t *iostream, int timeout)
 dc_status_t
 dc_iostream_read (dc_iostream_t *iostream, void *data, size_t size, size_t *actual)
 {
-	dc_status_t status = DC_STATUS_SUCCESS;
-	size_t nbytes = 0;
+	if (actual)
+		*actual = 0;
 
-	if (iostream == NULL || iostream->vtable->read == NULL) {
-		goto out;
+	if (iostream == NULL || iostream->vtable->read == NULL)
+		return DC_STATUS_IO;
+
+	while (size) {
+		dc_status_t status;
+		size_t nbytes = 0;
+
+		status = iostream->vtable->read (iostream, data, size, &nbytes);
+		HEXDUMP (iostream->context, DC_LOGLEVEL_INFO, "Read", (unsigned char *) data, nbytes);
+
+		/*
+		 * If the reader is able to handle partial results,
+		 * return them as such. NOTE! No need to add up a
+		 * total, we will go through this loop only once
+		 * in this case.
+		 */
+		if (actual) {
+			*actual = nbytes;
+			return status;
+		}
+
+		if (status != DC_STATUS_SUCCESS)
+			return status;
+
+		/*
+		 * Defensive check: if the read() function returned
+		 * zero bytes, don't loop forever - give up with a
+		 * timeout. Jef pointed out that the subsurface
+		 * qt_serial_read() function can cause this badness..
+		 */
+		if (!nbytes)
+			return DC_STATUS_TIMEOUT;
+
+		/*
+		 * Continue reading to fill up the whole buffer,
+		 * since the reader is not able to handle a
+		 * partial result.
+		 */
+		data = (void *)(nbytes + (char *)data);
+		size -= nbytes;
 	}
 
-	status = iostream->vtable->read (iostream, data, size, &nbytes);
-
-	HEXDUMP (iostream->context, DC_LOGLEVEL_INFO, "Read", (unsigned char *) data, nbytes);
-
-out:
-	if (actual)
-		*actual = nbytes;
-
-	return status;
+	return DC_STATUS_SUCCESS;
 }
 
 dc_status_t
 dc_iostream_write (dc_iostream_t *iostream, const void *data, size_t size, size_t *actual)
 {
-	dc_status_t status = DC_STATUS_SUCCESS;
-	size_t nbytes = 0;
+	if (actual)
+		*actual = 0;
 
-	if (iostream == NULL || iostream->vtable->write == NULL) {
-		goto out;
+	if (iostream == NULL || iostream->vtable->write == NULL)
+		return DC_STATUS_IO;
+
+	while (size) {
+		dc_status_t status;
+		size_t nbytes = 0;
+
+		status = iostream->vtable->write (iostream, data, size, &nbytes);
+		HEXDUMP (iostream->context, DC_LOGLEVEL_INFO, "Write", (const unsigned char *) data, nbytes);
+
+		if (actual) {
+			*actual = nbytes;
+			return status;
+		}
+
+		if (status != DC_STATUS_SUCCESS)
+			return status;
+
+		if (!nbytes)
+			return DC_STATUS_IO;
+
+		data = (void *)(nbytes + (char *)data);
+		size -= nbytes;
 	}
 
-	status = iostream->vtable->write (iostream, data, size, &nbytes);
-
-	HEXDUMP (iostream->context, DC_LOGLEVEL_INFO, "Write", (const unsigned char *) data, nbytes);
-
-out:
-	if (actual)
-		*actual = nbytes;
-
-	return status;
+	return DC_STATUS_SUCCESS;
 }
 
 dc_status_t
