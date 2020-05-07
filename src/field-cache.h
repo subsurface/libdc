@@ -1,3 +1,5 @@
+#include <string.h>
+
 #define MAXGASES 16
 #define MAXSTRINGS 32
 

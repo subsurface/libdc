@@ -20,13 +20,6 @@
  */
 
 #include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdarg.h>
-
-#ifdef _MSC_VER
-#define snprintf _snprintf
-#endif
 
 #include <libdivecomputer/units.h>
 
