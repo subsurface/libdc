@@ -580,7 +580,7 @@ oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 			break;
 		case DC_FIELD_SALINITY:
 			if (parser->model == A300CS || parser->model == VTX ||
-				parser->model == I750TC) {
+				parser->model == I750TC || parser->model == I770R) {
 				if (data[0x18] & 0x80) {
 					water->type = DC_WATER_FRESH;
 				} else {
@@ -771,7 +771,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 	if (have_pressure) {
 		unsigned int idx = 2;
 		if (parser->model == A300CS || parser->model == VTX ||
-			parser->model == I750TC)
+			parser->model == I750TC || parser->model == I770R)
 			idx = 16;
 		pressure = array_uint16_le(data + parser->header + idx);
 		if (pressure == 10000)
@@ -824,7 +824,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				tank = 0;
 				pressure = (((data[offset + 7] << 8) + data[offset + 6]) & 0x0FFF);
 			} else if (parser->model == A300CS || parser->model == VTX ||
-				parser->model == I750TC) {
+				parser->model == I750TC || parser->model == I770R) {
 				// Tank pressure (1 psi) and number (one based index)
 				tank = (data[offset + 1] & 0x03) - 1;
 				pressure = ((data[offset + 7] << 8) + data[offset + 6]) & 0x0FFF;
