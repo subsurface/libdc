@@ -499,6 +499,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\garmin.c"
+				>
+			</File>
+			<File
+				RelativePath="..\src\garmin_parser.c"
+				>
+			</File>
+			<File
 				RelativePath="..\src\field-cache.c"
 				>
 			</File>
@@ -842,6 +850,10 @@
 			</File>
 			<File
 				RelativePath="..\src\tecdiving_divecomputereu.h"
+				>
+			</File>
+			<File
+				RelativePath="..\src\garmin.h"
 				>
 			</File>
 			<File

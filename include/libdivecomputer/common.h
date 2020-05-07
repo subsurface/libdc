@@ -108,6 +108,8 @@ typedef enum dc_family_t {
 	DC_FAMILY_COCHRAN_COMMANDER = (14 << 16),
 	/* Tecdiving */
 	DC_FAMILY_TECDIVING_DIVECOMPUTEREU = (15 << 16),
+	/* Garmin */
+	DC_FAMILY_GARMIN = (16 << 16),
 } dc_family_t;
 
 #ifdef __cplusplus
