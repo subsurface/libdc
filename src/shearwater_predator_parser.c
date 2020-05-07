@@ -28,6 +28,7 @@
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"
+#include "field-cache.h"
 
 #define ISINSTANCE(parser)	( \
 	dc_parser_isinstance((parser), &shearwater_predator_parser_vtable) || \
@@ -69,6 +70,7 @@
 #define IMPERIAL 1
 
 #define NGASMIXES 10
+#define MAXSTRINGS 32
 #define NTANKS    2
 #define NRECORDS  8
 
@@ -90,6 +92,7 @@ typedef struct shearwater_predator_tank_t {
 	unsigned int enabled;
 	unsigned int beginpressure;
 	unsigned int endpressure;
+	unsigned int battery;
 } shearwater_predator_tank_t;
 
 struct shearwater_predator_parser_t {
@@ -113,10 +116,13 @@ struct shearwater_predator_parser_t {
 	unsigned int tankidx[NTANKS];
 	unsigned int calibrated;
 	double calibration[3];
-	dc_divemode_t mode;
+	unsigned int serial;
 	unsigned int units;
 	unsigned int atmospheric;
 	unsigned int density;
+
+	/* Generic field cache */
+	struct dc_field_cache cache;
 };
 
 static dc_status_t shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -190,6 +196,9 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 	parser->model = model;
 	parser->petrel = petrel;
 	parser->samplesize = samplesize;
+	parser->serial = serial;
+
+	// Set the default values.
 	parser->cached = 0;
 	parser->pnf = 0;
 	parser->logversion = 0;
@@ -210,16 +219,18 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 		parser->tank[i].enabled = 0;
 		parser->tank[i].beginpressure = 0;
 		parser->tank[i].endpressure = 0;
+		parser->tank[i].battery = 0;
 		parser->tankidx[i] = i;
 	}
 	parser->calibrated = 0;
 	for (unsigned int i = 0; i < 3; ++i) {
 		parser->calibration[i] = 0.0;
 	}
-	parser->mode = DC_DIVEMODE_OC;
 	parser->units = METRIC;
 	parser->density = 1025;
 	parser->atmospheric = ATM / (BAR / 1000);
+
+	DC_ASSIGN_FIELD(parser->cache, DIVEMODE, DC_DIVEMODE_OC);
 
 	*out = (dc_parser_t *) parser;
 
@@ -273,10 +284,11 @@ shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char 
 	for (unsigned int i = 0; i < 3; ++i) {
 		parser->calibration[i] = 0.0;
 	}
-	parser->mode = DC_DIVEMODE_OC;
 	parser->units = METRIC;
 	parser->density = 1025;
 	parser->atmospheric = ATM / (BAR / 1000);
+
+	DC_ASSIGN_FIELD(parser->cache, DIVEMODE, DC_DIVEMODE_OC);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -303,6 +315,84 @@ shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *d
 	return DC_STATUS_SUCCESS;
 }
 
+// Show the battery state
+//
+// NOTE! Right now it only shows the most serious bit
+// but the code is set up so that we could perhaps
+// indicate that the battery is on the edge (ie it
+// reported both "normal" _and_ "warning" during the
+// dive - maybe that would be a "starting to warn")
+//
+// We could also report unpaired and comm errors.
+static void
+add_battery_info(shearwater_predator_parser_t *parser, const char *desc, unsigned int state)
+{
+	// We don't know what other state bits than 0-2 mean
+	state &= 7;
+	if (state >= 1 && state <= 7) {
+		static const char *states[8] = {
+			"",		// 000 - No state bits, not used
+			"normal",	// 001 - only normal
+			"critical",	// 010 - only critical
+			"critical",	// 011 - both normal and critical
+			"warning",	// 100 - only warning
+			"warning",	// 101 - normal and warning
+			"critical",	// 110 - warning and critical
+			"critical",	// 111 - normal, warning and critical
+		};
+		dc_field_add_string(&parser->cache, desc, states[state]);
+	}
+}
+
+static void
+add_deco_model(shearwater_predator_parser_t *parser, const unsigned char *data)
+{
+	unsigned int idx_deco_model = parser->pnf ? parser->opening[2] + 18 : 67;
+	unsigned int idx_gfs = parser->pnf ? parser->opening[3] + 5 : 85;
+
+	switch	(data[idx_deco_model]) {
+	case 0:
+		dc_field_add_string_fmt(&parser->cache, "Deco model", "GF %u/%u", data[4], data[5]);
+		break;
+	case 1:
+		dc_field_add_string_fmt(&parser->cache, "Deco model", "VPM-B +%u", data[idx_deco_model + 1]);
+		break;
+	case 2:
+		dc_field_add_string_fmt(&parser->cache, "Deco model", "VPM-B/GFS +%u %u%%", data[idx_deco_model + 1], data[idx_gfs]);
+		break;
+	default:
+		dc_field_add_string_fmt(&parser->cache, "Deco model", "Unknown model %d", data[idx_deco_model]);
+	}
+}
+
+static void
+add_battery_type(shearwater_predator_parser_t *parser, const unsigned char *data)
+{
+	if (parser->logversion < 7)
+		return;
+
+	unsigned int idx_battery_type = parser->pnf ? parser->opening[4] + 9 : 120;
+	switch (data[idx_battery_type]) {
+	case 1:
+		dc_field_add_string(&parser->cache, "Battery type", "1.5V Alkaline");
+		break;
+	case 2:
+		dc_field_add_string(&parser->cache, "Battery type", "1.5V Lithium");
+		break;
+	case 3:
+		dc_field_add_string(&parser->cache, "Battery type", "1.2V NiMH");
+		break;
+	case 4:
+		dc_field_add_string(&parser->cache, "Battery type", "3.6V Saft");
+		break;
+	case 5:
+		dc_field_add_string(&parser->cache, "Battery type", "3.7V Li-Ion");
+		break;
+	default:
+		dc_field_add_string_fmt(&parser->cache, "Battery type", "unknown type %d", data[idx_battery_type]);
+		break;
+	}
+}
 
 static dc_status_t
 shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
@@ -314,6 +404,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	if (parser->cached) {
 		return DC_STATUS_SUCCESS;
 	}
+	memset(&parser->cache, 0, sizeof(parser->cache));
 
 	// Log versions before 6 weren't reliably stored in the data, but
 	// 6 is also the oldest version that we assume in our code
@@ -435,13 +526,16 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 					// bits the tank pressure in units of 2 psi.
 					unsigned int pressure = array_uint16_be (data + offset + pnf + idx[i]);
 					if (pressure < 0xFFF0) {
+						unsigned int battery = 1u << (pressure >> 12);
 						pressure &= 0x0FFF;
 						if (!tank[i].enabled) {
 							tank[i].enabled = 1;
 							tank[i].beginpressure = pressure;
 							tank[i].endpressure = pressure;
+							tank[i].battery = 0;
 						}
 						tank[i].endpressure = pressure;
+						tank[i].battery |= battery;
 					}
 				}
 			}
@@ -475,6 +569,8 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		}
 	}
 
+	dc_field_add_string_fmt(&parser->cache, "Logversion", "%d%s", logversion, pnf ? "(PNF)" : "");
+
 	// Cache sensor calibration for later use
 	unsigned int nsensors = 0, ndefaults = 0;
 	unsigned int base = parser->opening[3] + (pnf ? 6 : 86);
@@ -503,8 +599,12 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		// uncalibrated).
 		WARNING (abstract->context, "Disabled all O2 sensors due to a default calibration value.");
 		parser->calibrated = 0;
+		if (mode != DC_DIVEMODE_OC)
+			dc_field_add_string(&parser->cache, "PPO2 source", "voted/averaged");
 	} else {
 		parser->calibrated = data[base];
+		if (mode != DC_DIVEMODE_OC)
+			dc_field_add_string(&parser->cache, "PPO2 source", "cells");
 	}
 
 	// Cache the data for later use.
@@ -526,11 +626,21 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			parser->tankidx[i] = UNDEFINED;
 		}
 	}
-	parser->mode = mode;
 	parser->units = data[parser->opening[0] + 8];
 	parser->atmospheric = array_uint16_be (data + parser->opening[1] + (parser->pnf ? 16 : 47));
 	parser->density = array_uint16_be (data + parser->opening[3] + (parser->pnf ? 3 : 83));
 	parser->cached = 1;
+
+	DC_ASSIGN_FIELD(parser->cache, DIVEMODE, mode);
+
+	dc_field_add_string_fmt(&parser->cache, "Serial", "%08x", parser->serial);
+	// bytes 1-31 are identical in all formats
+	dc_field_add_string_fmt(&parser->cache, "FW Version", "%2x", data[19]);
+	add_deco_model(parser, data);
+	add_battery_type(parser, data);
+	dc_field_add_string_fmt(&parser->cache, "Battery at end", "%.1f V", data[9] / 10.0);
+	add_battery_info(parser, "T1 battery", tank[0].battery);
+	add_battery_info(parser, "T2 battery", tank[1].battery);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -550,6 +660,7 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_tank_t *tank = (dc_tank_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
 
 	if (value) {
 		switch (type) {
@@ -597,8 +708,9 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			*((double *) value) = parser->atmospheric / 1000.0;
 			break;
 		case DC_FIELD_DIVEMODE:
-			*((dc_divemode_t *) value) = parser->mode;
-			break;
+			return DC_FIELD_VALUE(parser->cache, value, DIVEMODE);
+		case DC_FIELD_STRING:
+			return dc_field_get_string(&parser->cache, flags, string);
 		default:
 			return DC_STATUS_UNSUPPORTED;
 		}
@@ -853,6 +965,5 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 
 		offset += parser->samplesize;
 	}
-
 	return DC_STATUS_SUCCESS;
 }
