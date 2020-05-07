@@ -414,6 +414,24 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 			convert_pressure(atmospheric, output->units));
 	}
 
+	message ("Parsing strings.\n");
+	int idx;
+	for (idx = 0; idx < 100; idx++) {
+		dc_field_string_t str = { NULL };
+		status = dc_parser_get_field(parser, DC_FIELD_STRING, idx, &str);
+		if (status != DC_STATUS_SUCCESS && status != DC_STATUS_UNSUPPORTED) {
+			ERROR ("Error parsing strings");
+			goto cleanup;
+		}
+		if (status == DC_STATUS_UNSUPPORTED)
+			break;
+		if (!str.desc || !str.value)
+			break;
+		fprintf (output->ostream, "<extradata key='%s' value='%s' />\n",
+			str.desc, str.value);
+
+	}
+
 	// Parse the sample data.
 	message ("Parsing the sample data.\n");
 	status = dc_parser_samples_foreach (parser, sample_cb, &sampledata);

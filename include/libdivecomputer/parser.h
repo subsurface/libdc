@@ -62,8 +62,12 @@ typedef enum dc_field_type_t {
 	DC_FIELD_TEMPERATURE_MAXIMUM,
 	DC_FIELD_TANK_COUNT,
 	DC_FIELD_TANK,
-	DC_FIELD_DIVEMODE
+	DC_FIELD_DIVEMODE,
+	DC_FIELD_STRING,
 } dc_field_type_t;
+
+// Make it easy to test support compile-time with "#ifdef DC_FIELD_STRING"
+#define DC_FIELD_STRING DC_FIELD_STRING
 
 typedef enum parser_sample_event_t {
 	SAMPLE_EVENT_NONE,
@@ -190,6 +194,11 @@ typedef struct dc_tank_t {
     double beginpressure; /* Begin pressure (bar) */
     double endpressure;   /* End pressure (bar) */
 } dc_tank_t;
+
+typedef struct dc_field_string_t {
+	const char *desc;
+	const char *value;
+} dc_field_string_t;
 
 typedef union dc_sample_value_t {
 	unsigned int time;

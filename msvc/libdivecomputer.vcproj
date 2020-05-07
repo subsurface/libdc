@@ -499,6 +499,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\field-cache.c"
+				>
+			</File>
+			<File
 				RelativePath="..\src\timer.c"
 				>
 			</File>
