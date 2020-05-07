@@ -21,16 +21,8 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <ctype.h>
 #include <math.h>
-#include <stdarg.h>
-
-/* Wow. MSC is truly crap */
-#ifdef _MSC_VER
-#define snprintf _snprintf
-#define vsnprintf _vsnprintf
-#endif
 
 #include "suunto_eonsteel.h"
 #include "context-private.h"
