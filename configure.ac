@@ -2,7 +2,7 @@
 m4_define([dc_version_major],[0])
 m4_define([dc_version_minor],[7])
 m4_define([dc_version_micro],[0])
-m4_define([dc_version_suffix],[devel])
+m4_define([dc_version_suffix],[devel-Subsurface-NG])
 m4_define([dc_version],dc_version_major.dc_version_minor.dc_version_micro[]m4_ifset([dc_version_suffix],-[dc_version_suffix]))
 
 # Libtool versioning.
@@ -175,19 +175,21 @@ AC_CHECK_FUNCS([getopt_long])
 
 # Checks for supported compiler options.
 AX_APPEND_COMPILE_FLAGS([ \
-	-pedantic \
 	-Wall \
-	-Wextra \
 	-Wshadow \
 	-Wrestrict \
 	-Wformat=2 \
 	-Wwrite-strings \
-	-Wcast-qual \
 	-Wpointer-arith \
 	-Wstrict-prototypes \
 	-Wmissing-prototypes \
 	-Wmissing-declarations \
 	-Wno-unused-parameter \
+	-Wno-unused-function \
+	-Wno-unused-variable \
+	-Wno-unused-but-set-variable \
+	-Wno-pointer-sign \
+	-Wno-shadow \
 	-fmacro-prefix-map='$(top_srcdir)/'= \
 ])
 
