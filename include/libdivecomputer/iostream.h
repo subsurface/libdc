@@ -310,19 +310,6 @@ dc_iostream_sleep (dc_iostream_t *iostream, unsigned int milliseconds);
 dc_status_t
 dc_iostream_close (dc_iostream_t *iostream);
 
-/**
- * Get the name of the device
- *
- * @param[in]  iostream  A valid I/O stream.
- * @returns a NUL-terminated constant C string that has a lifetime
- * until the close of the iostream, or NUL if no name exists.
- *
- * The name depends on the iostream transport. For a BLE device, it
- * is the name of the device during device discovery.
- */
-const char *
-dc_iostream_get_name (dc_iostream_t *iostream);
-
 dc_status_t
 dc_usb_storage_open (dc_iostream_t **out, dc_context_t *context, const char *name);
 
