@@ -99,6 +99,7 @@ static const transport_table_t g_transports[] = {
 	{"irda",      DC_TRANSPORT_IRDA},
 	{"bluetooth", DC_TRANSPORT_BLUETOOTH},
 	{"ble",       DC_TRANSPORT_BLE},
+	{"usbstorage",DC_TRANSPORT_USBSTORAGE},
 };
 
 const char *
@@ -537,6 +538,8 @@ dctool_iostream_open (dc_iostream_t **iostream, dc_context_t *context, dc_descri
 		return dctool_irda_open (iostream, context, descriptor, devname);
 	case DC_TRANSPORT_BLUETOOTH:
 		return dctool_bluetooth_open (iostream, context, descriptor, devname);
+	case DC_TRANSPORT_USBSTORAGE:
+		return dc_usb_storage_open (iostream, context, devname);
 	default:
 		return DC_STATUS_UNSUPPORTED;
 	}

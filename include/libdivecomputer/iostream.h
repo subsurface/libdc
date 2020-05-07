@@ -310,6 +310,9 @@ dc_iostream_sleep (dc_iostream_t *iostream, unsigned int milliseconds);
 dc_status_t
 dc_iostream_close (dc_iostream_t *iostream);
 
+dc_status_t
+dc_usb_storage_open (dc_iostream_t **out, dc_context_t *context, const char *name);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
