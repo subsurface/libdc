@@ -41,6 +41,7 @@ Makefile.in
 /examples/atom2
 /examples/d9
 /examples/darwin
+/examples/dctool
 /examples/edy
 /examples/eon
 /examples/frog
@@ -82,3 +83,5 @@ Makefile.in
 /src/libdivecomputer.la
 /src/libdivecomputer.rc
 /src/revision.h
+
+/build
