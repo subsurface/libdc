@@ -142,7 +142,7 @@ static const dc_parser_vtable_t oceanic_atom2_parser_vtable = {
 
 
 dc_status_t
-oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
 {
 	oceanic_atom2_parser_t *parser = NULL;
 

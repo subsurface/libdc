@@ -312,7 +312,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 }
 
 static dc_status_t
-hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsigned int hwos, unsigned int model)
+hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int hwos, unsigned int model)
 {
 	hw_ostc_parser_t *parser = NULL;
 
@@ -350,15 +350,15 @@ hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsign
 
 
 dc_status_t
-hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context)
+hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
 {
-	return hw_ostc_parser_create_internal (out, context, 0, 0);
+	return hw_ostc_parser_create_internal (out, context, serial, 0, 0);
 }
 
 dc_status_t
-hw_ostc3_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+hw_ostc3_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int model)
 {
-	return hw_ostc_parser_create_internal (out, context, 1, model);
+	return hw_ostc_parser_create_internal (out, context, serial, 1, model);
 }
 
 static dc_status_t

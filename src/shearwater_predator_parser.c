@@ -159,7 +159,7 @@ shearwater_predator_find_gasmix (shearwater_predator_parser_t *parser, unsigned 
 
 
 static dc_status_t
-shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int petrel)
+shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial, unsigned int petrel)
 {
 	shearwater_predator_parser_t *parser = NULL;
 	const dc_parser_vtable_t *vtable = NULL;
@@ -225,16 +225,16 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 
 
 dc_status_t
-shearwater_predator_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+shearwater_predator_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
 {
-	return shearwater_common_parser_create (out, context, model, 0);
+	return shearwater_common_parser_create (out, context, model, serial, 0);
 }
 
 
 dc_status_t
-shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+shearwater_petrel_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
 {
-	return shearwater_common_parser_create (out, context, model, 1);
+	return shearwater_common_parser_create (out, context, model, serial, 1);
 }
 
 

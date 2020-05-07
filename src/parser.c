@@ -67,7 +67,7 @@
 #define REACTPROWHITE 0x4354
 
 static dc_status_t
-dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t family, unsigned int model, unsigned int devtime, dc_ticks_t systime)
+dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t family, unsigned int model, unsigned int serial, unsigned int devtime, dc_ticks_t systime)
 {
 	dc_status_t rc = DC_STATUS_SUCCESS;
 	dc_parser_t *parser = NULL;
@@ -90,7 +90,7 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		break;
 	case DC_FAMILY_SUUNTO_VYPER2:
 	case DC_FAMILY_SUUNTO_D9:
-		rc = suunto_d9_parser_create (&parser, context, model);
+		rc = suunto_d9_parser_create (&parser, context, model, serial);
 		break;
 	case DC_FAMILY_SUUNTO_EONSTEEL:
 		rc = suunto_eonsteel_parser_create(&parser, context, model);
@@ -121,7 +121,7 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		if (model == REACTPROWHITE)
 			rc = oceanic_veo250_parser_create (&parser, context, model);
 		else
-			rc = oceanic_atom2_parser_create (&parser, context, model);
+			rc = oceanic_atom2_parser_create (&parser, context, model, serial);
 		break;
 	case DC_FAMILY_MARES_NEMO:
 	case DC_FAMILY_MARES_PUCK:
@@ -134,11 +134,11 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		rc = mares_iconhd_parser_create (&parser, context, model);
 		break;
 	case DC_FAMILY_HW_OSTC:
-		rc = hw_ostc_parser_create (&parser, context);
+		rc = hw_ostc_parser_create (&parser, context, serial);
 		break;
 	case DC_FAMILY_HW_FROG:
 	case DC_FAMILY_HW_OSTC3:
-		rc = hw_ostc3_parser_create (&parser, context, model);
+		rc = hw_ostc3_parser_create (&parser, context, serial, model);
 		break;
 	case DC_FAMILY_CRESSI_EDY:
 	case DC_FAMILY_ZEAGLE_N2ITION3:
@@ -154,10 +154,10 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		rc = atomics_cobalt_parser_create (&parser, context);
 		break;
 	case DC_FAMILY_SHEARWATER_PREDATOR:
-		rc = shearwater_predator_parser_create (&parser, context, model);
+		rc = shearwater_predator_parser_create (&parser, context, model, serial);
 		break;
 	case DC_FAMILY_SHEARWATER_PETREL:
-		rc = shearwater_petrel_parser_create (&parser, context, model);
+		rc = shearwater_petrel_parser_create (&parser, context, model, serial);
 		break;
 	case DC_FAMILY_DIVERITE_NITEKQ:
 		rc = diverite_nitekq_parser_create (&parser, context);
@@ -196,7 +196,9 @@ dc_parser_new (dc_parser_t **out, dc_device_t *device)
 		return DC_STATUS_INVALIDARGS;
 
 	return dc_parser_new_internal (out, device->context,
-		dc_device_get_type (device), device->devinfo.model,
+		dc_device_get_type (device),
+		device->devinfo.model,
+		device->devinfo.serial,
 		device->clock.devtime, device->clock.systime);
 }
 
@@ -204,7 +206,9 @@ dc_status_t
 dc_parser_new2 (dc_parser_t **out, dc_context_t *context, dc_descriptor_t *descriptor, unsigned int devtime, dc_ticks_t systime)
 {
 	return dc_parser_new_internal (out, context,
-		dc_descriptor_get_type (descriptor), dc_descriptor_get_model (descriptor),
+		dc_descriptor_get_type (descriptor),
+		dc_descriptor_get_model (descriptor),
+		0,
 		devtime, systime);
 }
 

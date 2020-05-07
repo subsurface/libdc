@@ -244,7 +244,7 @@ suunto_d9_parser_cache (suunto_d9_parser_t *parser)
 }
 
 dc_status_t
-suunto_d9_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+suunto_d9_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
 {
 	suunto_d9_parser_t *parser = NULL;
 
