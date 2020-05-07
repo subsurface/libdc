@@ -89,7 +89,7 @@ typedef struct suunto_eonsteel_parser_t {
 		double lowsetpoint;
 		double highsetpoint;
 		double customsetpoint;
-		dc_tankvolume_t tankinfo[MAXGASES];
+		dc_tankinfo_t tankinfo[MAXGASES];
 		double tanksize[MAXGASES];
 		double tankworkingpressure[MAXGASES];
 	} cache;
@@ -1157,7 +1157,7 @@ static void set_depth_field(suunto_eonsteel_parser_t *eon, unsigned short d)
 static int add_gas_type(suunto_eonsteel_parser_t *eon, const struct type_desc *desc, unsigned char type)
 {
 	int idx = eon->cache.ngases;
-	dc_tankvolume_t tankinfo = DC_TANKVOLUME_METRIC;
+	dc_tankinfo_t tankinfo = DC_TANKINFO_METRIC;
 	char *name;
 
 	if (idx >= MAXGASES)

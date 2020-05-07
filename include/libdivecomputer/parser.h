@@ -148,11 +148,16 @@ typedef struct dc_gasmix_t {
 
 #define DC_GASMIX_UNKNOWN 0xFFFFFFFF
 
-typedef enum dc_tankvolume_t {
-    DC_TANKVOLUME_NONE,
-    DC_TANKVOLUME_METRIC,
-    DC_TANKVOLUME_IMPERIAL,
-} dc_tankvolume_t;
+typedef unsigned int dc_tankinfo_t;
+#define DC_TANKINFO_METRIC	1
+#define DC_TANKINFO_IMPERIAL	2
+#define DC_TANKINFO_CC_DILUENT	4
+#define DC_TANKINFO_CC_O2	8
+
+// For backwards compatibility
+#define DC_TANKVOLUME_NONE	0
+#define DC_TANKVOLUME_METRIC	DC_TANKINFO_METRIC
+#define DC_TANKVOLUME_IMPERIAL	DC_TANKINFO_IMPERIAL
 
 /*
  * Tank volume
@@ -179,7 +184,7 @@ typedef enum dc_tankvolume_t {
 
 typedef struct dc_tank_t {
     unsigned int gasmix;  /* Gas mix index, or DC_GASMIX_UNKNOWN */
-    dc_tankvolume_t type; /* Tank type */
+    dc_tankinfo_t type;   /* Tank type - metric/imperial and oc/cc */
     double volume;        /* Volume (liter) */
     double workpressure;  /* Work pressure (bar) */
     double beginpressure; /* Begin pressure (bar) */
