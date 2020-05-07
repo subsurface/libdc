@@ -49,6 +49,7 @@ static int dc_filter_garmin (dc_transport_t transport, const void *userdata);
 static int dc_filter_mares (dc_transport_t transport, const void *userdata);
 static int dc_filter_divesystem (dc_transport_t transport, const void *userdata);
 static int dc_filter_oceanic (dc_transport_t transport, const void *userdata);
+static int dc_filter_deepblu (dc_transport_t transport, const void *userdata);
 
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
@@ -379,6 +380,8 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Tecdiving", "DiveComputer.eu", DC_FAMILY_TECDIVING_DIVECOMPUTEREU, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_tecdiving},
 	/* Garmin */
 	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
+	/* Deepblu */
+	{"Deepblu", "Cosmiq+", DC_FAMILY_DEEPBLU, 0, DC_TRANSPORT_BLE, dc_filter_deepblu},
 };
 
 static int
@@ -640,6 +643,19 @@ static int dc_filter_oceanic (dc_transport_t transport, const void *userdata)
 
 	if (transport == DC_TRANSPORT_BLE) {
 		return DC_FILTER_INTERNAL (userdata, model, 0, dc_match_oceanic);
+	}
+
+	return 1;
+}
+
+static int dc_filter_deepblu (dc_transport_t transport, const void *userdata)
+{
+	static const char * const bluetooth[] = {
+		"COSMIQ",
+	};
+
+	if (transport == DC_TRANSPORT_BLE) {
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_name);
 	}
 
 	return 1;
