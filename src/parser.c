@@ -59,6 +59,7 @@
 #include "tecdiving_divecomputereu.h"
 #include "garmin.h"
 #include "deepblu.h"
+#include "mclean_extreme.h"
 
 #include "context-private.h"
 #include "parser-private.h"
@@ -179,6 +180,9 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		break;
 	case DC_FAMILY_DEEPBLU:
 		rc = deepblu_parser_create (&parser, context);
+		break;
+	case DC_FAMILY_MCLEAN_EXTREME:
+		rc = mclean_extreme_parser_create(&parser, context);
 		break;
 	default:
 		return DC_STATUS_INVALIDARGS;

@@ -1,0 +1,102 @@
+
+COMPUTER CONFIGURATION
+----------------------
+
+The computer configuration (including gradient factors, gasses etc) is read and written as a single, fixed size block.
+
+Config section
+--------------
+
+Computer configuration and individual dive configurations both start with identical generic configuration sections of length 0x002d bytes
+
+0x0000  uint8_t     format                          ZERO
+0x0001  uint8_t     gas[0]_pO2                      oxygen content [0, 100] (percent)
+0x0002  uint8_t     gas[0]_pHe                      helium content [0, 100] (percent)
+0x0003  uint8_t     gas[1]_pO2                      oxygen content [0, 100] (percent)
+0x0004  uint8_t     gas[1]_pHe                      helium content [0, 100] (percent)
+0x0005  uint8_t     gas[2]_pO2                      oxygen content [0, 100] (percent)
+0x0006  uint8_t     gas[2]_pHe                      helium content [0, 100] (percent)
+0x0007  uint8_t     gas[3]_pO2                      oxygen content [0, 100] (percent)
+0x0008  uint8_t     gas[3]_pHe                      helium content [0, 100] (percent)
+0x0009  uint8_t     gas[4]_pO2                      oxygen content [0, 100] (percent)
+0x000a  uint8_t     gas[4]_pHe                      helium content [0, 100] (percent)
+0x000b  uint8_t     gas[5]_pO2                      oxygen content [0, 100] (percent)
+0x000c  uint8_t     gas[5]_pHe                      helium content [0, 100] (percent)
+0x000d  uint8_t     gas[6]_pO2                      oxygen content [0, 100] (percent)
+0x000e  uint8_t     gas[6]_pHe                      helium content [0, 100] (percent)
+0x000f  uint8_t     gas[7]_pO2                      oxygen content [0, 100] (percent)
+0x0010  uint8_t     gas[7]_pHe                      helium content [0, 100] (percent)
+0x0011  uint8_t     gas_mask                        bitwise mask of enabled gasses
+0x0012  uint8_t     gas_active                      current gas index
+0x0013  uint8_t     setpoint[0]                     (centibar)
+0x0014  uint8_t     setpoint[1]                     (centibar)
+0x0015  uint8_t     setpoint[2]                     (centibar)
+0x0016  uint8_t     setpoint_mask                   bitwise mask of enabled setpoints
+0x0017  uint8_t     setpoint_active                 current setpoint index
+0x0018  bool        metric                          display units [true: metric, false: imperial]
+0x0019  uint16_t    name                            dive number
+0x001b  uint8_t     laststop_index                  last stop depth enumeration [0, 3] (metric: 3m, 4m, 5m, 6m imperial: 10ft, 13ft, 16ft, 18ft)
+0x001c  uint16_t    Vasc                            ascent speed limit (millibar/minute)
+0x001e  uint16_t    Psurf                           surface pressure (millibar)
+0x0020  uint8_t     gfs_index                       predefined gf enumeration [0, 5] (only used in rec mode)
+0x0021  uint8_t     gf lo                           custom gf low [0, 255] (ignored in rec mode)
+0x0022  uint8_t     gf hi                           custom gf high [0, 255] (ignored in rec mode)
+0x0023  uint8_t     density_index                   predefined water density enumeration [0: 1.000, 1: 1.020, 2: 1.030]
+0x0024  uint16_t    ppN2_limit                      nitrogen partial pressure alert (millibars)
+0x0026  uint16_t    ppO2_limit                      oxygen partial pressure alert (millibars)
+0x0028  uint16_t    ppO2_bottomlimit                oxygen partial pressure alert (millibars)
+0x002a  uint16_t    density_limit                   (units ??)
+0x002c  uint8_t     operatingmode                   operating mode enumeration [0: OC rec, 1: OC tec, 2: CC, 3: Gauge]
+
+Computer configuration
+----------------------
+
+The computer configuration is read and written as a single block of 0x006a bytes formatted thusly:
+
+<config section as above>
+0x002d +
+0x0000  int64_t     epoch                           internal adjustment used to set computer time
+0x0008  uint16_t    inactive_timeout                number of seconds of inactivity before the computer turns itself off
+0x000a  uint16_t    dive_timeout                    number of seconds on surface before declaring dive finished
+0x000c  uint16_t    log_period                      number of seconds between dive samples
+0x000e  uint16_t    log_timeout                     not used
+0x0010  uint16_t    brightness_timeout              number of seconds of inactivity before the computer dims the screen
+0x0012  uint8_t     brightness                      dimmed screen brightness [0, 10]
+0x0013  uint8_t     colorscheme                     computer color scheme enumeration [0, 12]
+0x0014  uint8_t     language                        computer display language enumeration [0, 1]
+0x0015  uint8_t     batterytype                     user-defined battery type enumeration [0, 4]
+0x0016  uint16_t    batterytime                     computer up time since last battery change
+0x0018  <48 bytes>                                  compass calibration data (cannot be written)
+0x0048  uint8_t     button_sensitivity              piezo button sensitivity [0, 9]
+0x0049  uint8_t     orientation                     screen and button orientation
+0x004a  char[32]    diver_name                      diver name (guaranteed at least one nul terminator)
+0x006a
+
+Dive configuration
+------------------
+
+Individual dives are read as a single block of 0x002d bytes formatted thusly:
+
+<config section as above>
+0x002d +
+0x0000  uint32_t    log_start                       log start (seconds since midnight 1 jan 2000)
+0x0004  uint32_t    dive_start                      dive start (seconds since midnight 1 jan 2000)
+0x0008  uint32_t    dive_end                        dive end (seconds since midnight 1 jan 2000)
+0x000c  uint32_t    log_end                         log end (seconds since midnight 1 jan 2000)
+0x0010  uint8_t     temp_min                        minimum ambient temperature (degrees centigrade)
+0x0011  uint8_t     temp_max                        maximum ambient temperature (degrees centigrade)
+0x0012  uint16_t    pO2_min                         minimum inspired oxygen partial pressure during the dive (millibars)
+0x0014  uint16_t    pO2_max                         maximum inspired oxygen partial pressure during the dive (millibars)
+0x0016  uint16_t    Pmax                            maximum ambient pressure during the dive (millibars)
+0x0018  uint16_t    Pav                             average ambient pressure during the dive (millibars)
+0x001a  uint32_t    ISS                             integral supersaturation of dive mbar*minutes
+0x001e  uint16_t    CNS_start                       CNS at start of dive (percent)
+0x0020  uint16_t    CNS_max                         maximum CNS encountered during the dive (percent)
+0x0022  uint16_t    OTU                             OTU dive
+0x0024  uint16_t    tndl                            shortest NDL calculated during dive (seconds)
+0x0026  uint32_t    tdeco                           longest decompression time calculated during dive (seconds)
+0x002a  uint8_t     ndeco                           deepest decompression stop index calculated during dive (seconds)
+0x002b  uint16_t    tdesat                          desaturation time calculated at end of dive (seconds)
+0x002d
+
+

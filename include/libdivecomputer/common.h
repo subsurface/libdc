@@ -112,6 +112,8 @@ typedef enum dc_family_t {
 	DC_FAMILY_GARMIN = (16 << 16),
 	/* Deepblu */
 	DC_FAMILY_DEEPBLU = (17 << 16),
+	/* McLean */
+	DC_FAMILY_MCLEAN_EXTREME = (18 << 16),
 } dc_family_t;
 
 #ifdef __cplusplus

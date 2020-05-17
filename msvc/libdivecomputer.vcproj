@@ -515,6 +515,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\mclean_extreme.c"
+				>
+			</File>
+			<File
+				RelativePath="..\src\mclean_extreme_parser.c"
+				>
+			</File>
+			<File
 				RelativePath="..\src\field-cache.c"
 				>
 			</File>
@@ -866,6 +874,10 @@
 			</File>
 			<File
 				RelativePath="..\src\deepblu.h"
+				>
+			</File>
+			<File
+				RelativePath="..\src\mclean_extreme.h"
 				>
 			</File>
 			<File
