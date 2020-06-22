@@ -75,6 +75,7 @@ libdivecomputer_la_SOURCES = \
 	tecdiving_divecomputereu.h tecdiving_divecomputereu.c tecdiving_divecomputereu_parser.c \
 	garmin.h garmin.c garmin_parser.c \
 	deepblu.h deepblu.c deepblu_parser.c \
+	oceans_s1.h oceans_s1.c oceans_s1_parser.c \
 	socket.h socket.c \
 	irda.c \
 	usbhid.c \
