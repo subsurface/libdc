@@ -4,6 +4,8 @@
 #include <string.h> // memcmp, memcpy
 #include <stdlib.h> // malloc, free
 #include <stdint.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 #include "oceans_s1.h"
 #include "context-private.h"
@@ -21,6 +23,7 @@ typedef struct oceans_s1_device_t {
 static dc_status_t oceans_s1_device_set_fingerprint(dc_device_t *abstract, const unsigned char data[], unsigned int size);
 static dc_status_t oceans_s1_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
 static dc_status_t oceans_s1_device_close(dc_device_t *abstract);
+static dc_status_t oceans_s1_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
 
 static const dc_device_vtable_t oceans_s1_device_vtable = {
 	sizeof(oceans_s1_device_t),
@@ -30,7 +33,7 @@ static const dc_device_vtable_t oceans_s1_device_vtable = {
 	NULL, /* write */
 	NULL, /* dump */
 	oceans_s1_device_foreach, /* foreach */
-	NULL, /* timesync */
+	oceans_s1_device_timesync, /* timesync */
 	oceans_s1_device_close, /* close */
 };
 
@@ -52,6 +55,61 @@ oceans_s1_read(oceans_s1_device_t *s1, char *buf, size_t bufsz)
 	if (nbytes < bufsz)
 		buf[nbytes] = 0;
 	return status;
+}
+
+#define BUFSZ 64
+
+// Note how we don't rely on the return value of 'vsnprintf(), or on
+// NUL termination because it's not portable.
+static dc_status_t oceans_s1_printf(oceans_s1_device_t *s1, const char *fmt, ...)
+{
+	va_list ap;
+	char buffer[BUFSZ];
+
+	va_start(ap, fmt);
+	vsnprintf(buffer, BUFSZ, fmt, ap);
+	va_end(ap);
+	buffer[BUFSZ-1] = 0;
+
+	return oceans_s1_write(s1, buffer);
+}
+
+static dc_status_t oceans_s1_expect(oceans_s1_device_t *s1, const char *result)
+{
+	char buffer[BUFSZ];
+	dc_status_t status;
+
+	status = oceans_s1_read(s1, buffer, BUFSZ);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	if (strncmp(buffer, result, strlen(result)))
+		return DC_STATUS_IO;
+
+	return DC_STATUS_SUCCESS;
+}
+
+/*
+ * The Oceans S1 uses the normal UNIX epoch time format: seconds
+ * since 1-1-1970. In UTC format (so converting local time to UTC).
+ */
+static dc_status_t oceans_s1_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
+{
+	oceans_s1_device_t *s1 = (oceans_s1_device_t *) abstract;
+	dc_ticks_t timestamp;
+	dc_status_t status;
+
+	timestamp = dc_datetime_mktime(datetime);
+	if (timestamp < 0)
+		return DC_STATUS_INVALIDARGS;
+
+	timestamp += datetime->timezone;
+
+	status = oceans_s1_printf(s1, "utc %lld\n", (long long) timestamp);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	return oceans_s1_expect(s1, "utc>ok");
 }
 
 /*
@@ -201,6 +259,8 @@ oceans_s1_device_open(dc_device_t **out, dc_context_t *context, dc_iostream_t *i
 
 	*out = (dc_device_t*)s1;
 
+	// Do minimal verification that we can talk to it
+	// as part of the open.
 	status = oceans_s1_write(s1, "utc\n");
 	if (status != DC_STATUS_SUCCESS)
 		return status;
@@ -208,10 +268,10 @@ oceans_s1_device_open(dc_device_t **out, dc_context_t *context, dc_iostream_t *i
 	status = oceans_s1_read(s1, buffer, sizeof(buffer));
 	if (status != DC_STATUS_SUCCESS)
 		return status;
+	if (memcmp(buffer, "utc>ok", 6))
+		return DC_STATUS_IO;
 
-	// Fill in
-
-	return DC_STATUS_IO;
+	return DC_STATUS_SUCCESS;
 }
 
 static dc_status_t
@@ -251,7 +311,7 @@ oceans_s1_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback, voi
 	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 
 	progress.current = 0;
-	progress.maximum = 0;
+	progress.maximum = 100;
 	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 
 	// Fill in
