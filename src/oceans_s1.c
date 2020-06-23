@@ -34,6 +34,150 @@ static const dc_device_vtable_t oceans_s1_device_vtable = {
 	oceans_s1_device_close, /* close */
 };
 
+static dc_status_t
+oceans_s1_write(oceans_s1_device_t *s1, const char *msg)
+{
+	return dc_iostream_write(s1->iostream, msg, strlen(msg), NULL);
+}
+
+static dc_status_t
+oceans_s1_read(oceans_s1_device_t *s1, char *buf, size_t bufsz)
+{
+	size_t nbytes;
+	dc_status_t status;
+
+	status = dc_iostream_read(s1->iostream, buf, bufsz, &nbytes);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+	if (nbytes < bufsz)
+		buf[nbytes] = 0;
+	return status;
+}
+
+/*
+ * Oceans S1 initial sequence (all ASCII text with newlines):
+ *
+ *	Cmd			Reply				Comments
+ *
+ *	"utc"			"utc>ok 1592912375"		// TZ=UTC date -d"@1592912375"
+ *	"battery"		"battery>ok 59%"
+ *	"version"		"version>ok 1.1 42a7e564"	// Odd hex contant. Device ID?
+ *	"utc 1592912364"	"utc>ok"			TZ=UTC date -d"@1592912364"
+ *	"units 0"		"units>ok"
+ *	"name TGludXM="		"name>ok"			// WTF?
+ *	"dllist"		"dllist>xmr"
+ *
+ * At this point, the sequence changed and is no longer single packets
+ * with a full line with newline termination.
+ *
+ * We send a single 'C' character as a GATT "Write Command" - 0x53 (so
+ * not "Write Request" - 0x12).
+ *
+ * The dive computer replies with GATT packets that contains:
+ *
+ *  - binary three bytes: "\x01\x01\xfe"
+ *
+ *  - followed by ASCII text blob (note the single space indentation):
+ *
+ *	divelog v1,10s/sample
+ *	 dive 1,0,21,1591372057
+ *	 continue 612,10
+ *	 enddive 3131,496
+ *	 dive 2,0,21,1591372925
+ *	 enddive 1535,277
+ *	 dive 3,0,32,1591463368
+ *	 enddive 1711,4515
+ *	 dive 4,0,32,1591961688
+ *	 continue 300,45
+ *	 continue 391,238
+ *	 continue 420,126
+ *	 continue 236,17
+ *	 enddive 1087,2636
+ *	endlog
+ *
+ * Followed by a lot of newlines to pad out the packets.
+ *
+ * NOTE! The newlines are probably because the way the Nordic Semi UART
+ * buffering works: it will buffer the packets until they are full, or
+ * until a newline.
+ *
+ * Then some odd data: write a single '\x06' character and get a single
+ * character reply of '\x04' (!?). Repeat, get a '\x13' byte back.
+ *
+ * NOTE! Again these single-byte things are GATT "write command", not
+ * GATT "write request" things. They may be commands to the UART, not
+ * data. Some kind of flow control? Or UART buffer control?
+ *
+ * Then it seems to go back to line-mode with the usual Write Request:
+ *
+ *	"dlget 4 5"	 "dlget>xmr"
+ *
+ * which puts us in that "blob" mode again, and we send a singler 'C'
+ * character again, and now get that same '\x01\x01\xfe' binary data
+ * followed by ASCII text blob (note the space indentation again):
+ *
+ *	divelog v1,10s/sample
+ *	 dive 4,0,32,1591961688
+ *	  365,13,1
+ *	  382,13,51456
+ *	  367,13,16640
+ *	  381,13,49408
+ *	  375,13,24576
+ *	  355,13,16384
+ *	  346,13,16384
+ *	  326,14,16384
+ *	  355,14,16384
+ *	  394,14,24576
+ *	  397,14,16384
+ *	  434,14,49152
+ *	  479,14,49152
+ *	  488,14,16384
+ *	  556,14,57344
+ *	  616,14,49152
+ *	  655,14,49152
+ *	  738,14,49152
+ *	  800,14,57344
+ *	  800,14,49408
+ *	  834,14,16640
+ *	  871,14,24832
+ *	  860,14,16640
+ *	  860,14,16640
+ *	  815,14,24832
+ *	  738,14,16640
+ *	  707,14,16640
+ *	  653,14,24832
+ *	  647,13,16640
+ *	  670,13,16640
+ *	  653,13,24832
+ *	  ...
+ *	 continue 236,17
+ *	  227,13,57600
+ *	  238,14,16640
+ *	  267,14,24832
+ *	  283,14,16384
+ *	  272,14,16384
+ *	  303,14,24576
+ *	  320,14,16384
+ *	  318,14,16384
+ *	  318,14,16384
+ *	  335,14,24576
+ *	  332,14,16384
+ *	  386,14,16384
+ *	  417,14,24576
+ *	  244,14,16640
+ *	  71,14,16640
+ *	 enddive 1087,2636
+ *	endlog
+ *
+ * Where the samples seem to be
+ *  - 'depth in cm'
+ *  - 'temperature in °C' (??)
+ *  - 'hex value flags' (??)
+ *
+ * Repeat with 'dlget 3 4', 'dlget 2 3', 'dlget 1 2'.
+ *
+ * Done.
+ */
 dc_status_t
 oceans_s1_device_open(dc_device_t **out, dc_context_t *context, dc_iostream_t *iostream)
 {
@@ -56,6 +200,14 @@ oceans_s1_device_open(dc_device_t **out, dc_context_t *context, dc_iostream_t *i
 	memset(s1->fingerprint, 0, sizeof(s1->fingerprint));
 
 	*out = (dc_device_t*)s1;
+
+	status = oceans_s1_write(s1, "utc\n");
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	status = oceans_s1_read(s1, buffer, sizeof(buffer));
+	if (status != DC_STATUS_SUCCESS)
+		return status;
 
 	// Fill in
 
