@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <ctype.h>
 
 #include "oceans_s1.h"
 #include "context-private.h"
@@ -83,9 +84,146 @@ static dc_status_t oceans_s1_expect(oceans_s1_device_t *s1, const char *result)
 	if (status != DC_STATUS_SUCCESS)
 		return status;
 
-	if (strncmp(buffer, result, strlen(result)))
+	if (strncmp(buffer, result, strlen(result))) {
+		ERROR(s1->base.context, "Expected '%s' got '%s'", result, buffer);
+		return DC_STATUS_IO;
+	}
+
+	return DC_STATUS_SUCCESS;
+}
+
+/*
+ * The "blob mode" is sends stuff in bigger chunks with some binary
+ * header and trailer.
+ *
+ * It seems to be a sequence of packets with 517 bytes of payload:
+ * three bytes of header, 512 bytes of ASCII data, and two bytes of
+ * trailer (data checksum?).
+ *
+ * We're supposed to start the sequence with a 'C' packet, and reply
+ * to each 517-byte packet sequence with a '\006' packet.
+ *
+ * When there is no more data, the S1 will send us a '\004' packet,
+ * which we'll ack with a final '\006' packet.
+ *
+ * The header is '\001' followed by block number (starting at 1),
+ * followed by (255-block) number. So we can get a sequence of
+ *
+ *  01 01 fe <512 bytes> xx xx
+ *  01 02 fd <512 bytes> xx xx
+ *  01 03 fc <512 bytes> xx xx
+ *  01 04 fb <512 bytes> xx xx
+ *  01 05 fa <512 bytes> xx xx
+ *  01 06 f9 <512 bytes> xx xx
+ *  01 07 f8 <512 bytes> xx xx
+ *  04
+ *
+ * And we should reply with that '\006' packet for each of those
+ * entries.
+ *
+ * NOTE! The above is not in single BLE packets, although the
+ * sequence blocks always start at a packet boundary.
+ */
+#define BLOB_BUFSZ 256
+static dc_status_t oceans_s1_get_sequence(oceans_s1_device_t *s1, unsigned char seq, dc_buffer_t *res)
+{
+	unsigned char buffer[BLOB_BUFSZ];
+	dc_status_t status;
+	size_t nbytes;
+
+	status = dc_iostream_read(s1->iostream, buffer, BLOB_BUFSZ, &nbytes);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+	if (!nbytes)
 		return DC_STATUS_IO;
 
+	if (buffer[0] == 4)
+		return DC_STATUS_DONE;
+
+	if (nbytes <= 3 || buffer[0] != 1)
+		return DC_STATUS_IO;
+
+	if (buffer[1] != seq || buffer[2]+seq != 255)
+		return DC_STATUS_IO;
+
+	nbytes -= 3;
+	dc_buffer_append(res, buffer+3, nbytes);
+	while (nbytes < 512) {
+		size_t got;
+
+		status = dc_iostream_read(s1->iostream, buffer, BLOB_BUFSZ, &got);
+		if (status != DC_STATUS_SUCCESS)
+			return status;
+
+		if (!got)
+			return DC_STATUS_IO;
+
+		// We should check the checksum if it is that?
+		if (got + nbytes > 512)
+			got = 512-nbytes;
+		dc_buffer_append(res, buffer, got);
+		nbytes += got;
+	}
+	return DC_STATUS_SUCCESS;
+}
+
+static dc_status_t oceans_s1_get_blob(oceans_s1_device_t *s1, unsigned char **result)
+{
+	dc_status_t status;
+	dc_buffer_t *res;
+	unsigned char *data;
+	size_t size;
+	unsigned char seq;
+
+	res = dc_buffer_new(0);
+	if (!res)
+		return DC_STATUS_NOMEMORY;
+
+	// Tell the Oceans S1 to into some kind of block mode..
+	//
+	// The Oceans Android app uses a "Write Command" rather than
+	// a "Write Request" for this, but it seems to not matter
+
+	status = dc_iostream_write(s1->iostream, "C", 1, NULL);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	seq = 1;
+	for (;;) {
+		status = oceans_s1_get_sequence(s1, seq, res);
+		if (status == DC_STATUS_DONE)
+			break;
+
+		if (status != DC_STATUS_SUCCESS) {
+			dc_buffer_free(res);
+			return status;
+		}
+
+		// Ack the packet sequence, and go look for the next one
+		status = dc_iostream_write(s1->iostream, "\006", 1, NULL);
+		if (status != DC_STATUS_SUCCESS)
+			return status;
+		seq++;
+	}
+
+
+
+	// Tell the Oceans S1 to exit block mode (??)
+	status = dc_iostream_write(s1->iostream, "\006", 1, NULL);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	size = dc_buffer_get_size(res);
+
+	// NUL-terminate before getting buffer
+	dc_buffer_append(res, "", 1);
+	data = dc_buffer_get_data(res);
+
+	/* Remove trailing whitespace */
+	while (size && isspace(data[size-1]))
+		data[--size] = 0;
+
+	*result = data;
 	return DC_STATUS_SUCCESS;
 }
 
@@ -111,6 +249,7 @@ static dc_status_t oceans_s1_device_timesync(dc_device_t *abstract, const dc_dat
 
 	return oceans_s1_expect(s1, "utc>ok");
 }
+
 
 /*
  * Oceans S1 initial sequence (all ASCII text with newlines):
@@ -302,17 +441,61 @@ oceans_s1_device_set_fingerprint(dc_device_t *abstract, const unsigned char data
 }
 
 static dc_status_t
+get_dive_list(oceans_s1_device_t *s1, unsigned char **list)
+{
+	dc_status_t status;
+
+	status = oceans_s1_write(s1, "dllist\n");
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	status = oceans_s1_expect(s1, "dllist>xmr");
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	return oceans_s1_get_blob(s1, list);
+}
+
+static dc_status_t
+get_one_dive(oceans_s1_device_t *s1, int nr, unsigned char **dive)
+{
+	dc_status_t status;
+
+	status = oceans_s1_printf(s1, "dlget %d %d\n", nr, nr+1);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	status = oceans_s1_expect(s1, "dlget>xmr");
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+
+	return oceans_s1_get_blob(s1, dive);
+}
+
+static dc_status_t
 oceans_s1_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback, void *userdata)
 {
+	unsigned char *divelist, *dive;
 	dc_status_t status = DC_STATUS_SUCCESS;
 	oceans_s1_device_t *s1 = (oceans_s1_device_t*)abstract;
 
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
 	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 
+	status = get_dive_list(s1, &divelist);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+	fprintf(stderr, "divelist = %s\n", divelist);
+
 	progress.current = 0;
 	progress.maximum = 100;
 	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
+
+	// Just force dive 4 for now
+	status = get_one_dive(s1, 4, &dive);
+	if (status != DC_STATUS_SUCCESS)
+		return status;
+	fprintf(stderr, "dive 4 = %s\n", dive);
 
 	// Fill in
 
