@@ -13,12 +13,12 @@
 #include "device-private.h"
 #include "array.h"
 
-#define ISINSTANCE(device) dc_device_isinstance((device), &oceans_s1_device_vtable)
+#define S1_FINGERPRINT 32
 
 typedef struct oceans_s1_device_t {
 	dc_device_t base;
 	dc_iostream_t* iostream;
-	unsigned char fingerprint[4];
+	unsigned char fingerprint[S1_FINGERPRINT];
 } oceans_s1_device_t;
 
 static dc_status_t oceans_s1_device_set_fingerprint(dc_device_t *abstract, const unsigned char data[], unsigned int size);
@@ -429,13 +429,11 @@ oceans_s1_device_set_fingerprint(dc_device_t *abstract, const unsigned char data
 {
 	oceans_s1_device_t *s1 = (oceans_s1_device_t*)abstract;
 
-	if (size && size != sizeof(s1->fingerprint))
+	if (size > sizeof(s1->fingerprint))
 		return DC_STATUS_INVALIDARGS;
 
-	if (size)
-		memcpy(s1->fingerprint, data, sizeof(s1->fingerprint));
-	else
-		memset(s1->fingerprint, 0, sizeof(s1->fingerprint));
+	memset(s1->fingerprint, 0, sizeof(s1->fingerprint));
+	memcpy(s1->fingerprint, data, size);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -472,23 +470,21 @@ get_one_dive(oceans_s1_device_t *s1, int nr, const unsigned char **dive)
 	return oceans_s1_get_blob(s1, dive);
 }
 
-static const unsigned char *get_string_line(const unsigned char *in, const unsigned char **next)
+static const unsigned char *get_string_line(const unsigned char **blob)
 {
+	const unsigned char *in = *blob;
 	const unsigned char *line;
 	unsigned char c;
 
-	if (!in) {
-		*next = NULL;
+	*blob = NULL;
+	if (!in)
 		return NULL;
-	}
 
 	while (isspace(*in))
 		in++;
 
-	if (!*in) {
-		*next = NULL;
+	if (!*in)
 		return NULL;
-	}
 
 	line = in;
 	while ((c = *in) != 0) {
@@ -496,39 +492,132 @@ static const unsigned char *get_string_line(const unsigned char *in, const unsig
 			break;
 		in++;
 	}
-	*next = in;
+	*blob = in;
 	return line;
 }
 
-static int count_dives(const unsigned char *divelist)
-{
-	int dives = 0;
-	const unsigned char *line;
+// The 'unknown' field is probably the dive mode
+// 'date' is seconds since UNIX epoch (the usual "local time as GMT")
+// depth and duration are in cm and seconds
+// The fingerprint is just the 'dive' line padded with NUL characters
+struct s1_dive {
+	int nr, unknown, o2;
+	long long date;
+	unsigned maxdepth, duration;
+	unsigned char fingerprint[S1_FINGERPRINT];
+	struct s1_dive *next;
+};
 
-	while ((line = get_string_line(divelist, &divelist)) != NULL) {
-		if (strncmp(line, "dive ", 5))
-			continue;
-		dives++;
+/*
+ * React to the "dive x,y,z,date" line.
+ *
+ * Allocate the dive.
+ */
+static struct s1_dive *
+s1_alloc_dive(const unsigned char *line, size_t len)
+{
+	struct s1_dive *dive;
+	int nr, unknown, o2;
+	long long date;
+
+	if (sscanf(line, "dive %d,%d,%d,%lld", &nr, &unknown, &o2, &date) != 4)
+		return NULL;
+
+	dive = malloc(sizeof(*dive));
+	if (dive) {
+		memset(dive, 0, sizeof(*dive));
+
+		dive->nr = nr;
+		dive->unknown = unknown;
+		dive->o2 = o2;
+		dive->date = date;
+		dive->next = NULL;
+
+		if (len >= S1_FINGERPRINT)
+			len = S1_FINGERPRINT-1;
+		memcpy(dive->fingerprint, line, len);
 	}
-	return dives;
+	return dive;
+}
+
+/*
+ * React to the "enddive x,y" line
+ *
+ * Add a dive to the dive list, sorted with newest dive first
+ *
+ * I'm not sure if the dive list is always presented sorted by the
+ * Oceans S1, but it arrives in the reverse order of what we want
+ * (we want newest first, it lists them oldest first). So we need
+ * to switch the order, and we might as well make sure it's sorted
+ * while doing that.
+ *
+ * If it always comes sorted from the Oceans S1, the while () loop
+ * here won't ever actually loop, so there's no real cost to this
+ * (not that CPU time here matters).
+ */
+static int
+s1_add_dive(struct s1_dive *dive, struct s1_dive **list, const unsigned char *line, size_t len)
+{
+	unsigned maxdepth, duration;
+	struct s1_dive *next;
+
+	if (!dive)
+		return 0;
+
+	if (sscanf(line, "enddive %u,%u", &maxdepth, &duration) != 2)
+		return 0;
+
+	dive->maxdepth = maxdepth;
+	dive->duration = duration;
+	while ((next = *list) != NULL) {
+		if (dive->nr >= next->nr)
+			break;
+		list = &next->next;
+	}
+	dive->next = next;
+	*list = dive;
+	return 1;
 }
 
 static dc_status_t
 oceans_s1_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback, void *userdata)
 {
 	int nr;
-	const unsigned char *divelist, *line;
+	struct s1_dive *divelist, *current_dive;
+	const unsigned char *blob, *line;
 	dc_status_t status = DC_STATUS_SUCCESS;
 	oceans_s1_device_t *s1 = (oceans_s1_device_t*)abstract;
 
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
 	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 
-	status = get_dive_list(s1, &divelist);
+	status = get_dive_list(s1, &blob);
 	if (status != DC_STATUS_SUCCESS)
 		return status;
 
-	nr = count_dives(divelist);
+	nr = 0;
+	divelist = NULL;
+	current_dive = NULL;
+	while ((line = get_string_line(&blob)) != NULL) {
+		int linelen = blob - line;
+		const unsigned char *dive;
+
+		/* We only care about 'dive' and 'enddive' lines */
+		if (linelen < 8)
+			continue;
+
+		if (!memcmp(line, "dive ", 5)) {
+			current_dive = s1_alloc_dive(line, linelen);
+			continue;
+		}
+
+		if (memcmp(line, "enddive ", 8))
+			continue;
+
+		if (s1_add_dive(current_dive, &divelist, line, linelen))
+			nr++;
+		current_dive = NULL;
+	}
 	if (!nr)
 		return DC_STATUS_SUCCESS;
 
@@ -536,49 +625,23 @@ oceans_s1_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback, voi
 	progress.maximum = nr;
 	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 
-	int dive_nr = 0, dive_unknown = 0, dive_o2 = 0;
-	int dive_depth, dive_time;
-	long long dive_date = -1;
-	char fingerprint[32];
+	for (current_dive = divelist; current_dive; current_dive = current_dive->next) {
+		const unsigned char *blob;
 
-	while ((line = get_string_line(divelist, &divelist)) != NULL) {
-		int linelen = divelist - line;
-		const unsigned char *dive;
+		if (!memcmp(current_dive->fingerprint, s1->fingerprint, S1_FINGERPRINT))
+			break;
 
-		/* We only care about 'dive' and 'enddive' lines */
-		if (linelen < 8 || linelen >= 32)
-			continue;
+		if (device_is_cancelled(&s1->base))
+			break;
 
-		if (!memcmp(line, "dive ", 5)) {
-			int nr, unknown, o2;
-			long long date;
-
-			if (sscanf(line, "dive %d,%d,%d,%lld", &nr, &unknown, &o2, &date) != 4)
-				continue;
-			dive_nr = nr;
-			dive_unknown = unknown;
-			dive_o2 = o2;
-			dive_date = date;
-
-			memset(fingerprint, 0, sizeof(fingerprint));
-			memcpy(fingerprint, line, linelen);
-			continue;
-		}
-
-		if (memcmp(line, "enddive ", 8))
-			continue;
-
-		if (sscanf(line, "enddive %d,%d", &dive_depth, &dive_time) != 2)
-			continue;
-
-		status = get_one_dive(s1, dive_nr, &dive);
+		status = get_one_dive(s1, current_dive->nr, &blob);
 		if (status != DC_STATUS_SUCCESS)
 			return status;
 
 		progress.current++;
 		device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
 
-		if (callback && !callback(dive, strlen(dive), fingerprint, sizeof(fingerprint), userdata))
+		if (callback && !callback(blob, strlen(blob), current_dive->fingerprint, S1_FINGERPRINT, userdata))
 			break;
 	}
 
