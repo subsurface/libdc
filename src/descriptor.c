@@ -51,6 +51,7 @@ static int dc_filter_divesystem (dc_transport_t transport, const void *userdata)
 static int dc_filter_oceanic (dc_transport_t transport, const void *userdata);
 static int dc_filter_deepblu (dc_transport_t transport, const void *userdata);
 static int dc_filter_mclean (dc_transport_t transport, const void *userdata);
+static int dc_filter_oceans(dc_transport_t transport, const void *userdata);
 
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
@@ -385,6 +386,8 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Deepblu", "Cosmiq+", DC_FAMILY_DEEPBLU, 0, DC_TRANSPORT_BLE, dc_filter_deepblu},
 	/* McLean Extreme */
 	{ "McLean", "Extreme", DC_FAMILY_MCLEAN_EXTREME, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_mclean},
+	/* Oceans S1 */
+	{ "Oceans", "S1", DC_FAMILY_OCEANS_S1, 0, DC_TRANSPORT_BLE, dc_filter_oceans },
 };
 
 static int
@@ -674,6 +677,19 @@ static int dc_filter_mclean(dc_transport_t transport, const void *userdata)
 		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_name);
 	} else if (transport == DC_TRANSPORT_SERIAL) {
 		return DC_FILTER_INTERNAL(userdata, rfcomm, 1, dc_match_devname);
+	}
+
+	return 1;
+}
+
+static int dc_filter_oceans(dc_transport_t transport, const void* userdata)
+{
+	static const char* const ble[] = {
+		"S1",
+	};
+
+	if (transport == DC_TRANSPORT_BLE) {
+		return DC_FILTER_INTERNAL(userdata, ble, 0, dc_match_prefix);
 	}
 
 	return 1;

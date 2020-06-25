@@ -76,6 +76,7 @@ libdivecomputer_la_SOURCES = \
 	garmin.h garmin.c garmin_parser.c \
 	deepblu.h deepblu.c deepblu_parser.c \
 	mclean_extreme.h mclean_extreme.c mclean_extreme_parser.c \
+	oceans_s1.h oceans_s1.c oceans_s1_parser.c \
 	socket.h socket.c \
 	irda.c \
 	usbhid.c \

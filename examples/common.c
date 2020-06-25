@@ -93,6 +93,7 @@ static const backend_table_t g_backends[] = {
 	{"descentmk1",  DC_FAMILY_GARMIN,              0},
 	{"cosmiq",      DC_FAMILY_DEEPBLU,             0},
 	{"mclean",      DC_FAMILY_MCLEAN_EXTREME,      0},
+	{"oceans",	DC_FAMILY_OCEANS_S1,           0},
 };
 
 static const transport_table_t g_transports[] = {

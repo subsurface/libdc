@@ -62,3 +62,41 @@ dc_status_t dc_field_get_string(dc_field_cache_t *cache, unsigned idx, dc_field_
 	}
 	return DC_STATUS_UNSUPPORTED;
 }
+
+
+/*
+ * Use this generic "pick fields from the field cache" helper
+ * after you've handled all the ones you do differently
+ */
+dc_status_t
+dc_field_get(dc_field_cache_t *cache, dc_field_type_t type, unsigned int flags, void* value)
+{
+	if (!(cache->initialized & (1 << type)))
+		return DC_STATUS_UNSUPPORTED;
+
+	switch (type) {
+	case DC_FIELD_DIVETIME:
+		return DC_FIELD_VALUE(*cache, value, DIVETIME);
+	case DC_FIELD_MAXDEPTH:
+		return DC_FIELD_VALUE(*cache, value, MAXDEPTH);
+	case DC_FIELD_AVGDEPTH:
+		return DC_FIELD_VALUE(*cache, value, AVGDEPTH);
+	case DC_FIELD_GASMIX_COUNT:
+	case DC_FIELD_TANK_COUNT:
+		return DC_FIELD_VALUE(*cache, value, GASMIX_COUNT);
+	case DC_FIELD_GASMIX:
+		if (flags >= MAXGASES)
+			break;
+		return DC_FIELD_INDEX(*cache, value, GASMIX, flags);
+	case DC_FIELD_SALINITY:
+		return DC_FIELD_VALUE(*cache, value, SALINITY);
+	case DC_FIELD_DIVEMODE:
+		return DC_FIELD_VALUE(*cache, value, DIVEMODE);
+	case DC_FIELD_STRING:
+		return dc_field_get_string(cache, flags, (dc_field_string_t *)value);
+	default:
+		break;
+	}
+
+	return DC_STATUS_UNSUPPORTED;
+}
