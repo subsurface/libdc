@@ -733,14 +733,6 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 	else
 		samplerate = data[36];
 
-	// Get the salinity factor.
-	unsigned int salinity = data[layout->salinity];
-	if (version == 0x23 || version == 0x24)
-		salinity += 100;
-	if (salinity < 100 || salinity > 104)
-		salinity = 100;
-	double hydrostatic = GRAVITY * salinity * 10.0;
-
 	// Get the number of sample descriptors.
 	unsigned int nconfig = 0;
 	if (version == 0x23 || version == 0x24)
@@ -844,9 +836,9 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 			if (callback) callback (DC_SAMPLE_CNS, sample, userdata);
 		}
 
-		// Depth (mbar).
+		// Depth (1/100 m).
 		unsigned int depth = array_uint16_le (data + offset);
-		sample.depth = (depth * BAR / 1000.0) / hydrostatic;
+		sample.depth = depth / 100.0;
 		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
 		offset += 2;
 
@@ -996,12 +988,12 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 		for (unsigned int i = 0; i < nconfig; ++i) {
 			if (info[i].divisor && (nsamples % info[i].divisor) == 0) {
 				if (length < info[i].size) {
-					// Due to a bug in the hwOS Tech firmware v3.03 to v3.07, and
+					// Due to a bug in the hwOS Tech firmware v3.03 to v3.08, and
 					// the hwOS Sport firmware v10.57 to v10.63, the ppO2 divisor
 					// is sometimes not correctly reset to zero when no ppO2
 					// samples are being recorded.
 					if (info[i].type == PPO2 && parser->hwos && parser->model != OSTC4 &&
-						((firmware >= OSTC3FW(3,3) && firmware <= OSTC3FW(3,7)) ||
+						((firmware >= OSTC3FW(3,3) && firmware <= OSTC3FW(3,8)) ||
 						(firmware >= OSTC3FW(10,57) && firmware <= OSTC3FW(10,63)))) {
 						WARNING (abstract->context, "Reset invalid ppO2 divisor to zero.");
 						info[i].divisor = 0;

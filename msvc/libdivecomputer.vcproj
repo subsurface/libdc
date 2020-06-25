@@ -351,6 +351,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\mclean_extreme.c"
+				>
+			</File>
+			<File
+				RelativePath="..\src\mclean_extreme_parser.c"
+				>
+			</File>
+			<File
 				RelativePath="..\src\oceanic_atom2.c"
 				>
 			</File>
@@ -722,6 +730,10 @@
 			</File>
 			<File
 				RelativePath="..\src\mares_puck.h"
+				>
+			</File>
+			<File
+				RelativePath="..\src\mclean_extreme.h"
 				>
 			</File>
 			<File

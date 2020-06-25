@@ -90,9 +90,9 @@ static const backend_table_t g_backends[] = {
 	{"idive",       DC_FAMILY_DIVESYSTEM_IDIVE,    0x03},
 	{"cochran",     DC_FAMILY_COCHRAN_COMMANDER,   0},
 	{"divecomputereu", DC_FAMILY_TECDIVING_DIVECOMPUTEREU, 0},
-	{"descentmk1",  DC_FAMILY_GARMIN, 0},
+	{"descentmk1",  DC_FAMILY_GARMIN,              0},
 	{"cosmiq",      DC_FAMILY_DEEPBLU,             0},
-	{"mclean",	DC_FAMILY_MCLEAN_EXTREME, 0},
+	{"mclean",      DC_FAMILY_MCLEAN_EXTREME,      0},
 };
 
 static const transport_table_t g_transports[] = {

@@ -1,7 +1,7 @@
 /*
  * libdivecomputer
  *
- * Copyright (C) 2018 Jef Driesen
+ * Copyright (C) 2020 Jef Driesen, David Carron
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,7 +21,6 @@
 
 #include <string.h> // memcmp, memcpy
 #include <stdlib.h> // malloc, free
-#include <stdint.h>
 
 #include "mclean_extreme.h"
 #include "context-private.h"
@@ -30,78 +29,40 @@
 
 #define ISINSTANCE(device) dc_device_isinstance((device), &mclean_extreme_device_vtable)
 
-#define MAXRETRIES  14
+#define MAXRETRIES          14
 
-#define STX         0x7E
+#define STX                 0x7E
 
-#define CMD_COMPUTER		0xa0				// download computer configuration
-#define CMD_SETCOMPUTER		0xa1				// upload computer configuration
-#define CMD_DIVE			0xa3				// download specified dive configuration and samples
-#define CMD_CLOSE			0xaa				// close connexion and turn off bluetooth
+#define CMD_SERIALNUMBER    0x91
+#define CMD_COMPUTER        0xA0
+#define CMD_SET_COMPUTER    0xA1
+#define CMD_DIVE            0xA3
+#define CMD_CLOSE           0xAA
+#define CMD_SET_TIME        0xAC
+#define CMD_FIRMWARE        0xAD
 
-#define SZ_PACKET			512					// maximum packe payload length
-#define SZ_SUMMARY			7					// size of the device fingerprint
-#define SZ_CFG				0x002d				// size of the common dive/computer header
-#define SZ_COMPUTER			0x0097				// size of the computer state dump
-#define SZ_DIVE				0x005e				// size of the dive state dump
-#define SZ_SAMPLE			0x0004				// size of the sample state dump
+#define SZ_PACKET           512
+#define SZ_FINGERPRINT      7
+#define SZ_CFG              0x002D
+#define SZ_COMPUTER         (SZ_CFG + 0x6A)
+#define SZ_HEADER           (SZ_CFG + 0x31)
+#define SZ_SAMPLE           0x0004
 
-// private device parsing functions //////////////////////////////////////////////////////////////////////////////////////////
+#define EPOCH 946684800 // 2000-01-01 00:00:00 UTC
 
-static uint16_t uint16(const unsigned char* buffer, int addr) { return (buffer[0 + addr] << 0) | (buffer[1 + addr] << 8); }
-static uint32_t uint32(const unsigned char* buffer, int addr) { return (uint16(buffer, addr) << 0) | (uint16(buffer, addr + 2) << 16); }
-
-static uint8_t device_format(const unsigned char* device) { return device[0x0000]; }
-// static uint8_t device_gas_pO2(const unsigned char* device, int value) { return device[0x0001 + value * 2]; }
-// static uint8_t device_gas_pHe(const unsigned char* device, int value) { return device[0x0001 + 1 + value * 2]; }
-// static bool device_gas_enabled(const unsigned char* device, int value) { return (device[0x0011] & (1 << value)) != 0; }
-// static uint8_t device_setpoint(const unsigned char* device, int value) { return device[0x0013 + value]; }
-// static bool device_setpoint_enabled(const unsigned char* device, int value) { return (device[device, 0x0016] & (1 << value)) != 0; }
-// static bool device_metric(unsigned char* device) { return device[0x0018] != 0; }
-static uint16_t device_name(const unsigned char* device) { return uint16(device, 0x0019); }
-// static uint16_t device_Vasc(const unsigned char* device) { return uint16(device, 0x001c); }
-// static uint16_t device_Psurf(const unsigned char* device) { return uint16(device, 0x001e); }
-// static uint8_t device_gfs_index(const unsigned char* device) { return device[0x0020]; }
-// static uint8_t device_gflo(const unsigned char* device) { return device[0x0021]; }
-// static uint8_t device_gfhi(const unsigned char* device) { return device[0x0022]; }
-// static uint8_t device_density_index(const unsigned char* device) { return device[0x0023]; }
-// static uint16_t device_ppN2_limit(const unsigned char* device) { return uint16(device, 0x0024); }
-// static uint16_t device_ppO2_limit(const unsigned char* device) { return uint16(device, 0x0026); }
-// static uint16_t device_ppO2_bottomlimit(const unsigned char* device) { return uint16(device, 0x0028); }
-// static uint16_t device_density_limit(const unsigned char* device) { return uint16(device, 0x002a); }
-// static uint8_t device_operatingmode(const unsigned char* device) { return device[0x002c]; }
-
-// static uint16_t device_inactive_timeout(const unsigned char* device) { return uint16(device, SZ_CFG + 0x0008); }
-// static uint16_t device_dive_timeout(const unsigned char* device) { return uint16(device, SZ_CFG + 0x000a); }
-// static uint16_t device_log_period(const unsigned char* device) { return device[SZ_CFG + 0x000c]; }
-// static uint16_t device_log_timeout(const unsigned char* device) { return uint16(device, SZ_CFG + 0x000e); }
-// static uint8_t device_brightness_timeout(const unsigned char* device) { return device[SZ_CFG + 0x0010]; }
-// static uint8_t device_brightness(const unsigned char* device) { return device[SZ_CFG + 0x0012]; }
-// static uint8_t device_colorscheme(const unsigned char* device) { return device[SZ_CFG + 0x0013]; }
-// static uint8_t device_language(const unsigned char* device) { return device[SZ_CFG + 0x0014]; }
-// static uint8_t device_batterytype(const unsigned char* device) { return device[SZ_CFG + 0x0015]; }
-// static uint16_t device_batterytime(const unsigned char* device) { return uint16(device, SZ_CFG + 0x0014); }
-// static uint8_t device_button_sensitivity(const unsigned char* device) { return device[SZ_CFG + 0x0016]; }
-// static uint8_t device_orientation(const unsigned char* device) { return device[SZ_CFG + 0x0049]; }
-// static const char* device_owner(const unsigned char* device) { return (const char*)& device[SZ_CFG + 0x004a]; }
-
-// private dive parsing functions //////////////////////////////////////////////////////////////////////////////////////////
-
-static uint8_t dive_format(const unsigned char* dive) { return dive[0x0000]; }
-static uint16_t dive_samples_cnt(const unsigned char* dive) { return uint16(dive, 0x005c); }
-
- ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#define NSTEPS    1000
+#define STEP(i,n) (NSTEPS * (i) / (n))
 
 typedef struct mclean_extreme_device_t {
 	dc_device_t base;
-	dc_iostream_t* iostream;
-	unsigned char fingerprint[SZ_SUMMARY];
-	uint8_t data[SZ_COMPUTER];
+	dc_iostream_t *iostream;
+	unsigned char fingerprint[SZ_FINGERPRINT];
 } mclean_extreme_device_t;
 
-static dc_status_t mclean_extreme_device_set_fingerprint(dc_device_t* abstract, const unsigned char data[], unsigned int size);
-static dc_status_t mclean_extreme_device_foreach(dc_device_t* abstract, dc_dive_callback_t callback, void* userdata);
-static dc_status_t mclean_extreme_device_close(dc_device_t* abstract);
+static dc_status_t mclean_extreme_device_set_fingerprint(dc_device_t *abstract, const unsigned char data[], unsigned int size);
+static dc_status_t mclean_extreme_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
+static dc_status_t mclean_extreme_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
+static dc_status_t mclean_extreme_device_close(dc_device_t *abstract);
 
 static const dc_device_vtable_t mclean_extreme_device_vtable = {
 	sizeof(mclean_extreme_device_t),
@@ -111,9 +72,22 @@ static const dc_device_vtable_t mclean_extreme_device_vtable = {
 	NULL, /* write */
 	NULL, /* dump */
 	mclean_extreme_device_foreach, /* foreach */
-	NULL, /* timesync */
+	mclean_extreme_device_timesync, /* timesync */
 	mclean_extreme_device_close, /* close */
 };
+
+static unsigned int
+hashcode (const unsigned char data[], size_t size)
+{
+	unsigned int result = 0;
+
+	for (size_t i = 0; i < size; ++i) {
+		result *= 31;
+		result += data[i];
+	}
+
+	return result;
+}
 
 static unsigned short
 checksum_crc(const unsigned char data[], unsigned int size, unsigned short init)
@@ -124,8 +98,7 @@ checksum_crc(const unsigned char data[], unsigned int size, unsigned short init)
 		if (crc & 0x8000) {
 			crc <<= 1;
 			crc ^= 0x1021;
-		}
-		else {
+		} else {
 			crc <<= 1;
 		}
 	}
@@ -134,10 +107,10 @@ checksum_crc(const unsigned char data[], unsigned int size, unsigned short init)
 }
 
 static dc_status_t
-mclean_extreme_send(mclean_extreme_device_t* device, unsigned char cmd, const unsigned char data[], size_t size)
+mclean_extreme_send(mclean_extreme_device_t *device, unsigned char cmd, const unsigned char data[], size_t size)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
-	dc_device_t* abstract = (dc_device_t*)device;
+	dc_device_t *abstract = (dc_device_t *)device;
 	unsigned short crc = 0;
 
 	if (device_is_cancelled(abstract))
@@ -179,10 +152,10 @@ mclean_extreme_send(mclean_extreme_device_t* device, unsigned char cmd, const un
 }
 
 static dc_status_t
-mclean_extreme_receive(mclean_extreme_device_t* device, unsigned char rsp, unsigned char data[], size_t max_size, size_t* actual_size)
+mclean_extreme_receive(mclean_extreme_device_t *device, unsigned char rsp, unsigned char data[], size_t size, size_t *actual)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
-	dc_device_t* abstract = (dc_device_t*)device;
+	dc_device_t *abstract = (dc_device_t *)device;
 	unsigned char header[7];
 	unsigned int nretries = 0;
 
@@ -236,8 +209,8 @@ mclean_extreme_receive(mclean_extreme_device_t* device, unsigned char rsp, unsig
 
 	// Verify the length.
 	unsigned int length = array_uint32_le(header + 2);
-	if (length > max_size) {
-		ERROR(abstract->context, "Unexpected packet length (%u for %zu).", length, max_size);
+	if (length > size) {
+		ERROR(abstract->context, "Unexpected packet length (%u).", length);
 		return DC_STATUS_PROTOCOL;
 	}
 
@@ -285,25 +258,145 @@ mclean_extreme_receive(mclean_extreme_device_t* device, unsigned char rsp, unsig
 		return DC_STATUS_PROTOCOL;
 	}
 
-	if (actual_size != NULL) {
+	if (actual == NULL) {
+		// Verify the actual length.
+		if (length != size) {
+			ERROR (abstract->context, "Unexpected packet length (%u).", length);
+			return DC_STATUS_PROTOCOL;
+		}
+	} else {
 		// Return the actual length.
-		*actual_size = length;
+		*actual = length;
+	}
+
+	return DC_STATUS_SUCCESS;
+}
+
+static dc_status_t
+mclean_extreme_transfer(mclean_extreme_device_t *device, unsigned char cmd, const unsigned char data[], size_t size, unsigned char answer[], size_t asize, size_t *actual)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+
+	// Send the command
+	status = mclean_extreme_send(device, cmd, data, size);
+	if (status != DC_STATUS_SUCCESS) {
+		return status;
+	}
+
+	// Receive the answer
+	if (asize) {
+		status = mclean_extreme_receive(device, cmd, answer, asize, actual);
+		if (status != DC_STATUS_SUCCESS) {
+			return status;
+		}
+	}
+
+	return DC_STATUS_SUCCESS;
+}
+
+static dc_status_t
+mclean_extreme_readdive (dc_device_t *abstract, dc_event_progress_t *progress, unsigned int idx, dc_buffer_t *buffer)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+	mclean_extreme_device_t *device = (mclean_extreme_device_t *) abstract;
+
+	// Erase the buffer.
+	dc_buffer_clear (buffer);
+
+	// Encode the logbook ID.
+	unsigned char id[] = {
+		(idx     ) & 0xFF,
+		(idx >> 8) & 0xFF,
+	};
+
+	// Update and emit a progress event.
+	unsigned int initial = 0;
+	if (progress) {
+		initial = progress->current;
+		device_event_emit (abstract, DC_EVENT_PROGRESS, progress);
+	}
+
+	// Request the dive.
+	status = mclean_extreme_send (device, CMD_DIVE, id, sizeof(id));
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to send the dive command.");
+		return status;
+	}
+
+	// Read the dive header.
+	unsigned char header[SZ_HEADER];
+	status = mclean_extreme_receive (device, CMD_DIVE, header, sizeof(header), NULL);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to receive the dive header.");
+		return status;
+	}
+
+	// Verify the format version.
+	unsigned int format = header[0x0000];
+	if (format != 0) {
+		ERROR(abstract->context, "Unrecognised dive format.");
+		return DC_STATUS_DATAFORMAT;
+	}
+
+	// Get the number of samples.
+	unsigned int nsamples = array_uint16_le (header + 0x005C);
+
+	// Calculate the total size.
+	unsigned int size = sizeof(header) + nsamples * SZ_SAMPLE;
+
+	// Update and emit a progress event.
+	if (progress) {
+		progress->current = initial + STEP(sizeof(header), size);
+		device_event_emit (abstract, DC_EVENT_PROGRESS, progress);
+	}
+
+	// Allocate memory for the dive.
+	if (!dc_buffer_resize (buffer, size)) {
+		ERROR (abstract->context, "Insufficient buffer space available.");
+		return DC_STATUS_NOMEMORY;
+	}
+
+	// Cache the pointer.
+	unsigned char *data = dc_buffer_get_data(buffer);
+
+	// Append the header.
+	memcpy (data, header, sizeof(header));
+
+	unsigned int nbytes = sizeof(header);
+	while (nbytes < size) {
+		// Get the maximum packet size.
+		size_t len = size - nbytes;
+
+		// Read the dive samples.
+		status = mclean_extreme_receive (device, CMD_DIVE, data + nbytes, len, &len);
+		if (status != DC_STATUS_SUCCESS) {
+			ERROR (abstract->context, "Failed to receive the dive samples.");
+			return status;
+		}
+
+		nbytes += len;
+
+		// Update and emit a progress event.
+		if (progress) {
+			progress->current = initial + STEP(nbytes, size);
+			device_event_emit (abstract, DC_EVENT_PROGRESS, progress);
+		}
 	}
 
 	return DC_STATUS_SUCCESS;
 }
 
 dc_status_t
-mclean_extreme_device_open(dc_device_t** out, dc_context_t* context, dc_iostream_t* iostream)
+mclean_extreme_device_open(dc_device_t **out, dc_context_t *context, dc_iostream_t *iostream)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
-	mclean_extreme_device_t* device = NULL;
+	mclean_extreme_device_t *device = NULL;
 
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	device = (mclean_extreme_device_t*)dc_device_allocate(context, &mclean_extreme_device_vtable);
+	device = (mclean_extreme_device_t *)dc_device_allocate(context, &mclean_extreme_device_vtable);
 	if (device == NULL) {
 		ERROR(context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -327,40 +420,24 @@ mclean_extreme_device_open(dc_device_t** out, dc_context_t* context, dc_iostream
 		goto error_free;
 	}
 
-	// Send the init command.
-	status = mclean_extreme_send(device, CMD_COMPUTER, NULL, 0);
-	if (status != DC_STATUS_SUCCESS) {
-		ERROR(context, "Failed to send the init command.");
-		goto error_free;
-	}
+	// Make sure everything is in a sane state.
+	dc_iostream_sleep (device->iostream, 100);
+	dc_iostream_purge (device->iostream, DC_DIRECTION_ALL);
 
-	// Read the device info.
-	status = mclean_extreme_receive(device, CMD_COMPUTER, device->data, sizeof(device->data), NULL);
-	if (status != DC_STATUS_SUCCESS) {
-		ERROR(context, "Failed to receive the device info.");
-		goto error_free;
-	}
-
-	if (device_format(device->data) != 0) { /* bad device format */
-		status = DC_STATUS_DATAFORMAT;
-		ERROR(context, "Unsupported device format.");
-		goto error_free;
-	}
-
-	*out = (dc_device_t*)device;
+	*out = (dc_device_t *)device;
 
 	return DC_STATUS_SUCCESS;
 
 error_free:
-	dc_device_deallocate((dc_device_t*)device);
+	dc_device_deallocate((dc_device_t *)device);
 	return status;
 }
 
 static dc_status_t
-mclean_extreme_device_close(dc_device_t* abstract)
+mclean_extreme_device_close(dc_device_t *abstract)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
-	mclean_extreme_device_t* device = (mclean_extreme_device_t*)abstract;
+	mclean_extreme_device_t *device = (mclean_extreme_device_t *)abstract;
 
 	status = mclean_extreme_send(device, CMD_CLOSE, NULL, 0);
 	if (status != DC_STATUS_SUCCESS) {
@@ -372,125 +449,147 @@ mclean_extreme_device_close(dc_device_t* abstract)
 }
 
 static dc_status_t
-mclean_extreme_device_set_fingerprint(dc_device_t* abstract, const unsigned char data[], unsigned int size)
+mclean_extreme_device_set_fingerprint(dc_device_t *abstract, const unsigned char data[], unsigned int size)
 {
-	mclean_extreme_device_t* device = (mclean_extreme_device_t*)abstract;
+	mclean_extreme_device_t *device = (mclean_extreme_device_t *)abstract;
 
-	if (size && size != sizeof(device->fingerprint))
+	if (size && size != sizeof(device->fingerprint)) {
 		return DC_STATUS_INVALIDARGS;
+	}
 
-	if (size)
+	if (size) {
 		memcpy(device->fingerprint, data, sizeof(device->fingerprint));
-	else
+	} else {
 		memset(device->fingerprint, 0, sizeof(device->fingerprint));
+	}
 
 	return DC_STATUS_SUCCESS;
 }
 
 static dc_status_t
-mclean_extreme_device_readsamples(dc_device_t* abstract, uint8_t* dive)
+mclean_extreme_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
 {
-	dc_status_t status = DC_STATUS_SUCCESS;
-	mclean_extreme_device_t* device = (mclean_extreme_device_t*)abstract;
+	mclean_extreme_device_t *device = (mclean_extreme_device_t *)abstract;
 
-	int samples_cnt = (dive[0x005c] << 0) + (dive[0x005d] << 8);						// number of samples to follow
-	dive = &dive[SZ_DIVE];
+	if (datetime == NULL) {
+		ERROR(abstract->context, "Invalid parameter specified.");
+		return DC_STATUS_INVALIDARGS;
+	}
 
-	while (samples_cnt != 0) {
-		unsigned char data[SZ_PACKET];					// buffer for read packet data
-		size_t length;									// buffer for read packet length
+	// Get the UTC timestamp.
+	dc_ticks_t ticks = dc_datetime_mktime(datetime);
+	if (ticks == -1 || ticks < EPOCH || ticks - EPOCH > 0xFFFFFFFF) {
+		ERROR (abstract->context, "Invalid date/time value specified.");
+		return DC_STATUS_INVALIDARGS;
+	}
 
-		status = mclean_extreme_receive(device, CMD_DIVE, data, SZ_PACKET, &length);
-		if (status != DC_STATUS_SUCCESS) {
-			ERROR(abstract->context, "Failed to receive dive samples.");
-			break;
-		}
+	// Adjust the epoch.
+	unsigned int timestamp = ticks - EPOCH;
 
-		int packet_cnt = length / SZ_SAMPLE;			// number of samples in the packet
-		if (packet_cnt > samples_cnt) { /* too many samples received */
-			status = DC_STATUS_DATAFORMAT;
-			ERROR(abstract->context, "Too many dive samples received.");
-			break;
-		}
-		if (length != packet_cnt * SZ_SAMPLE) { /* not an integer number of samples */
-			status = DC_STATUS_DATAFORMAT;
-			ERROR(abstract->context, "Partial samples received.");
-			break;
-		}
-
-		memcpy(dive, data, packet_cnt * SZ_SAMPLE);		// append samples to dive buffer
-
-		dive = &dive[packet_cnt * SZ_SAMPLE];			// move buffer write cursor
-		samples_cnt -= packet_cnt;
+	// Send the command.
+	const unsigned char cmd[] = {
+		(timestamp      ) & 0xFF,
+		(timestamp >>  8) & 0xFF,
+		(timestamp >> 16) & 0xFF,
+		(timestamp >> 24) & 0xFF
+	};
+	dc_status_t status = mclean_extreme_send(device, CMD_SET_TIME, cmd, sizeof(cmd));
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR(abstract->context, "Failed to send the set time command.");
+		return status;
 	}
 
 	return status;
 }
 
 static dc_status_t
-mclean_extreme_device_foreach(dc_device_t* abstract, dc_dive_callback_t callback, void* userdata)
+mclean_extreme_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback, void *userdata)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
-	mclean_extreme_device_t* device = (mclean_extreme_device_t*)abstract;
+	mclean_extreme_device_t *device = (mclean_extreme_device_t *)abstract;
 
+	// Enable progress notifications.
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
-	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
+	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
-	int dives_cnt = device_name(device->data);
-
-	progress.current = 0;
-	progress.maximum = dives_cnt;
-	device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
-
-	for (int i = dives_cnt - 1; i >= 0; --i) {
-		unsigned char data[512];			// buffer for read packet data
-		size_t length;						// buffer for read packet length
-
-		unsigned char id[] = { (unsigned char)i, (unsigned char)(i >> 8) };	// payload for CMD_DIVE request
-
-		status = mclean_extreme_send(device, CMD_DIVE, id, sizeof(id));
-		if (status != DC_STATUS_SUCCESS) {
-			ERROR(abstract->context, "Failed to send the get dive command.");
-			break;
-		}
-
-		status = mclean_extreme_receive(device, CMD_DIVE, data, 512, &length);
-		if (status != DC_STATUS_SUCCESS) {
-			ERROR(abstract->context, "Failed to receive dive header.");
-			break;
-		}
-
-		if (dive_format(data) != 0) { /* can't understand the format */
-			INFO(abstract->context, "Skipping unsupported dive format");
-			break;
-		}
-
-		int cnt_samples = dive_samples_cnt(data);			// number of samples to follow
-		size_t size = SZ_DIVE + cnt_samples * SZ_SAMPLE;	// total buffer size required for this dive
-		uint8_t* dive = (uint8_t *)malloc(size);			// buffer for this dive
-
-		if (dive == NULL) {
-			status = DC_STATUS_NOMEMORY;
-			break;
-		}
-
-		memcpy(dive, data, SZ_DIVE);									// copy data to dive buffer
-		status = mclean_extreme_device_readsamples(abstract, dive);		// append samples to buffer
-
-		if (status != DC_STATUS_SUCCESS) { /* failed to read dive samples */
-			free(dive);	// cleanup
-			break;		// stop downloading
-		}
-
-		if (callback && !callback(dive, size, dive, sizeof(device->fingerprint), userdata)) { /* cancelled by callback */
-			free(dive);	// cleanup
-			break;		// stop downloading
-		}
-
-		free(dive);
-		progress.current = dives_cnt - 1 - i;
-		device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
+	// Read the firmware version.
+	unsigned char firmware[4] = {0};
+	status = mclean_extreme_transfer(device, CMD_FIRMWARE, NULL, 0, firmware, sizeof(firmware), NULL);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR(abstract->context, "Failed to read the firmware version.");
+		return status;
 	}
 
+	// Read the serial number.
+	size_t serial_len = 0;
+	unsigned char serial[SZ_PACKET] = {0};
+	status = mclean_extreme_transfer(device, CMD_SERIALNUMBER, NULL, 0, serial, sizeof(serial), &serial_len);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR(abstract->context, "Failed to read serial number.");
+		return status;
+	}
+
+	// Emit a device info event.
+	dc_event_devinfo_t devinfo;
+	devinfo.model = 0;
+	devinfo.firmware = array_uint32_le (firmware);
+	devinfo.serial = hashcode (serial, serial_len);
+	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
+
+	// Read the computer configuration.
+	unsigned char computer[SZ_COMPUTER];
+	status = mclean_extreme_transfer(device, CMD_COMPUTER, NULL, 0, computer, sizeof(computer), NULL);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR(abstract->context, "Failed to read the computer configuration.");
+		return status;
+	}
+
+	// Verify the format version.
+	unsigned int format = computer[0x0000];
+	if (format != 0) {
+		ERROR(abstract->context, "Unsupported device format.");
+		return DC_STATUS_DATAFORMAT;
+	}
+
+	// Get the number of dives.
+	unsigned int ndives = array_uint16_le(computer + 0x0019);
+
+	// Update and emit a progress event.
+	progress.current = 1 * NSTEPS;
+	progress.maximum = (ndives + 1) * NSTEPS;
+	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
+
+	// Allocate a memory buffer for a single dive.
+	dc_buffer_t *buffer = dc_buffer_new(0);
+	if (buffer == NULL) {
+		status = DC_STATUS_NOMEMORY;
+		goto error_exit;
+	}
+
+	for (unsigned int i = 0; i < ndives; ++i) {
+		// Download in reverse order (newest first).
+		unsigned int idx = ndives - 1 - i;
+
+		// Read the dive.
+		status = mclean_extreme_readdive (abstract, &progress, idx, buffer);
+		if (status != DC_STATUS_SUCCESS) {
+			goto error_buffer_free;
+		}
+
+		// Cache the pointer.
+		unsigned char *data = dc_buffer_get_data(buffer);
+		unsigned int size = dc_buffer_get_size(buffer);
+
+		if (memcmp(data, device->fingerprint, sizeof(device->fingerprint)) == 0)
+			break;
+
+		if (callback && !callback (data, size, data, sizeof(device->fingerprint), userdata)) {
+			break;
+		}
+	}
+
+error_buffer_free:
+	dc_buffer_free (buffer);
+error_exit:
 	return status;
 }
