@@ -57,9 +57,12 @@
 #include "divesystem_idive.h"
 #include "cochran_commander.h"
 #include "tecdiving_divecomputereu.h"
+#include "mclean_extreme.h"
+#include "liquivision_lynx.h"
+
+// Not merged upstream yet
 #include "garmin.h"
 #include "deepblu.h"
-#include "mclean_extreme.h"
 #include "oceans_s1.h"
 
 #include "device-private.h"
@@ -192,7 +195,7 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 		rc = zeagle_n2ition3_device_open (&device, context, iostream);
 		break;
 	case DC_FAMILY_ATOMICS_COBALT:
-		rc = atomics_cobalt_device_open (&device, context);
+		rc = atomics_cobalt_device_open (&device, context, iostream);
 		break;
 	case DC_FAMILY_SHEARWATER_PREDATOR:
 		rc = shearwater_predator_device_open (&device, context, iostream);
@@ -215,20 +218,25 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 	case DC_FAMILY_TECDIVING_DIVECOMPUTEREU:
 		rc = tecdiving_divecomputereu_device_open (&device, context, iostream);
 		break;
+	case DC_FAMILY_MCLEAN_EXTREME:
+		rc = mclean_extreme_device_open (&device, context, iostream);
+		break;
+	case DC_FAMILY_LIQUIVISION_LYNX:
+		rc = liquivision_lynx_device_open (&device, context, iostream);
+		break;
+	default:
+		return DC_STATUS_INVALIDARGS;
+
+	// Not merged upstream yet
 	case DC_FAMILY_GARMIN:
 		rc = garmin_device_open (&device, context, iostream);
 		break;
 	case DC_FAMILY_DEEPBLU:
 		rc = deepblu_device_open (&device, context, iostream);
 		break;
-	case DC_FAMILY_MCLEAN_EXTREME:
-		rc = mclean_extreme_device_open (&device, context, iostream);
-		break;
 	case DC_FAMILY_OCEANS_S1:
 		rc = oceans_s1_device_open(&device, context, iostream);
 		break;
-	default:
-		return DC_STATUS_INVALIDARGS;
 	}
 
 	*out = device;

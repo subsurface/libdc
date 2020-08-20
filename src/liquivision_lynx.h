@@ -1,7 +1,7 @@
 /*
  * libdivecomputer
  *
- * Copyright (C) 2011 Jef Driesen
+ * Copyright (C) 2020 Jef Driesen
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -19,26 +19,25 @@
  * MA 02110-1301 USA
  */
 
-#ifndef ATOMICS_COBALT_H
-#define ATOMICS_COBALT_H
+#ifndef LIQUIVISION_LYNX_H
+#define LIQUIVISION_LYNX_H
 
 #include <libdivecomputer/context.h>
 #include <libdivecomputer/iostream.h>
 #include <libdivecomputer/device.h>
 #include <libdivecomputer/parser.h>
-#include <libdivecomputer/atomics_cobalt.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
 dc_status_t
-atomics_cobalt_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream);
+liquivision_lynx_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream);
 
 dc_status_t
-atomics_cobalt_parser_create (dc_parser_t **parser, dc_context_t *context);
+liquivision_lynx_parser_create (dc_parser_t **parser, dc_context_t *context, unsigned int model);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
-#endif /* ATOMICS_COBALT_H */
+#endif /* LIQUIVISION_LYNX_H */

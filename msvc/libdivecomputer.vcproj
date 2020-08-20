@@ -319,6 +319,14 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\liquivision_lynx.c"
+				>
+			</File>
+			<File
+				RelativePath="..\src\liquivision_lynx_parser.c"
+				>
+			</File>
+			<File
 				RelativePath="..\src\mares_common.c"
 				>
 			</File>
@@ -547,6 +555,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\usb.c"
+				>
+			</File>
+			<File
 				RelativePath="..\src\usbhid.c"
 				>
 			</File>
@@ -718,6 +730,10 @@
 			</File>
 			<File
 				RelativePath="..\include\libdivecomputer\iterator.h"
+				>
+			</File>
+			<File
+				RelativePath="..\src\liquivision_lynx.h"
 				>
 			</File>
 			<File
@@ -910,6 +926,10 @@
 			</File>
 			<File
 				RelativePath="..\include\libdivecomputer\units.h"
+				>
+			</File>
+			<File
+				RelativePath="..\include\libdivecomputer\usb.h"
 				>
 			</File>
 			<File

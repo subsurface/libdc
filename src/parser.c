@@ -57,9 +57,12 @@
 #include "divesystem_idive.h"
 #include "cochran_commander.h"
 #include "tecdiving_divecomputereu.h"
+#include "mclean_extreme.h"
+#include "liquivision_lynx.h"
+
+// Not merged upstream yet
 #include "garmin.h"
 #include "deepblu.h"
-#include "mclean_extreme.h"
 #include "oceans_s1.h"
 
 #include "context-private.h"
@@ -176,20 +179,25 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 	case DC_FAMILY_TECDIVING_DIVECOMPUTEREU:
 		rc = tecdiving_divecomputereu_parser_create (&parser, context);
 		break;
+	case DC_FAMILY_MCLEAN_EXTREME:
+		rc = mclean_extreme_parser_create (&parser, context);
+		break;
+	case DC_FAMILY_LIQUIVISION_LYNX:
+		rc = liquivision_lynx_parser_create (&parser, context, model);
+		break;
+	default:
+		return DC_STATUS_INVALIDARGS;
+
+	// Not merged upstream yet
 	case DC_FAMILY_GARMIN:
 		rc = garmin_parser_create (&parser, context);
 		break;
 	case DC_FAMILY_DEEPBLU:
 		rc = deepblu_parser_create (&parser, context);
 		break;
-	case DC_FAMILY_MCLEAN_EXTREME:
-		rc = mclean_extreme_parser_create (&parser, context);
-		break;
 	case DC_FAMILY_OCEANS_S1:
 		rc = oceans_s1_parser_create(&parser, context);
 		break;
-	default:
-		return DC_STATUS_INVALIDARGS;
 	}
 
 	*out = parser;

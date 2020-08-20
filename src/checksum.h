@@ -44,6 +44,9 @@ checksum_crc16_ccitt (const unsigned char data[], unsigned int size, unsigned sh
 unsigned int
 checksum_crc32 (const unsigned char data[], unsigned int size);
 
+unsigned int
+checksum_crc32b (const unsigned char data[], unsigned int size);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

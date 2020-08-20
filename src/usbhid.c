@@ -102,7 +102,7 @@ static dc_status_t dc_usbhid_close (dc_iostream_t *iostream);
 
 typedef struct dc_usbhid_iterator_t {
 	dc_iterator_t base;
-	dc_filter_t filter;
+	dc_descriptor_t *descriptor;
 	dc_usbhid_session_t *session;
 #if defined(USE_LIBUSB)
 	struct libusb_device **devices;
@@ -398,7 +398,7 @@ dc_usbhid_iterator_new (dc_iterator_t **out, dc_context_t *context, dc_descripto
 	iterator->devices = devices;
 	iterator->current = devices;
 #endif
-	iterator->filter = dc_descriptor_get_filter (descriptor);
+	iterator->descriptor = descriptor;
 
 	*out = (dc_iterator_t *) iterator;
 
@@ -435,7 +435,7 @@ dc_usbhid_iterator_next (dc_iterator_t *abstract, void *out)
 		}
 
 		dc_usb_desc_t usb = {dev.idVendor, dev.idProduct};
-		if (iterator->filter && !iterator->filter (DC_TRANSPORT_USBHID, &usb)) {
+		if (!dc_descriptor_filter (iterator->descriptor, DC_TRANSPORT_USBHID, &usb, NULL)) {
 			continue;
 		}
 
@@ -518,7 +518,7 @@ dc_usbhid_iterator_next (dc_iterator_t *abstract, void *out)
 		iterator->current = current->next;
 
 		dc_usb_desc_t usb = {current->vendor_id, current->product_id};
-		if (iterator->filter && !iterator->filter (DC_TRANSPORT_USBHID, &usb)) {
+		if (!dc_descriptor_filter (iterator->descriptor, DC_TRANSPORT_USBHID, &usb)) {
 			continue;
 		}
 
@@ -703,10 +703,12 @@ dc_usbhid_read (dc_iostream_t *abstract, void *data, size_t size, size_t *actual
 
 #if defined(USE_LIBUSB)
 	int rc = libusb_interrupt_transfer (usbhid->handle, usbhid->endpoint_in, data, size, &nbytes, usbhid->timeout);
-	if (rc != LIBUSB_SUCCESS) {
+	if (rc != LIBUSB_SUCCESS || nbytes < 0) {
 		ERROR (abstract->context, "Usb read interrupt transfer failed (%s).",
 			libusb_error_name (rc));
 		status = syserror (rc);
+		if (nbytes < 0)
+			nbytes = 0;
 		goto out;
 	}
 #elif defined(USE_HIDAPI)
@@ -749,10 +751,12 @@ dc_usbhid_write (dc_iostream_t *abstract, const void *data, size_t size, size_t 
 	}
 
 	int rc = libusb_interrupt_transfer (usbhid->handle, usbhid->endpoint_out, (void *) buffer, length, &nbytes, 0);
-	if (rc != LIBUSB_SUCCESS) {
+	if (rc != LIBUSB_SUCCESS || nbytes < 0) {
 		ERROR (abstract->context, "Usb write interrupt transfer failed (%s).",
 			libusb_error_name (rc));
 		status = syserror (rc);
+		if (nbytes < 0)
+			nbytes = 0;
 		goto out;
 	}
 

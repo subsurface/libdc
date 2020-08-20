@@ -69,20 +69,25 @@ libdivecomputer_la_SOURCES = \
 	rbstream.h rbstream.c \
 	checksum.h checksum.c \
 	array.h array.c \
-	field-cache.h field-cache.c \
 	buffer.c \
 	cochran_commander.h cochran_commander.c cochran_commander_parser.c \
 	tecdiving_divecomputereu.h tecdiving_divecomputereu.c tecdiving_divecomputereu_parser.c \
-	garmin.h garmin.c garmin_parser.c \
-	deepblu.h deepblu.c deepblu_parser.c \
 	mclean_extreme.h mclean_extreme.c mclean_extreme_parser.c \
-	oceans_s1.h oceans_s1.c oceans_s1_parser.c \
+	liquivision_lynx.h liquivision_lynx.c liquivision_lynx_parser.c \
 	socket.h socket.c \
 	irda.c \
+	usb.c \
 	usbhid.c \
 	bluetooth.c \
-	usb_storage.c \
 	custom.c
+
+# Not merged upstream yet
+libdivecomputer_la_SOURCES += \
+	usb_storage.c \
+	field-cache.h field-cache.c \
+	garmin.h garmin.c garmin_parser.c \
+	deepblu.h deepblu.c deepblu_parser.c \
+	oceans_s1.h oceans_s1.c oceans_s1_parser.c
 
 if OS_WIN32
 libdivecomputer_la_SOURCES += serial_win32.c

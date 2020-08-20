@@ -110,12 +110,16 @@ typedef enum dc_family_t {
 	DC_FAMILY_TECDIVING_DIVECOMPUTEREU = (15 << 16),
 	/* McLean */
 	DC_FAMILY_MCLEAN_EXTREME = (16 << 16),
+	/* Liquivision */
+	DC_FAMILY_LIQUIVISION_LYNX = (17 << 16),
+
+	// Not merged upstream yet
 	/* Garmin */
-	DC_FAMILY_GARMIN = (17 << 16),
+	DC_FAMILY_GARMIN = (100 << 16),
 	/* Deepblu */
-	DC_FAMILY_DEEPBLU = (18 << 16),
+	DC_FAMILY_DEEPBLU = (101 << 16),
 	/* Oceans S1 */
-	DC_FAMILY_OCEANS_S1 = (19 << 16),
+	DC_FAMILY_OCEANS_S1 = (102 << 16),
 } dc_family_t;
 
 #ifdef __cplusplus
