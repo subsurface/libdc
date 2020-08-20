@@ -24,6 +24,9 @@
 
 #include <libdivecomputer/descriptor.h>
 
+// Oh joy. Windows is some truly horrendously broken crap
+#undef interface
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
