@@ -169,6 +169,7 @@ static int get_file_list(dc_device_t *abstract, DIR *dir, struct file_list *file
 		 */
 		entry = files->array + files->nr++;
 		strncpy(entry->name, de->d_name, FIT_NAME_SIZE);
+		entry->name[FIT_NAME_SIZE] = 0; // ensure it's null-terminated
 	}
 	DEBUG (abstract->context, "Found %d files", files->nr);
 
@@ -334,5 +335,6 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 
 	free(files.array);
 	dc_parser_destroy(parser);
+	dc_buffer_free(file);
 	return status;
 }

@@ -451,7 +451,7 @@ deepblu_download_dive(deepblu_device_t *device, unsigned char nr, dc_dive_callba
 		if (!callback(profile, profile_len+256, header, header_len, userdata))
 			return DC_STATUS_DONE;
 	}
-
+	free(profile);
 	return DC_STATUS_SUCCESS;
 }
 
