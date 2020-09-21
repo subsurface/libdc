@@ -210,8 +210,10 @@ static dc_status_t oceans_s1_get_blob(oceans_s1_device_t *s1, const unsigned cha
 
 	// Tell the Oceans S1 to exit block mode (??)
 	status = dc_iostream_write(s1->iostream, "\006", 1, NULL);
-	if (status != DC_STATUS_SUCCESS)
+	if (status != DC_STATUS_SUCCESS) {
+		dc_buffer_free(res);
 		return status;
+	}
 
 	size = dc_buffer_get_size(res);
 

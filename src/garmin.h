@@ -50,7 +50,7 @@ garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigne
 #define FIT_NAME_SIZE 24
 
 struct fit_name {
-	char name[FIT_NAME_SIZE];
+	char name[FIT_NAME_SIZE + 1];
 };
 
 #ifdef __cplusplus
