@@ -97,15 +97,16 @@ typedef struct garmin_parser_t {
 	struct type_desc type_desc[MAXTYPE];
 
 	// Field cache
-	unsigned int initialized;
-	unsigned int sub_sport;
-	unsigned int serial;
-	unsigned int product;
-	unsigned int firmware;
-	unsigned int protocol;
-	unsigned int profile;
-	unsigned int time;
-	int utc_offset, time_offset;
+	struct {
+		unsigned int sub_sport;
+		unsigned int serial;
+		unsigned int product;
+		unsigned int firmware;
+		unsigned int protocol;
+		unsigned int profile;
+		unsigned int time;
+		int utc_offset, time_offset;
+	} dive;
 
 	// I count nine (!) different GPS fields Hmm.
 	// Reporting all of them just to try to figure
@@ -214,9 +215,9 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 			}
 		}
 		if (pending & RECORD_DEVICE_INFO && record->device_index == 0) {
-			garmin->firmware = record->firmware;
-			garmin->serial = record->serial;
-			garmin->product = record->product;
+			garmin->dive.firmware = record->firmware;
+			garmin->dive.serial = record->serial;
+			garmin->dive.product = record->product;
 		}
 		if (pending & RECORD_DECO_MODEL)
 			dc_field_add_string_fmt(&garmin->cache, "Deco model", "Buhlmann ZHL-16C %u/%u", record->gf_low, record->gf_high);
@@ -358,9 +359,9 @@ DECLARE_FIELD(ANY, timestamp, UINT32)
 		dc_sample_value_t sample = {0};
 
 		// Turn the timestamp relative to the beginning of the dive
-		if (data < garmin->time)
+		if (data < garmin->dive.time)
 			return;
-		data -= garmin->time;
+		data -= garmin->dive.time;
 
 		// Did we already do this?
 		if (data < garmin->record_data.time)
@@ -385,7 +386,7 @@ DECLARE_FIELD(FILE, number, UINT16) { }
 DECLARE_FIELD(FILE, other_time, UINT32) { }
 
 // SESSION msg
-DECLARE_FIELD(SESSION, start_time, UINT32) { garmin->time = data; }
+DECLARE_FIELD(SESSION, start_time, UINT32)	{ garmin->dive.time = data; }
 DECLARE_FIELD(SESSION, start_pos_lat, SINT32)	{ garmin->gps.SESSION.entry.lat = data; }
 DECLARE_FIELD(SESSION, start_pos_long, SINT32)	{ garmin->gps.SESSION.entry.lon = data; }
 DECLARE_FIELD(SESSION, nec_pos_lat, SINT32)	{ garmin->gps.SESSION.NE.lat = data; }
@@ -474,8 +475,8 @@ DECLARE_FIELD(RECORD, cns_load, UINT8)
 DECLARE_FIELD(RECORD, n2_load, UINT16) { }		// percent
 
 // DEVICE_SETTINGS
-DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->utc_offset = (SINT32) data; }	// wrong type in FIT
-DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->time_offset = (SINT32) data; }	// wrong type in FIT
+DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->dive.utc_offset = (SINT32) data; }	// wrong type in FIT
+DECLARE_FIELD(DEVICE_SETTINGS, time_offset, UINT32) { garmin->dive.time_offset = (SINT32) data; }	// wrong type in FIT
 
 // DEVICE_INFO
 // collect the data and then use the record if it is for device_index 0
@@ -501,7 +502,7 @@ DECLARE_FIELD(DEVICE_INFO, firmware, UINT16)
 }
 
 // SPORT
-DECLARE_FIELD(SPORT, sub_sport, ENUM) { garmin->sub_sport = (ENUM) data; }
+DECLARE_FIELD(SPORT, sub_sport, ENUM) { garmin->dive.sub_sport = (ENUM) data; }
 
 // DIVE_GAS - uses msg index
 DECLARE_FIELD(DIVE_GAS, helium, UINT8)
@@ -1102,8 +1103,8 @@ traverse_data(struct garmin_parser_t *garmin)
 	if (hdrsize < 12 || datasize > len || datasize + hdrsize + 2 > len)
 		return DC_STATUS_IO;
 
-	garmin->protocol = protocol;
-	garmin->profile = profile;
+	garmin->dive.protocol = protocol;
+	garmin->dive.profile = profile;
 
 	data += hdrsize;
 	time = 0;
@@ -1188,11 +1189,11 @@ garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigne
 	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
 
 	if (devinfo_p) {
-		devinfo_p->firmware = garmin->firmware;
-		devinfo_p->serial = garmin->serial;
-		devinfo_p->model = garmin->product;
+		devinfo_p->firmware = garmin->dive.firmware;
+		devinfo_p->serial = garmin->dive.serial;
+		devinfo_p->model = garmin->dive.product;
 	}
-	switch (garmin->sub_sport) {
+	switch (garmin->dive.sub_sport) {
 	case 53:	// Single-gas
 	case 54:	// Multi-gas
 	case 55:	// Gauge
@@ -1218,6 +1219,8 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 	/* Walk the data once without a callback to set up the core fields */
 	garmin->callback = NULL;
 	garmin->userdata = NULL;
+	memset(&garmin->gps, 0, sizeof(garmin->gps));
+	memset(&garmin->dive, 0, sizeof(garmin->dive));
 	memset(&garmin->cache, 0, sizeof(garmin->cache));
 
 	traverse_data(garmin);
@@ -1243,10 +1246,10 @@ static dc_status_t
 garmin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 {
 	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
-	dc_ticks_t time = 631065600 + (dc_ticks_t) garmin->time;
+	dc_ticks_t time = 631065600 + (dc_ticks_t) garmin->dive.time;
 
 	// Show local time (time_offset)
-	dc_datetime_gmtime(datetime, time + garmin->time_offset);
+	dc_datetime_gmtime(datetime, time + garmin->dive.time_offset);
 	datetime->timezone = DC_TIMEZONE_NONE;
 
 	return DC_STATUS_SUCCESS;
