@@ -164,6 +164,7 @@ static void garmin_event(struct garmin_parser_t *garmin,
 		[21] = { 3, "Battry Critical" },
 		[22] = { 1, "Safety stop begin" },
 		[23] = { 1, "Approaching deco stop" },
+		[32] = { 1, "Tank battery low" },	// No way to know which tank
 	};
 	dc_sample_value_t sample = {0};
 
@@ -473,6 +474,11 @@ DECLARE_FIELD(RECORD, cns_load, UINT8)
 	}
 }
 DECLARE_FIELD(RECORD, n2_load, UINT16) { }		// percent
+DECLARE_FIELD(RECORD, air_time_remaining, UINT32) { }	// seconds
+DECLARE_FIELD(RECORD, pressure_sac, UINT16) { }		// 100 * bar/min/pressure
+DECLARE_FIELD(RECORD, volume_sac, UINT16) { }		// 100 * l/min/pressure
+DECLARE_FIELD(RECORD, rmv, UINT16) { }			// 100 * l/min
+DECLARE_FIELD(RECORD, ascent_rate, SINT32) { }		// mm/s (negative is down)
 
 // DEVICE_SETTINGS
 DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->dive.utc_offset = (SINT32) data; }	// wrong type in FIT
@@ -532,6 +538,9 @@ DECLARE_FIELD(DIVE_SUMMARY, end_n2, UINT16) { }			// percent
 DECLARE_FIELD(DIVE_SUMMARY, o2_toxicity, UINT16) { }		// OTUs
 DECLARE_FIELD(DIVE_SUMMARY, dive_number, UINT32) { }
 DECLARE_FIELD(DIVE_SUMMARY, bottom_time, UINT32) { DC_ASSIGN_FIELD(garmin->cache, DIVETIME, data / 1000); }
+DECLARE_FIELD(DIVE_SUMMARY, avg_pressure_sac, UINT16) { }	// 100 * bar/min/pressure
+DECLARE_FIELD(DIVE_SUMMARY, avg_volume_sac, UINT16) { }		// 100 * L/min/pressure
+DECLARE_FIELD(DIVE_SUMMARY, avg_rmv, UINT16) { }		// 100 * L/min
 
 // DIVE_SETTINGS
 DECLARE_FIELD(DIVE_SETTINGS, name, STRING) { }
@@ -578,6 +587,23 @@ DECLARE_FIELD(DIVE_SETTINGS, safety_stop_time, UINT16) { }
 DECLARE_FIELD(DIVE_SETTINGS, heart_rate_source_type, ENUM) { }
 DECLARE_FIELD(DIVE_SETTINGS, hear_rate_device_type, UINT8) { }
 
+DECLARE_FIELD(SENSOR_PROFILE, ant_channel_id, UINT32Z) { }
+DECLARE_FIELD(SENSOR_PROFILE, name, STRING) { }
+DECLARE_FIELD(SENSOR_PROFILE, enabled, ENUM) { }
+DECLARE_FIELD(SENSOR_PROFILE, pressure_units, ENUM) { }   	//  0 is PSI, 1 is KPA (unused), 2 is Bar
+DECLARE_FIELD(SENSOR_PROFILE, rated_pressure, UINT16) { }
+DECLARE_FIELD(SENSOR_PROFILE, reserve_pressure, UINT16) { }
+DECLARE_FIELD(SENSOR_PROFILE, volume, UINT16) { }  		// CuFt * 10 (PSI) or L * 10
+DECLARE_FIELD(SENSOR_PROFILE, used_for_gas_rate, ENUM) { }	// was used for SAC calculations?
+
+DECLARE_FIELD(TANK_UPDATE, sensor, UINT32Z) { }		// sensor ID
+DECLARE_FIELD(TANK_UPDATE, pressure, UINT16) { }	// pressure in Bar * 100
+
+DECLARE_FIELD(TANK_SUMMARY, sensor, UINT32Z) { }	// sensor ID
+DECLARE_FIELD(TANK_SUMMARY, start_pressure, UINT16) { }	// Bar * 100
+DECLARE_FIELD(TANK_SUMMARY, end_pressure, UINT16) { }	// Bar * 100
+DECLARE_FIELD(TANK_SUMMARY, volume_used, UINT32) { }	// L * 100
+
 // EVENT
 DECLARE_FIELD(EVENT, event, ENUM)
 {
@@ -601,6 +627,9 @@ DECLARE_FIELD(EVENT, unknown, UINT32)
 {
 	garmin->record_data.event_unknown = data;
 }
+DECLARE_FIELD(EVENT, tank_pressure_reserve, UINT32Z) { }	// sensor ID
+DECLARE_FIELD(EVENT, tank_pressure_critical, UINT32Z) { }	// sensor ID
+DECLARE_FIELD(EVENT, tank_pressure_lost, UINT32Z) { }		// sensor ID
 
 struct msg_desc {
 	unsigned char maxfield;
@@ -674,7 +703,7 @@ DECLARE_MESG(LAP) = {
 };
 
 DECLARE_MESG(RECORD) = {
-	.maxfield = 99,
+	.maxfield = 128,
 	.field = {
 		SET_FIELD(RECORD, 0, position_lat, SINT32),	// 180 deg / 2**31
 		SET_FIELD(RECORD, 1, position_long, SINT32),	// 180 deg / 2**31
@@ -690,6 +719,11 @@ DECLARE_MESG(RECORD) = {
 		SET_FIELD(RECORD, 96, ndl, UINT32),		// s
 		SET_FIELD(RECORD, 97, cns_load, UINT8),		// percent
 		SET_FIELD(RECORD, 98, n2_load, UINT16),		// percent
+		SET_FIELD(RECORD, 123, air_time_remaining, UINT32),	// seconds
+		SET_FIELD(RECORD, 124, pressure_sac, UINT16),	// 100 * bar/min/pressure
+		SET_FIELD(RECORD, 125, volume_sac, UINT16),	// 100 * l/min/pressure
+		SET_FIELD(RECORD, 126, rmv, UINT16),		// 100 * l/min
+		SET_FIELD(RECORD, 127, ascent_rate, SINT32),	// mm/s (negative is down)
 	}
 };
 
@@ -704,7 +738,7 @@ DECLARE_MESG(DIVE_GAS) = {
 };
 
 DECLARE_MESG(DIVE_SUMMARY) = {
-	.maxfield = 12,
+	.maxfield = 15,
 	.field = {
 		SET_FIELD(DIVE_SUMMARY, 2, avg_depth, UINT32),		// mm
 		SET_FIELD(DIVE_SUMMARY, 3, max_depth, UINT32),		// mm
@@ -716,17 +750,23 @@ DECLARE_MESG(DIVE_SUMMARY) = {
 		SET_FIELD(DIVE_SUMMARY, 9, o2_toxicity, UINT16),	// OTUs
 		SET_FIELD(DIVE_SUMMARY, 10, dive_number, UINT32),
 		SET_FIELD(DIVE_SUMMARY, 11, bottom_time, UINT32),	// ms
+		SET_FIELD(DIVE_SUMMARY, 12, avg_pressure_sac, UINT16),	// 100 * bar/min/pressure
+		SET_FIELD(DIVE_SUMMARY, 13, avg_volume_sac, UINT16),	// 100 * L/min/pressure
+		SET_FIELD(DIVE_SUMMARY, 14, avg_rmv, UINT16),		// 100 * L/min
 	}
 };
 
 DECLARE_MESG(EVENT) = {
-	.maxfield = 16,
+	.maxfield = 74,
 	.field = {
 		SET_FIELD(EVENT, 0, event, ENUM),
 		SET_FIELD(EVENT, 1, type, ENUM),
 		SET_FIELD(EVENT, 3, data, UINT32),
 		SET_FIELD(EVENT, 4, event_group, UINT8),
 		SET_FIELD(EVENT, 15, unknown, UINT32),
+		SET_FIELD(EVENT, 71, tank_pressure_reserve, UINT32Z),	// sensor ID
+		SET_FIELD(EVENT, 72, tank_pressure_critical, UINT32Z),	// sensor ID
+		SET_FIELD(EVENT, 73, tank_pressure_lost, UINT32Z),	// sensor ID
 	}
 };
 
@@ -771,6 +811,38 @@ DECLARE_MESG(DIVE_SETTINGS) = {
 };
 DECLARE_MESG(DIVE_ALARM) = { };
 
+DECLARE_MESG(SENSOR_PROFILE) = {
+	.maxfield = 79,
+	.field = {
+		SET_FIELD(SENSOR_PROFILE, 0, ant_channel_id, UINT32Z),	// derived from the number engraved on the side
+		SET_FIELD(SENSOR_PROFILE, 2, name, STRING),
+		SET_FIELD(SENSOR_PROFILE, 3, enabled, ENUM),
+		SET_FIELD(SENSOR_PROFILE, 74, pressure_units, ENUM),	//  0 is PSI, 1 is KPA (unused), 2 is Bar
+		SET_FIELD(SENSOR_PROFILE, 75, rated_pressure, UINT16),
+		SET_FIELD(SENSOR_PROFILE, 76, reserve_pressure, UINT16),
+		SET_FIELD(SENSOR_PROFILE, 77, volume, UINT16),		// CuFt * 10 (PSI) or L * 10 (Bar)
+		SET_FIELD(SENSOR_PROFILE, 78, used_for_gas_rate, ENUM),	// was used for SAC calculations?
+	}
+};
+
+DECLARE_MESG(TANK_UPDATE) = {
+	.maxfield = 2,
+	.field = {
+		SET_FIELD(TANK_UPDATE, 0, sensor, UINT32Z),		// sensor ID
+		SET_FIELD(TANK_UPDATE, 1, pressure, UINT16),		// pressure in Bar * 100
+	}
+};
+
+DECLARE_MESG(TANK_SUMMARY) = {
+	.maxfield = 4,
+	.field = {
+		SET_FIELD(TANK_SUMMARY, 0, sensor, UINT32Z),		// sensor ID
+		SET_FIELD(TANK_SUMMARY, 1, start_pressure, UINT16),	// Bar * 100
+		SET_FIELD(TANK_SUMMARY, 2, end_pressure, UINT16),	// Bar * 100
+		SET_FIELD(TANK_SUMMARY, 3, volume_used, UINT32),	// L * 100
+	}
+};
+
 // Unknown global message ID's..
 DECLARE_MESG(WTF_13) = { };
 DECLARE_MESG(WTF_22) = { };
@@ -809,12 +881,16 @@ static const struct {
 	SET_MESG(140, WTF_140),
 	SET_MESG(141, WTF_141),
 
+	SET_MESG(147, SENSOR_PROFILE),
+
 	SET_MESG(216, WTF_216),
 	SET_MESG(233, WTF_233),
 	SET_MESG(258, DIVE_SETTINGS),
 	SET_MESG(259, DIVE_GAS),
 	SET_MESG(262, DIVE_ALARM),
 	SET_MESG(268, DIVE_SUMMARY),
+	SET_MESG(319, TANK_UPDATE),
+	SET_MESG(323, TANK_SUMMARY),
 };
 
 #define MSG_NAME_LEN 16
