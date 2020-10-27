@@ -124,52 +124,73 @@ static int name_cmp(const void *a, const void *b)
  *
  * Return number of files found.
 */
-static int get_file_list(dc_device_t *abstract, DIR *dir, struct file_list *files)
+
+static int
+check_filename(dc_device_t *abstract, const char *name)
+{
+	int len = strlen(name);
+	const char *explain = NULL;
+
+	DEBUG (abstract->context, "  %s", name);
+
+	if (len < 5)
+		explain = "name too short";
+	if (len >= FIT_NAME_SIZE)
+		explain = "name too long";
+	if (strncasecmp(name + len - 4, ".FIT", 4))
+		explain = "name lacks FIT suffix";
+
+	DEBUG (abstract->context, "  %s - %s", name, explain ? explain : "adding to list");
+	return explain == NULL;
+}
+
+static dc_status_t
+make_space(struct file_list *files)
+{
+	if (files->nr == files->allocated) {
+		struct fit_name *array;
+		int n = 3*(files->allocated + 8)/2;
+		size_t new_size;
+
+		new_size = n * sizeof(array[0]);
+		array = realloc(files->array, new_size);
+		if (!array)
+			return DC_STATUS_NOMEMORY;
+
+		files->array = array;
+		files->allocated = n;
+	}
+	return DC_STATUS_SUCCESS;
+}
+
+static void
+add_name(struct file_list *files, const char *name)
+{
+	/*
+	 * NOTE! This depends on the zero-padding that strncpy does.
+	 *
+	 * strncpy() doesn't just limit the size of the copy, it
+	 * will zero-pad the end of the result buffer.
+	 */
+	struct fit_name *entry = files->array + files->nr++;
+	strncpy(entry->name, name, FIT_NAME_SIZE);
+	entry->name[FIT_NAME_SIZE] = 0; // ensure it's null-terminated
+}
+
+static dc_status_t
+get_file_list(dc_device_t *abstract, DIR *dir, struct file_list *files)
 {
 	struct dirent *de;
 
 	DEBUG (abstract->context, "Iterating over Garmin files");
 	while ((de = readdir(dir)) != NULL) {
-		int len = strlen(de->d_name);
-		struct fit_name *entry;
-		const char *explain = NULL;
-
-		DEBUG (abstract->context, "  %s", de->d_name);
-
-		if (len < 5)
-			explain = "name too short";
-		if (len >= FIT_NAME_SIZE)
-			explain = "name too long";
-		if (strncasecmp(de->d_name + len - 4, ".FIT", 4))
-			explain = "name lacks FIT suffix";
-
-		DEBUG (abstract->context, "  %s - %s", de->d_name, explain ? explain : "adding to list");
-		if (explain)
+		if (!check_filename(abstract, de->d_name))
 			continue;
 
-		if (files->nr == files->allocated) {
-			struct fit_name *array;
-			int n = 3*(files->allocated + 8)/2;
-			size_t new_size;
-
-			new_size = n * sizeof(array[0]);
-			array = realloc(files->array, new_size);
-			if (!array)
-				return DC_STATUS_NOMEMORY;
-
-			files->array = array;
-			files->allocated = n;
-		}
-
-		/*
-		 * NOTE! This depends on the zero-padding that strncpy does.
-		 *
-		 * strncpy() doesn't just limit the size of the copy, it
-		 * will zero-pad the end of the result buffer.
-		 */
-		entry = files->array + files->nr++;
-		strncpy(entry->name, de->d_name, FIT_NAME_SIZE);
-		entry->name[FIT_NAME_SIZE] = 0; // ensure it's null-terminated
+		dc_status_t rc = make_space(files);
+		if (rc != DC_STATUS_SUCCESS)
+			return rc;
+		add_name(files, de->d_name);
 	}
 	DEBUG (abstract->context, "Found %d files", files->nr);
 
@@ -221,10 +242,14 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	dc_parser_t *parser;
 	char pathname[PATH_MAX];
 	size_t pathlen;
-	struct file_list files = { 0, 0, NULL };
+	struct file_list files = {
+		0,     // nr
+		0,     // allocated
+		NULL,  // array of names
+	};
 	dc_buffer_t *file;
 	DIR *dir;
-	int rc;
+	dc_status_t rc;
 
 	// Read the directory name from the iostream
 	rc = dc_iostream_read(device->iostream, &pathname, sizeof(pathname)-1, &pathlen);
