@@ -35,10 +35,27 @@
 #include "device-private.h"
 #include "array.h"
 
+#ifdef HAVE_LIBMTP
+#include "libmtp.h"
+
+#define GARMIN_VENDOR      0x091E
+#define DESCENT_MK2        0x4CBA
+#define DESCENT_MK2_APAC   0x4E76
+
+// deal with ancient libmpt found on older Linux distros
+#ifndef LIBMTP_FILES_AND_FOLDERS_ROOT
+#define LIBMTP_FILES_AND_FOLDERS_ROOT 0xffffffff
+#endif
+#endif
+
 typedef struct garmin_device_t {
 	dc_device_t base;
 	dc_iostream_t *iostream;
 	unsigned char fingerprint[FIT_NAME_SIZE];
+#ifdef HAVE_LIBMTP
+	unsigned char use_mtp;
+	LIBMTP_mtpdevice_t *mtp_device;
+#endif
 } garmin_device_t;
 
 static dc_status_t garmin_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
@@ -77,6 +94,14 @@ garmin_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *ios
 	device->iostream = iostream;
 	memset(device->fingerprint, 0, sizeof(device->fingerprint));
 
+#ifdef HAVE_LIBMTP
+	// for a Descent Mk2/Mk2i, we have to use MTP to access its storage;
+	// for Garmin devices, the model number corresponds to the lower three nibbles of the USB product ID
+	// in order to have only one entry for the Mk2, we don't use the Mk2/APAC model number in our code
+	device->use_mtp = (model == 0x0FFF & DESCENT_MK2);
+	DEBUG(context, "Found Garmin with model 0x%x which is a %s\n", model, (device->use_mtp ? "Mk2/Mk2i" : "Mk1"));
+#endif
+
 	*out = (dc_device_t *) device;
 
 	return DC_STATUS_SUCCESS;
@@ -104,19 +129,25 @@ garmin_device_close (dc_device_t *abstract)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	garmin_device_t *device = (garmin_device_t *) abstract;
-
+#ifdef HAVE_LIBMTP
+	if (device->use_mtp && device->mtp_device)
+		LIBMTP_Release_Device(device->mtp_device);
+#endif
 	return DC_STATUS_SUCCESS;
 }
 
 struct file_list {
 	int nr, allocated;
-	struct fit_name *array;
+	struct fit_file *array;
 };
 
-static int name_cmp(const void *a, const void *b)
+static int name_cmp(const void *_a, const void *_b)
 {
+	const struct fit_file *a = _a;
+	const struct fit_file *b = _b;
+
 	// Sort reverse string ordering (newest first), so use 'b,a'
-	return strcmp(b,a);
+	return strcmp(b->name, a->name);
 }
 
 /*
@@ -148,7 +179,7 @@ static dc_status_t
 make_space(struct file_list *files)
 {
 	if (files->nr == files->allocated) {
-		struct fit_name *array;
+		struct fit_file *array;
 		int n = 3*(files->allocated + 8)/2;
 		size_t new_size;
 
@@ -156,7 +187,6 @@ make_space(struct file_list *files)
 		array = realloc(files->array, new_size);
 		if (!array)
 			return DC_STATUS_NOMEMORY;
-
 		files->array = array;
 		files->allocated = n;
 	}
@@ -164,7 +194,7 @@ make_space(struct file_list *files)
 }
 
 static void
-add_name(struct file_list *files, const char *name)
+add_name(struct file_list *files, const char *name, unsigned int mtp_id)
 {
 	/*
 	 * NOTE! This depends on the zero-padding that strncpy does.
@@ -172,9 +202,10 @@ add_name(struct file_list *files, const char *name)
 	 * strncpy() doesn't just limit the size of the copy, it
 	 * will zero-pad the end of the result buffer.
 	 */
-	struct fit_name *entry = files->array + files->nr++;
+	struct fit_file *entry = files->array + files->nr++;
 	strncpy(entry->name, name, FIT_NAME_SIZE);
 	entry->name[FIT_NAME_SIZE] = 0; // ensure it's null-terminated
+	entry->mtp_id = mtp_id;
 }
 
 static dc_status_t
@@ -190,13 +221,139 @@ get_file_list(dc_device_t *abstract, DIR *dir, struct file_list *files)
 		dc_status_t rc = make_space(files);
 		if (rc != DC_STATUS_SUCCESS)
 			return rc;
-		add_name(files, de->d_name);
+		add_name(files, de->d_name, 0);
 	}
 	DEBUG(abstract->context, "Found %d files", files->nr);
 
-	qsort(files->array, files->nr, sizeof(struct fit_name), name_cmp);
+	qsort(files->array, files->nr, sizeof(struct fit_file), name_cmp);
 	return DC_STATUS_SUCCESS;
 }
+
+#ifdef HAVE_LIBMTP
+static unsigned int
+mtp_get_folder_id(dc_device_t *abstract, LIBMTP_mtpdevice_t *device, LIBMTP_devicestorage_t *storage, const char *folder, unsigned int parent_id)
+{
+	DEBUG(abstract->context, "Garmin/mtp: looking for folder %s under parent id %d", folder, parent_id);
+	// memory management is interesting here - we have to always walk the list returned and destroy them one by one
+	unsigned int folder_id = LIBMTP_FILES_AND_FOLDERS_ROOT;
+	LIBMTP_file_t* files = LIBMTP_Get_Files_And_Folders (device, storage->id, parent_id);
+	while (files != NULL) {
+		LIBMTP_file_t* mtp_file = files;
+		if (mtp_file->filetype == LIBMTP_FILETYPE_FOLDER && mtp_file->filename && !strncasecmp(mtp_file->filename, folder, strlen(folder))) {
+			folder_id = mtp_file->item_id;
+		}
+		files = files->next;
+		LIBMTP_destroy_file_t(mtp_file);
+	}
+	return folder_id;
+}
+
+static dc_status_t
+mtp_get_file_list(dc_device_t *abstract, struct file_list *files)
+{
+	garmin_device_t *device = (garmin_device_t *)abstract;
+	LIBMTP_raw_device_t *rawdevices;
+	int numrawdevices;
+	int i;
+
+	LIBMTP_Init();
+	DEBUG(abstract->context, "Attempting to connect to mtp device");
+
+	switch (LIBMTP_Detect_Raw_Devices(&rawdevices, &numrawdevices)) {
+	case LIBMTP_ERROR_NO_DEVICE_ATTACHED:
+		DEBUG(abstract->context, "Garmin/mtp: no device found");
+		return DC_STATUS_NODEVICE;
+	case LIBMTP_ERROR_CONNECTING:
+		DEBUG(abstract->context, "Garmin/mtp: error connecting");
+		return DC_STATUS_NOACCESS;
+	case LIBMTP_ERROR_MEMORY_ALLOCATION:
+		DEBUG(abstract->context, "Garmin/mtp: memory allocation error");
+		return DC_STATUS_NOMEMORY;
+	case LIBMTP_ERROR_GENERAL: // Unknown general errors - that's bad
+	default:
+		DEBUG(abstract->context, "Garmin/mtp: unknown error");
+		return DC_STATUS_UNSUPPORTED;
+	case LIBMTP_ERROR_NONE:
+		DEBUG(abstract->context, "Garmin/mtp: successfully connected with %d raw devices", numrawdevices);
+	}
+	/* iterate through connected MTP devices */
+	for (i = 0; i < numrawdevices; i++) {
+		LIBMTP_devicestorage_t *storage;
+		// we only want to read from a Garmin Descent Mk2 device at this point
+		if (rawdevices[i].device_entry.vendor_id != GARMIN_VENDOR ||
+		    (rawdevices[i].device_entry.product_id != DESCENT_MK2 && rawdevices[i].device_entry.product_id != DESCENT_MK2_APAC)) {
+			DEBUG(abstract->context, "Garmin/mtp: skipping raw device %04x/%04x",
+			      rawdevices[i].device_entry.vendor_id, rawdevices[i].device_entry.product_id);
+			continue;
+		}
+		device->mtp_device = LIBMTP_Open_Raw_Device_Uncached(&rawdevices[i]);
+		if (device->mtp_device == NULL) {
+			DEBUG(abstract->context, "Garmin/mtp: unable to open raw device %d", i);
+			continue;
+		}
+		DEBUG(abstract->context, "Garmin/mtp: succcessfully opened device");
+		for (storage = device->mtp_device->storage; storage != 0; storage = storage->next) {
+			unsigned int garmin_id = mtp_get_folder_id(abstract, device->mtp_device, storage, "Garmin", LIBMTP_FILES_AND_FOLDERS_ROOT);
+			DEBUG(abstract->context, "Garmin/mtp: Garmin folder at file_id %d", garmin_id);
+			if (garmin_id == LIBMTP_FILES_AND_FOLDERS_ROOT)
+				continue; // this storage partition didn't have a Garmin folder
+			unsigned int activity_id = mtp_get_folder_id(abstract, device->mtp_device, storage, "Activity", garmin_id);
+			DEBUG(abstract->context, "Garmin/mtp: Activity folder at file_id %d", activity_id);
+			if (activity_id == LIBMTP_FILES_AND_FOLDERS_ROOT)
+				continue; // no Activity folder
+
+			// now walk that folder to create our file_list
+			LIBMTP_file_t* activity_files = LIBMTP_Get_Files_And_Folders (device->mtp_device, storage->id, activity_id);
+			while (activity_files != NULL) {
+				LIBMTP_file_t* mtp_file = activity_files;
+				if (mtp_file->filetype != LIBMTP_FILETYPE_FOLDER && mtp_file->filename) {
+					if (check_filename(abstract, mtp_file->filename)) {
+						dc_status_t rc = make_space(files);
+						if (rc != DC_STATUS_SUCCESS)
+							return rc;
+						add_name(files, mtp_file->filename, mtp_file->item_id);
+					}
+				}
+				activity_files = activity_files->next;
+				LIBMTP_destroy_file_t(mtp_file);
+			}
+		}
+	}
+	free(rawdevices);
+	DEBUG(abstract->context, "Found %d files", files->nr);
+
+	qsort(files->array, files->nr, sizeof(struct fit_file), name_cmp);
+	return DC_STATUS_SUCCESS;
+}
+
+// MTP hands us the file data in chunks which we then just add to our data buffer
+static uint16_t
+mtp_put_func(void* params, void* priv, uint32_t sendlen, unsigned char *data, uint32_t *putlen)
+{
+	dc_buffer_t *file = (dc_buffer_t *)priv;
+	dc_buffer_append(file, data, sendlen);
+	if (putlen)
+		*putlen = sendlen;
+	return 0;
+}
+
+// read the file from the MTP device and store the content in the data buffer
+static dc_status_t
+mtp_read_file(garmin_device_t *device, unsigned int file_id, dc_buffer_t *file)
+{
+	dc_status_t rc = DC_STATUS_SUCCESS;
+	if (!device->mtp_device) {
+		DEBUG(device->base.context, "Garmin/mtp: cannot read file without MTP device");
+		return DC_STATUS_NODEVICE;
+	}
+	DEBUG(device->base.context, "Garmin/mtp: call Get_File_To_Handler");
+	if (LIBMTP_Get_File_To_Handler(device->mtp_device, file_id, &mtp_put_func, (void *) file, NULL, NULL) != 0) {
+		LIBMTP_Dump_Errorstack(device->mtp_device);
+		return DC_STATUS_IO;
+	}
+	return rc;
+}
+#endif /* HAVE_LIBMTP */
 
 #ifndef O_BINARY
 #define O_BINARY 0
@@ -245,7 +402,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	struct file_list files = {
 		0,     // nr
 		0,     // allocated
-		NULL,  // array of names
+		NULL   // array of file names / ids
 	};
 	dc_buffer_t *file;
 	DIR *dir;
@@ -269,20 +426,30 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	strcpy(pathname + pathlen, "Garmin/Activity");
 	pathlen += strlen("Garmin/Activity");
 
-	dir = opendir(pathname);
-	if (!dir) {
-		ERROR (abstract->context, "Failed to open directory '%s'.", pathname);
-		return DC_STATUS_IO;
+#ifdef HAVE_LIBMTP
+	if (device->use_mtp) {
+		rc = mtp_get_file_list(abstract, &files);
+		if (rc != DC_STATUS_SUCCESS || !files.nr) {
+			free(files.array);
+			return rc;
+		}
+	} else
+#endif
+	{ // slight coding style violation to deal with the non-MTP case
+		dir = opendir(pathname);
+		if (!dir) {
+			ERROR (abstract->context, "Failed to open directory '%s'.", pathname);
+			return DC_STATUS_IO;
+		}
+		// Get the list of FIT files
+		rc = get_file_list(abstract, dir, &files);
+		closedir(dir);
+		if (rc != DC_STATUS_SUCCESS || !files.nr) {
+			free(files.array);
+			return rc;
+		}
 	}
-
-	// Get the list of FIT files
-	rc = get_file_list(abstract, dir, &files);
-	closedir(dir);
-	if (rc != DC_STATUS_SUCCESS || !files.nr) {
-		free(files.array);
-		return rc;
-	}
-
+	// We found at least one file
 	// Can we find the fingerprint entry?
 	for (int i = 0; i < files.nr; i++) {
 		const char *name = files.array[i].name;
@@ -295,7 +462,6 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		DEBUG(abstract->context, "Ignoring '%s' and older", name);
 		break;
 	}
-
 	// Enable progress notifications.
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
 	progress.maximum = files.nr;
@@ -330,8 +496,13 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		// Reset the membuffer, read the data
 		dc_buffer_clear(file);
 		dc_buffer_append(file, name, FIT_NAME_SIZE);
+#ifdef HAVE_LIBMTP
+		if (device->use_mtp)
+			status = mtp_read_file(device, files.array[i].mtp_id, file);
+		else
+#endif
+			status = read_file(pathname, pathlen, name, file);
 
-		status = read_file(pathname, pathlen, name, file);
 		if (status != DC_STATUS_SUCCESS)
 			break;
 

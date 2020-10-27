@@ -100,6 +100,19 @@ AS_IF([test "x$with_libusb" != "xno"], [
 	])
 ])
 
+# Checks for MTP support.
+AC_ARG_WITH([libmtp],
+	[AS_HELP_STRING([--without-libmtp],
+		[Build without the libmtp library])],
+	[], [with_libmtp=auto])
+AS_IF([test "x$with_libmtp" != "xno"], [
+	PKG_CHECK_MODULES([LIBMTP], [libmtp], [have_libmtp=yes], [have_libmtp=no])
+	AS_IF([test "x$have_libmtp" = "xyes"], [
+		AC_DEFINE([HAVE_LIBMTP], [1], [libmtp library])
+		DEPENDENCIES="$DEPENDENCIES libmtp"
+	])
+])
+
 # Checks for HIDAPI support.
 AC_ARG_WITH([hidapi],
 	[AS_HELP_STRING([--without-hidapi],
