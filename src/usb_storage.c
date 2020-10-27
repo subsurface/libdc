@@ -76,10 +76,14 @@ dc_usb_storage_open (dc_iostream_t **out, dc_context_t *context, const char *nam
 	if (out == NULL || name == NULL)
 		return DC_STATUS_INVALIDARGS;
 
-	INFO (context, "Open: name=%s", name);
-	if (stat(name, &st) < 0 || !S_ISDIR(st.st_mode))
-		return DC_STATUS_NODEVICE;
-
+	if (*name == '\0') {
+		// that indicates an MTP device
+		INFO (context, "Open MTP device");
+	} else {
+		INFO (context, "Open: name=%s", name);
+		if (stat(name, &st) < 0 || !S_ISDIR(st.st_mode))
+			return DC_STATUS_NODEVICE;
+	}
 	// Allocate memory.
 	device = (dc_usbstorage_t *) dc_iostream_allocate (context, &dc_usbstorage_vtable, DC_TRANSPORT_USBSTORAGE);
 	if (device == NULL) {
