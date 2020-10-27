@@ -406,8 +406,10 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Liquivision", "Kaon", DC_FAMILY_LIQUIVISION_LYNX, 3, DC_TRANSPORT_SERIAL, NULL},
 
 	// Not merged upstream yet
-	/* Garmin */
+	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model) */
+	/* for the Mk2 we are using the model of the global model - the APAC model is 3702 */
 	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
+	{"Garmin", "Descent Mk2/Mk2i", DC_FAMILY_GARMIN, 3258, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
 	/* Deepblu */
 	{"Deepblu", "Cosmiq+", DC_FAMILY_DEEPBLU, 0, DC_TRANSPORT_BLE, dc_filter_deepblu},
 	/* Oceans S1 */
