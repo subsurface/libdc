@@ -408,6 +408,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	// Not merged upstream yet
 	/* Garmin */
 	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
+	{"Garmin", "Descent Mk2", DC_FAMILY_GARMIN, 0x4CBA, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
 	/* Deepblu */
 	{"Deepblu", "Cosmiq+", DC_FAMILY_DEEPBLU, 0, DC_TRANSPORT_BLE, dc_filter_deepblu},
 	/* Oceans S1 */
