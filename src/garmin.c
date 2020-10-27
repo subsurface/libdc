@@ -58,7 +58,7 @@ static const dc_device_vtable_t garmin_device_vtable = {
 };
 
 dc_status_t
-garmin_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *iostream)
+garmin_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *iostream, unsigned int model)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	garmin_device_t *device = NULL;
