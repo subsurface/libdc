@@ -229,7 +229,7 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 
 	// Not merged upstream yet
 	case DC_FAMILY_GARMIN:
-		rc = garmin_device_open (&device, context, iostream);
+		rc = garmin_device_open (&device, context, iostream, dc_descriptor_get_model (descriptor));
 		break;
 	case DC_FAMILY_DEEPBLU:
 		rc = deepblu_device_open (&device, context, iostream);
