@@ -414,6 +414,12 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		return rc;
 	pathname[pathlen] = 0;
 
+#ifdef HAVE_LIBMTP
+	// if the user passes in a path, don't try to read via MTP
+	if (pathlen)
+		device->use_mtp = 0;
+#endif
+
 	// The actual dives are under the "Garmin/Activity/" directory
 	// as FIT files, with names like "2018-08-20-10-23-30.fit".
 	// Make sure our buffer is big enough.
