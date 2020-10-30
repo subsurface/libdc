@@ -50,6 +50,14 @@ struct pos {
 	int lat, lon;
 };
 
+#define MAX_SENSORS 6
+struct garmin_sensor {
+	unsigned int sensor_id;
+	const char *sensor_name;
+	unsigned char sensor_enabled, sensor_units, sensor_used_for_gas_rate;
+	unsigned int sensor_rated_pressure, sensor_reserve_pressure, sensor_volume;
+};
+
 #define MAXTYPE 16
 #define MAXGASES 16
 #define MAXSTRINGS 32
@@ -77,6 +85,11 @@ struct record_data {
 
 	// RECORD_DECO_MODEL
 	unsigned char model, gf_low, gf_high;
+
+	// RECORD_SENSOR_PROFILE has no data, fills in dive.sensor[nr_sensor]
+
+	// RECORD_TANK_UPDATE
+	unsigned int sensor, pressure;
 };
 
 #define RECORD_GASMIX		1
@@ -84,6 +97,8 @@ struct record_data {
 #define RECORD_EVENT		4
 #define RECORD_DEVICE_INFO	8
 #define RECORD_DECO_MODEL	16
+#define RECORD_SENSOR_PROFILE	32
+#define RECORD_TANK_UPDATE	64
 
 typedef struct garmin_parser_t {
 	dc_parser_t base;
@@ -106,6 +121,8 @@ typedef struct garmin_parser_t {
 		unsigned int profile;
 		unsigned int time;
 		int utc_offset, time_offset;
+		unsigned int nr_sensor;
+		struct garmin_sensor sensor[MAX_SENSORS];
 	} dive;
 
 	// I count nine (!) different GPS fields Hmm.
@@ -127,6 +144,20 @@ typedef struct garmin_parser_t {
 } garmin_parser_t;
 
 typedef int (*garmin_data_cb_t)(unsigned char type, const unsigned char *data, int len, void *user);
+
+static inline struct garmin_sensor *current_sensor(garmin_parser_t *garmin)
+{
+	return garmin->dive.sensor + garmin->dive.nr_sensor;
+}
+
+static int find_tank_index(garmin_parser_t *garmin, unsigned int sensor_id)
+{
+	for (int i = 0; i < garmin->dive.nr_sensor; i++) {
+		if (garmin->dive.sensor[i].sensor_id == sensor_id)
+			return i;
+	}
+	return 0;
+}
 
 /*
  * Decode the event. Numbers from Wojtek's fit2subs python script
@@ -164,6 +195,7 @@ static void garmin_event(struct garmin_parser_t *garmin,
 		[21] = { 3, "Battry Critical" },
 		[22] = { 1, "Safety stop begin" },
 		[23] = { 1, "Approaching deco stop" },
+		[32] = { 1, "Tank battery low" },	// No way to know which tank
 	};
 	dc_sample_value_t sample = {0};
 
@@ -221,6 +253,23 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 		}
 		if (pending & RECORD_DECO_MODEL)
 			dc_field_add_string_fmt(&garmin->cache, "Deco model", "Buhlmann ZHL-16C %u/%u", record->gf_low, record->gf_high);
+
+		// End of sensor record just increments nr_sensor,
+		// so that the next sensor record will start
+		// filling in the next one.
+		//
+		// NOTE! This only happens for tank pods, other
+		// sensors will just overwrite each other.
+		//
+		// Also note that the last sensor is just for
+		// scratch use, so that the sensor record can
+		// always fill in dive.sensor[nr_sensor] with
+		// no checking.
+		if (pending & RECORD_SENSOR_PROFILE) {
+			if (garmin->dive.nr_sensor < MAX_SENSORS-1)
+				garmin->dive.nr_sensor++;
+		}
+
 		return;
 	}
 
@@ -235,6 +284,14 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 	if (pending & RECORD_EVENT) {
 		garmin_event(garmin, record->event_nr, record->event_type,
 			record->event_group, record->event_data, record->event_unknown);
+	}
+
+	if (pending & RECORD_TANK_UPDATE) {
+		dc_sample_value_t sample = {0};
+
+		sample.pressure.tank = find_tank_index(garmin, record->sensor);
+		sample.pressure.value = record->pressure / 100.0;
+		garmin->callback(DC_SAMPLE_PRESSURE, sample, garmin->userdata);
 	}
 }
 
@@ -473,6 +530,11 @@ DECLARE_FIELD(RECORD, cns_load, UINT8)
 	}
 }
 DECLARE_FIELD(RECORD, n2_load, UINT16) { }		// percent
+DECLARE_FIELD(RECORD, air_time_remaining, UINT32) { }	// seconds
+DECLARE_FIELD(RECORD, pressure_sac, UINT16) { }		// 100 * bar/min/pressure
+DECLARE_FIELD(RECORD, volume_sac, UINT16) { }		// 100 * l/min/pressure
+DECLARE_FIELD(RECORD, rmv, UINT16) { }			// 100 * l/min
+DECLARE_FIELD(RECORD, ascent_rate, SINT32) { }		// mm/s (negative is down)
 
 // DEVICE_SETTINGS
 DECLARE_FIELD(DEVICE_SETTINGS, utc_offset, UINT32) { garmin->dive.utc_offset = (SINT32) data; }	// wrong type in FIT
@@ -532,6 +594,9 @@ DECLARE_FIELD(DIVE_SUMMARY, end_n2, UINT16) { }			// percent
 DECLARE_FIELD(DIVE_SUMMARY, o2_toxicity, UINT16) { }		// OTUs
 DECLARE_FIELD(DIVE_SUMMARY, dive_number, UINT32) { }
 DECLARE_FIELD(DIVE_SUMMARY, bottom_time, UINT32) { DC_ASSIGN_FIELD(garmin->cache, DIVETIME, data / 1000); }
+DECLARE_FIELD(DIVE_SUMMARY, avg_pressure_sac, UINT16) { }	// 100 * bar/min/pressure
+DECLARE_FIELD(DIVE_SUMMARY, avg_volume_sac, UINT16) { }		// 100 * L/min/pressure
+DECLARE_FIELD(DIVE_SUMMARY, avg_rmv, UINT16) { }		// 100 * L/min
 
 // DIVE_SETTINGS
 DECLARE_FIELD(DIVE_SETTINGS, name, STRING) { }
@@ -578,6 +643,62 @@ DECLARE_FIELD(DIVE_SETTINGS, safety_stop_time, UINT16) { }
 DECLARE_FIELD(DIVE_SETTINGS, heart_rate_source_type, ENUM) { }
 DECLARE_FIELD(DIVE_SETTINGS, hear_rate_device_type, UINT8) { }
 
+// SENSOR_PROFILE record for each ANT/BLE sensor.
+// We only care about sensor type 28 - Garmin tank pod.
+DECLARE_FIELD(SENSOR_PROFILE, ant_channel_id, UINT32Z)
+{
+	current_sensor(garmin)->sensor_id = data;
+}
+DECLARE_FIELD(SENSOR_PROFILE, name, STRING) { } // We don't pass in string types correctly
+DECLARE_FIELD(SENSOR_PROFILE, enabled, ENUM)
+{
+	current_sensor(garmin)->sensor_enabled = data;
+}
+DECLARE_FIELD(SENSOR_PROFILE, sensor_type, UINT8)
+{
+	// 28 is tank pod
+	// start filling in next sensor after this record
+	if (data == 28)
+		garmin->record_data.pending |= RECORD_SENSOR_PROFILE;
+}
+DECLARE_FIELD(SENSOR_PROFILE, pressure_units, ENUM)
+{
+	//  0 is PSI, 1 is KPA (unused), 2 is Bar
+	current_sensor(garmin)->sensor_units = data;
+}
+DECLARE_FIELD(SENSOR_PROFILE, rated_pressure, UINT16)
+{
+	current_sensor(garmin)->sensor_rated_pressure = data;
+}
+DECLARE_FIELD(SENSOR_PROFILE, reserve_pressure, UINT16)
+{
+	current_sensor(garmin)->sensor_reserve_pressure = data;
+}
+DECLARE_FIELD(SENSOR_PROFILE, volume, UINT16)
+{
+	current_sensor(garmin)->sensor_volume = data;
+}
+DECLARE_FIELD(SENSOR_PROFILE, used_for_gas_rate, ENUM)
+{
+	current_sensor(garmin)->sensor_used_for_gas_rate = data;
+}
+
+DECLARE_FIELD(TANK_UPDATE, sensor, UINT32Z)
+{
+	garmin->record_data.sensor = data;
+}
+
+DECLARE_FIELD(TANK_UPDATE, pressure, UINT16)
+{
+	garmin->record_data.pressure = data;
+	garmin->record_data.pending |= RECORD_TANK_UPDATE;
+}
+
+DECLARE_FIELD(TANK_SUMMARY, sensor, UINT32Z) { }	// sensor ID
+DECLARE_FIELD(TANK_SUMMARY, start_pressure, UINT16) { }	// Bar * 100
+DECLARE_FIELD(TANK_SUMMARY, end_pressure, UINT16) { }	// Bar * 100
+DECLARE_FIELD(TANK_SUMMARY, volume_used, UINT32) { }	// L * 100
+
 // EVENT
 DECLARE_FIELD(EVENT, event, ENUM)
 {
@@ -601,6 +722,9 @@ DECLARE_FIELD(EVENT, unknown, UINT32)
 {
 	garmin->record_data.event_unknown = data;
 }
+DECLARE_FIELD(EVENT, tank_pressure_reserve, UINT32Z) { }	// sensor ID
+DECLARE_FIELD(EVENT, tank_pressure_critical, UINT32Z) { }	// sensor ID
+DECLARE_FIELD(EVENT, tank_pressure_lost, UINT32Z) { }		// sensor ID
 
 struct msg_desc {
 	unsigned char maxfield;
@@ -674,7 +798,7 @@ DECLARE_MESG(LAP) = {
 };
 
 DECLARE_MESG(RECORD) = {
-	.maxfield = 99,
+	.maxfield = 128,
 	.field = {
 		SET_FIELD(RECORD, 0, position_lat, SINT32),	// 180 deg / 2**31
 		SET_FIELD(RECORD, 1, position_long, SINT32),	// 180 deg / 2**31
@@ -690,6 +814,11 @@ DECLARE_MESG(RECORD) = {
 		SET_FIELD(RECORD, 96, ndl, UINT32),		// s
 		SET_FIELD(RECORD, 97, cns_load, UINT8),		// percent
 		SET_FIELD(RECORD, 98, n2_load, UINT16),		// percent
+		SET_FIELD(RECORD, 123, air_time_remaining, UINT32),	// seconds
+		SET_FIELD(RECORD, 124, pressure_sac, UINT16),	// 100 * bar/min/pressure
+		SET_FIELD(RECORD, 125, volume_sac, UINT16),	// 100 * l/min/pressure
+		SET_FIELD(RECORD, 126, rmv, UINT16),		// 100 * l/min
+		SET_FIELD(RECORD, 127, ascent_rate, SINT32),	// mm/s (negative is down)
 	}
 };
 
@@ -704,7 +833,7 @@ DECLARE_MESG(DIVE_GAS) = {
 };
 
 DECLARE_MESG(DIVE_SUMMARY) = {
-	.maxfield = 12,
+	.maxfield = 15,
 	.field = {
 		SET_FIELD(DIVE_SUMMARY, 2, avg_depth, UINT32),		// mm
 		SET_FIELD(DIVE_SUMMARY, 3, max_depth, UINT32),		// mm
@@ -716,17 +845,23 @@ DECLARE_MESG(DIVE_SUMMARY) = {
 		SET_FIELD(DIVE_SUMMARY, 9, o2_toxicity, UINT16),	// OTUs
 		SET_FIELD(DIVE_SUMMARY, 10, dive_number, UINT32),
 		SET_FIELD(DIVE_SUMMARY, 11, bottom_time, UINT32),	// ms
+		SET_FIELD(DIVE_SUMMARY, 12, avg_pressure_sac, UINT16),	// 100 * bar/min/pressure
+		SET_FIELD(DIVE_SUMMARY, 13, avg_volume_sac, UINT16),	// 100 * L/min/pressure
+		SET_FIELD(DIVE_SUMMARY, 14, avg_rmv, UINT16),		// 100 * L/min
 	}
 };
 
 DECLARE_MESG(EVENT) = {
-	.maxfield = 16,
+	.maxfield = 74,
 	.field = {
 		SET_FIELD(EVENT, 0, event, ENUM),
 		SET_FIELD(EVENT, 1, type, ENUM),
 		SET_FIELD(EVENT, 3, data, UINT32),
 		SET_FIELD(EVENT, 4, event_group, UINT8),
 		SET_FIELD(EVENT, 15, unknown, UINT32),
+		SET_FIELD(EVENT, 71, tank_pressure_reserve, UINT32Z),	// sensor ID
+		SET_FIELD(EVENT, 72, tank_pressure_critical, UINT32Z),	// sensor ID
+		SET_FIELD(EVENT, 73, tank_pressure_lost, UINT32Z),	// sensor ID
 	}
 };
 
@@ -771,6 +906,39 @@ DECLARE_MESG(DIVE_SETTINGS) = {
 };
 DECLARE_MESG(DIVE_ALARM) = { };
 
+DECLARE_MESG(SENSOR_PROFILE) = {
+	.maxfield = 79,
+	.field = {
+		SET_FIELD(SENSOR_PROFILE, 0, ant_channel_id, UINT32Z),	// derived from the number engraved on the side
+		SET_FIELD(SENSOR_PROFILE, 2, name, STRING),
+		SET_FIELD(SENSOR_PROFILE, 3, enabled, ENUM),
+		SET_FIELD(SENSOR_PROFILE, 52, sensor_type, UINT8),	// 28 is tank pod
+		SET_FIELD(SENSOR_PROFILE, 74, pressure_units, ENUM),	//  0 is PSI, 1 is KPA (unused), 2 is Bar
+		SET_FIELD(SENSOR_PROFILE, 75, rated_pressure, UINT16),
+		SET_FIELD(SENSOR_PROFILE, 76, reserve_pressure, UINT16),
+		SET_FIELD(SENSOR_PROFILE, 77, volume, UINT16),		// CuFt * 10 (PSI) or L * 10 (Bar)
+		SET_FIELD(SENSOR_PROFILE, 78, used_for_gas_rate, ENUM),	// was used for SAC calculations?
+	}
+};
+
+DECLARE_MESG(TANK_UPDATE) = {
+	.maxfield = 2,
+	.field = {
+		SET_FIELD(TANK_UPDATE, 0, sensor, UINT32Z),		// sensor ID
+		SET_FIELD(TANK_UPDATE, 1, pressure, UINT16),		// pressure in Bar * 100
+	}
+};
+
+DECLARE_MESG(TANK_SUMMARY) = {
+	.maxfield = 4,
+	.field = {
+		SET_FIELD(TANK_SUMMARY, 0, sensor, UINT32Z),		// sensor ID
+		SET_FIELD(TANK_SUMMARY, 1, start_pressure, UINT16),	// Bar * 100
+		SET_FIELD(TANK_SUMMARY, 2, end_pressure, UINT16),	// Bar * 100
+		SET_FIELD(TANK_SUMMARY, 3, volume_used, UINT32),	// L * 100
+	}
+};
+
 // Unknown global message ID's..
 DECLARE_MESG(WTF_13) = { };
 DECLARE_MESG(WTF_22) = { };
@@ -809,12 +977,16 @@ static const struct {
 	SET_MESG(140, WTF_140),
 	SET_MESG(141, WTF_141),
 
+	SET_MESG(147, SENSOR_PROFILE),
+
 	SET_MESG(216, WTF_216),
 	SET_MESG(233, WTF_233),
 	SET_MESG(258, DIVE_SETTINGS),
 	SET_MESG(259, DIVE_GAS),
 	SET_MESG(262, DIVE_ALARM),
 	SET_MESG(268, DIVE_SUMMARY),
+	SET_MESG(319, TANK_UPDATE),
+	SET_MESG(323, TANK_SUMMARY),
 };
 
 #define MSG_NAME_LEN 16
@@ -1141,6 +1313,7 @@ traverse_data(struct garmin_parser_t *garmin)
 		if (garmin->record_data.pending)
 			flush_pending_record(garmin);
 	}
+
 	return DC_STATUS_SUCCESS;
 }
 
@@ -1211,6 +1384,11 @@ garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigne
 	}
 }
 
+static void add_sensor_string(garmin_parser_t *garmin, const char *desc, const struct garmin_sensor *sensor)
+{
+	dc_field_add_string_fmt(&garmin->cache, desc, "%x", sensor->sensor_id);
+}
+
 static dc_status_t
 garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
 {
@@ -1224,6 +1402,7 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 	memset(&garmin->cache, 0, sizeof(garmin->cache));
 
 	traverse_data(garmin);
+
 	// These seem to be the "real" GPS dive coordinates
 	add_gps_string(garmin, "GPS1", &garmin->gps.SESSION.entry);
 	add_gps_string(garmin, "GPS2", &garmin->gps.SESSION.exit);
@@ -1237,6 +1416,25 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 	add_gps_string(garmin, "Lap other GPS", &garmin->gps.LAP.other);
 
 	add_gps_string(garmin, "Record GPS", &garmin->gps.RECORD);
+
+	// We have no idea about gas mixes vs tanks
+	for (int i = 0; i < garmin->dive.nr_sensor; i++) {
+		// DC_ASSIGN_IDX(garmin->cache, tankinfo, i, ..);
+		// DC_ASSIGN_IDX(garmin->cache, tanksize, i, ..);
+		// DC_ASSIGN_IDX(garmin->cache, tankworkingpressure, i, ..);
+	}
+
+	// Hate hate hate gasmix vs tank counts.
+	//
+	// There's no way to match them up unless they are an identity
+	// mapping, so having two different ones doesn't actually work.
+	if (garmin->dive.nr_sensor > garmin->cache.GASMIX_COUNT)
+		DC_ASSIGN_FIELD(garmin->cache, GASMIX_COUNT, garmin->dive.nr_sensor);
+
+	for (int i = 0; i < garmin->dive.nr_sensor; i++) {
+		static const char *name[] = { "Sensor 1", "Sensor 2", "Sensor 3", "Sensor 4", "Sensor 5" };
+		add_sensor_string(garmin, name[i], garmin->dive.sensor+i);
+	}
 
 	return DC_STATUS_SUCCESS;
 }
