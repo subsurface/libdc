@@ -225,7 +225,8 @@ get_file_list(dc_device_t *abstract, DIR *dir, struct file_list *files)
 	}
 	DEBUG(abstract->context, "Found %d files", files->nr);
 
-	qsort(files->array, files->nr, sizeof(struct fit_file), name_cmp);
+	if (files->array)
+		qsort(files->array, files->nr, sizeof(struct fit_file), name_cmp);
 	return DC_STATUS_SUCCESS;
 }
 
@@ -322,7 +323,8 @@ mtp_get_file_list(dc_device_t *abstract, struct file_list *files)
 	free(rawdevices);
 	DEBUG(abstract->context, "Found %d files", files->nr);
 
-	qsort(files->array, files->nr, sizeof(struct fit_file), name_cmp);
+	if (files->array)
+		qsort(files->array, files->nr, sizeof(struct fit_file), name_cmp);
 	return DC_STATUS_SUCCESS;
 }
 
