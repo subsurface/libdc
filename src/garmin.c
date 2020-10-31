@@ -98,7 +98,7 @@ garmin_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *ios
 	// for a Descent Mk2/Mk2i, we have to use MTP to access its storage;
 	// for Garmin devices, the model number corresponds to the lower three nibbles of the USB product ID
 	// in order to have only one entry for the Mk2, we don't use the Mk2/APAC model number in our code
-	device->use_mtp = (model == 0x0FFF & DESCENT_MK2);
+	device->use_mtp = (model == (0x0FFF & DESCENT_MK2));
 	DEBUG(context, "Found Garmin with model 0x%x which is a %s\n", model, (device->use_mtp ? "Mk2/Mk2i" : "Mk1"));
 #endif
 
