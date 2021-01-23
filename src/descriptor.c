@@ -258,6 +258,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Aqualung", "i450T",               DC_FAMILY_OCEANIC_ATOM2, 0x4641, DC_TRANSPORT_SERIAL, NULL},
 	{"Aqualung", "i550",                DC_FAMILY_OCEANIC_ATOM2, 0x4642, DC_TRANSPORT_SERIAL, NULL},
 	{"Aqualung", "i200",                DC_FAMILY_OCEANIC_ATOM2, 0x4646, DC_TRANSPORT_SERIAL, NULL},
+	{"Sherwood", "Sage",                DC_FAMILY_OCEANIC_ATOM2, 0x4647, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Aqualung", "i300C",               DC_FAMILY_OCEANIC_ATOM2, 0x4648, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Aqualung", "i200C",               DC_FAMILY_OCEANIC_ATOM2, 0x4649, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Aqualung", "i100",                DC_FAMILY_OCEANIC_ATOM2, 0x464E, DC_TRANSPORT_SERIAL, NULL},
@@ -298,6 +299,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Mares", "Quad Air",          DC_FAMILY_MARES_ICONHD , 0x23, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_mares},
 	{"Mares", "Smart Air",         DC_FAMILY_MARES_ICONHD , 0x24, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_mares},
 	{"Mares", "Quad",              DC_FAMILY_MARES_ICONHD , 0x29, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_mares},
+	{"Mares", "Horizon",           DC_FAMILY_MARES_ICONHD , 0x2C, DC_TRANSPORT_SERIAL, NULL},
 	/* Heinrichs Weikamp */
 	{"Heinrichs Weikamp", "OSTC",     DC_FAMILY_HW_OSTC, 0, DC_TRANSPORT_SERIAL, NULL},
 	{"Heinrichs Weikamp", "OSTC Mk2", DC_FAMILY_HW_OSTC, 1, DC_TRANSPORT_SERIAL, NULL},
@@ -387,6 +389,18 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Ratio",      "iDive Color Deep", DC_FAMILY_DIVESYSTEM_IDIVE, 0x54, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Color Tech+",DC_FAMILY_DIVESYSTEM_IDIVE, 0x55, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Color Reb",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x56, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M 2021 GPS Fancy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x60, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Easy",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x61, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Pro ",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x62, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Deep",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x63, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Tech+", DC_FAMILY_DIVESYSTEM_IDIVE, 0x64, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Reb",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x65, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 Pro Fancy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x70, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M 2021 Pro Easy",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x71, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M 2021 Pro Pro",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x72, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M 2021 Pro Deep",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x73, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M 2021 Pro Tech+", DC_FAMILY_DIVESYSTEM_IDIVE, 0x74, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iX3M 2021 Pro Reb",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x75, DC_TRANSPORT_SERIAL, NULL},
 	{"Seac",       "Jack",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x1000, DC_TRANSPORT_SERIAL, NULL},
 	{"Seac",       "Guru",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x1002, DC_TRANSPORT_SERIAL, NULL},
 	/* Cochran Commander */
@@ -643,6 +657,7 @@ static int dc_filter_divesystem (dc_transport_t transport, const void *userdata,
 {
 	static const char * const bluetooth[] = {
 		"DS",
+		"IX5M",
 	};
 
 	if (transport == DC_TRANSPORT_BLUETOOTH) {
@@ -656,6 +671,7 @@ static int dc_filter_oceanic (dc_transport_t transport, const void *userdata, vo
 {
 	static const unsigned int model[] = {
 		0x4552, // Oceanic Pro Plus X
+		0x4647, // Sherwood Sage
 		0x4648, // Aqualung i300C
 		0x4649, // Aqualung i200C
 		0x4651, // Aqualung i770R
