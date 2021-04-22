@@ -96,8 +96,8 @@ uwatec_aladin_device_open (dc_device_t **out, dc_context_t *context, dc_iostream
 		goto error_free;
 	}
 
-	// Set the timeout for receiving data (INFINITE).
-	status = dc_iostream_set_timeout (device->iostream, -1);
+	// Set the timeout for receiving data (3000ms).
+	status = dc_iostream_set_timeout (device->iostream, 3000);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the timeout.");
 		goto error_free;
@@ -164,20 +164,24 @@ uwatec_aladin_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	unsigned char answer[SZ_MEMORY + 2] = {0};
 
 	// Receive the header of the package.
-	for (unsigned int i = 0; i < 4;) {
+	unsigned int i = 0;
+	while (i < 4) {
 		if (device_is_cancelled (abstract))
 			return DC_STATUS_CANCELLED;
 
 		status = dc_iostream_read (device->iostream, answer + i, 1, NULL);
 		if (status != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to receive the answer.");
-			return status;
+			if (status != DC_STATUS_TIMEOUT)
+				return status;
 		}
-		if (answer[i] == (i < 3 ? 0x55 : 0x00)) {
-			i++; // Continue.
-		} else {
-			i = 0; // Reset.
+
+		const unsigned char expected = i < 3 ? 0x55 : 0x00;
+		if (status != DC_STATUS_SUCCESS || answer[i] != expected) {
 			device_event_emit (abstract, DC_EVENT_WAITING, NULL);
+			i = 0;
+		} else {
+			i++;
 		}
 	}
 

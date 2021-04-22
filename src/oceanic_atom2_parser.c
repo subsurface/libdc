@@ -99,6 +99,7 @@
 #define VEO40       0x4654
 #define WISDOM4     0x4655
 #define PROPLUS4    0x4656
+#define BEACON      0x4742
 #define I470TC      0x4743
 
 #define NORMAL   0
@@ -192,7 +193,8 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		parser->footersize = 0;
 	} else if (model == A300CS || model == VTX ||
 		model == I450T || model == I750TC ||
-		model == I770R || model == SAGE) {
+		model == I770R || model == SAGE ||
+		model == BEACON) {
 		parser->headersize = 5 * PAGESIZE;
 	} else if (model == PROPLUSX) {
 		parser->headersize = 3 * PAGESIZE;
@@ -347,6 +349,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case PROPLUSX:
 		case I770R:
 		case SAGE:
+		case BEACON:
 			datetime->year   = (p[10]) + 2000;
 			datetime->month  = (p[8]);
 			datetime->day    = (p[9]);
@@ -468,7 +471,8 @@ oceanic_atom2_parser_cache (oceanic_atom2_parser_t *parser)
 		he_offset = 0x48;
 		ngasmixes = 6;
 	} else if (parser->model == A300CS || parser->model == VTX ||
-		parser->model == I750TC || parser->model == SAGE) {
+		parser->model == I750TC || parser->model == SAGE ||
+		parser->model == BEACON) {
 		o2_offset = 0x2A;
 		if (data[0x39] & 0x04) {
 			ngasmixes = 1;
@@ -690,7 +694,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 		if (parser->model == A300CS || parser->model == VTX ||
 			parser->model == I450T || parser->model == I750TC ||
 			parser->model == PROPLUSX || parser->model == I770R ||
-			parser->model == SAGE)
+			parser->model == SAGE || parser->model == BEACON)
 			idx = 0x1f;
 		switch (data[idx] & 0x03) {
 		case 0:
@@ -747,7 +751,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 		parser->model == VTX || parser->model == I450T ||
 		parser->model == I750TC || parser->model == PROPLUSX ||
 		parser->model == I770R || parser->model == I470TC ||
-		parser->model == SAGE) {
+		parser->model == SAGE || parser->model == BEACON) {
 		samplesize = PAGESIZE;
 	}
 
@@ -833,7 +837,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				pressure = (((data[offset + 7] << 8) + data[offset + 6]) & 0x0FFF);
 			} else if (parser->model == A300CS || parser->model == VTX ||
 				parser->model == I750TC || parser->model == I770R ||
-				parser->model == SAGE) {
+				parser->model == SAGE || parser->model == BEACON) {
 				// Tank pressure (1 psi) and number (one based index)
 				tank = (data[offset + 1] & 0x03) - 1;
 				pressure = ((data[offset + 7] << 8) + data[offset + 6]) & 0x0FFF;
@@ -935,7 +939,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 					temperature = ((data[offset + 7] & 0xF0) >> 4) | ((data[offset + 7] & 0x0C) << 2) | ((data[offset + 5] & 0x0C) << 4);
 				} else if (parser->model == A300CS || parser->model == VTX ||
 					parser->model == I750TC || parser->model == PROPLUSX ||
-					parser->model == I770R|| parser->model == SAGE) {
+					parser->model == I770R|| parser->model == SAGE ||
+					parser->model == BEACON) {
 					temperature = data[offset + 11];
 				} else {
 					unsigned int sign;
@@ -980,7 +985,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				else if (parser->model == TX1 || parser->model == A300CS ||
 					parser->model == VTX || parser->model == I750TC ||
 					parser->model == PROPLUSX || parser->model == I770R ||
-					parser->model == SAGE)
+					parser->model == SAGE || parser->model == BEACON)
 					pressure = array_uint16_le (data + offset + 4);
 				else
 					pressure -= data[offset + 1];
@@ -1032,7 +1037,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			unsigned int decostop = 0, decotime = 0;
 			if (parser->model == A300CS || parser->model == VTX ||
 				parser->model == I750TC || parser->model == SAGE ||
-				parser->model == PROPLUSX || parser->model == I770R) {
+				parser->model == PROPLUSX || parser->model == I770R ||
+				parser->model == BEACON) {
 				decostop = (data[offset + 15] & 0x70) >> 4;
 				decotime = array_uint16_le(data + offset + 6) & 0x03FF;
 				have_deco = 1;

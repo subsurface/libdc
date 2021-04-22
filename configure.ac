@@ -72,18 +72,21 @@ AM_CONDITIONAL([HAVE_MANDOC],[test -n "$MANDOC"])
 # Enable automake silent build rules.
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 
-# Checks for native Windows.
-AC_MSG_CHECKING([for native Win32])
+# Checks for operating system.
+AC_MSG_CHECKING([for operating system])
 case "$host" in
   *-*-mingw*)
-    os_win32=yes
+    platform=windows
+    ;;
+  *-*-darwin*)
+    platform=mac
     ;;
   *)
-    os_win32=no
+    platform=default
     ;;
 esac
-AC_MSG_RESULT([$os_win32])
-AM_CONDITIONAL([OS_WIN32], [test "$os_win32" = "yes"])
+AC_MSG_RESULT([$platform])
+AM_CONDITIONAL([OS_WIN32], [test "$platform" = "windows"])
 
 DEPENDENCIES=""
 
@@ -187,6 +190,7 @@ AC_CHECK_FUNCS([clock_gettime mach_absolute_time])
 AC_CHECK_FUNCS([getopt_long])
 
 # Checks for supported compiler options.
+AX_APPEND_COMPILE_FLAGS([-Werror=unknown-warning-option],[ERROR_CFLAGS])
 AX_APPEND_COMPILE_FLAGS([ \
 	-Wall \
 	-Wshadow \
@@ -204,10 +208,10 @@ AX_APPEND_COMPILE_FLAGS([ \
 	-Wno-pointer-sign \
 	-Wno-shadow \
 	-fmacro-prefix-map='$(top_srcdir)/'= \
-])
+],,[$ERROR_CFLAGS])
 
 # Windows specific compiler options.
-AS_IF([test "$os_win32" = "yes"], [
+AS_IF([test "$platform" = "windows"], [
 	AX_APPEND_COMPILE_FLAGS([-Wno-pedantic-ms-format])
 ])
 
@@ -223,6 +227,25 @@ m4_ifset([dc_version_suffix],[
 	AC_DEFINE(HAVE_VERSION_SUFFIX, [1], [Define if a version suffix is present.])
 ])
 
+# Supported transports
+transport_serial="yes"
+transport_usb="${have_libusb-no}"
+if test "$have_hidapi" = "yes"; then
+	transport_usbhid="yes"
+elif test "$have_libusb" = "yes" && test "$platform" != "mac"; then
+	transport_usbhid="yes"
+else
+	transport_usbhid="no"
+fi
+if test "$platform" = "windows"; then
+	transport_irda="$ac_cv_header_af_irda_h"
+	transport_bluetooth="$ac_cv_header_ws2bth_h"
+else
+	transport_irda="$ac_cv_header_linux_irda_h"
+	transport_bluetooth="${have_bluez-no}"
+fi
+transport_ble="no"
+
 AC_CONFIG_FILES([
    libdivecomputer.pc
    Makefile
@@ -237,3 +260,35 @@ AC_CONFIG_FILES([
    examples/Makefile
 ])
 AC_OUTPUT
+AC_MSG_NOTICE([
+  $PACKAGE $VERSION
+  ===============
+
+  Compiler:
+
+    CC      : $CC
+    CFLAGS  : $CFLAGS
+    LDFLAGS : $LDFLAGS
+
+  Features:
+
+    Logging              : $enable_logging
+    Pseudo terminal      : $enable_pty
+    Example applications : $enable_examples
+    Documentation        : $enable_doc
+
+  Transports:
+
+    Serial    : $transport_serial
+    USB       : $transport_usb
+    USBHID    : $transport_usbhid
+    IrDA      : $transport_irda
+    Bluetooth : $transport_bluetooth
+    BLE       : $transport_ble
+
+  Building:
+
+    Type 'make' to compile $PACKAGE.
+
+    Type 'make install' to install $PACKAGE.
+])

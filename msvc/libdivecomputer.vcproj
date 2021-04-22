@@ -399,6 +399,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\src\platform.c"
+				>
+			</File>
+			<File
 				RelativePath="..\src\rbstream.c"
 				>
 			</File>
@@ -452,6 +456,14 @@
 			</File>
 			<File
 				RelativePath="..\src\socket.c"
+				>
+			</File>
+			<File
+				RelativePath="..\src\sporasub_sp2.c"
+				>
+			</File>
+			<File
+				RelativePath="..\src\sporasub_sp2_parser.c"
 				>
 			</File>
 			<File
@@ -854,6 +866,10 @@
 			</File>
 			<File
 				RelativePath="..\src\socket.h"
+				>
+			</File>
+			<File
+				RelativePath="..\src\sporasub_sp2.h"
 				>
 			</File>
 			<File

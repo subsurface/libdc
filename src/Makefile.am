@@ -64,7 +64,7 @@ libdivecomputer_la_SOURCES = \
 	diverite_nitekq.h diverite_nitekq.c diverite_nitekq_parser.c \
 	citizen_aqualand.h citizen_aqualand.c citizen_aqualand_parser.c \
 	divesystem_idive.h divesystem_idive.c divesystem_idive_parser.c \
-	platform.h \
+	platform.h platform.c \
 	ringbuffer.h ringbuffer.c \
 	rbstream.h rbstream.c \
 	checksum.h checksum.c \
@@ -74,6 +74,7 @@ libdivecomputer_la_SOURCES = \
 	tecdiving_divecomputereu.h tecdiving_divecomputereu.c tecdiving_divecomputereu_parser.c \
 	mclean_extreme.h mclean_extreme.c mclean_extreme_parser.c \
 	liquivision_lynx.h liquivision_lynx.c liquivision_lynx_parser.c \
+	sporasub_sp2.h sporasub_sp2.c sporasub_sp2_parser.c \
 	socket.h socket.c \
 	irda.c \
 	usb.c \

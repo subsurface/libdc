@@ -130,11 +130,13 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Suunto", "DX",         DC_FAMILY_SUUNTO_D9, 0x1C, DC_TRANSPORT_SERIAL, NULL},
 	{"Suunto", "Vyper Novo", DC_FAMILY_SUUNTO_D9, 0x1D, DC_TRANSPORT_SERIAL, NULL},
 	{"Suunto", "Zoop Novo",  DC_FAMILY_SUUNTO_D9, 0x1E, DC_TRANSPORT_SERIAL, NULL},
+	{"Suunto", "Zoop Novo",  DC_FAMILY_SUUNTO_D9, 0x1F, DC_TRANSPORT_SERIAL, NULL},
 	{"Suunto", "D4f",        DC_FAMILY_SUUNTO_D9, 0x20, DC_TRANSPORT_SERIAL, NULL},
 	/* Suunto EON Steel */
-	{"Suunto", "EON Steel", DC_FAMILY_SUUNTO_EONSTEEL, 0, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_suunto},
-	{"Suunto", "EON Core",  DC_FAMILY_SUUNTO_EONSTEEL, 1, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_suunto},
-	{"Suunto", "D5",        DC_FAMILY_SUUNTO_EONSTEEL, 2, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_suunto},
+	{"Suunto", "EON Steel",       DC_FAMILY_SUUNTO_EONSTEEL, 0, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_suunto},
+	{"Suunto", "EON Core",        DC_FAMILY_SUUNTO_EONSTEEL, 1, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_suunto},
+	{"Suunto", "D5",              DC_FAMILY_SUUNTO_EONSTEEL, 2, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_suunto},
+	{"Suunto", "EON Steel Black", DC_FAMILY_SUUNTO_EONSTEEL, 3, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_suunto},
 	/* Uwatec Aladin */
 	{"Uwatec", "Aladin Air Twin",     DC_FAMILY_UWATEC_ALADIN, 0x1C, DC_TRANSPORT_SERIAL, NULL},
 	{"Uwatec", "Aladin Sport Plus",   DC_FAMILY_UWATEC_ALADIN, 0x3E, DC_TRANSPORT_SERIAL, NULL},
@@ -268,6 +270,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Oceanic",  "Veo 4.0",             DC_FAMILY_OCEANIC_ATOM2, 0x4654, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Sherwood", "Wisdom 4",            DC_FAMILY_OCEANIC_ATOM2, 0x4655, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Oceanic",  "Pro Plus 4",          DC_FAMILY_OCEANIC_ATOM2, 0x4656, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
+	{"Sherwood", "Beacon",              DC_FAMILY_OCEANIC_ATOM2, 0x4742, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Aqualung", "i470TC",              DC_FAMILY_OCEANIC_ATOM2, 0x4743, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	/* Mares Nemo */
 	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0, DC_TRANSPORT_SERIAL, NULL},
@@ -389,12 +392,12 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Ratio",      "iDive Color Deep", DC_FAMILY_DIVESYSTEM_IDIVE, 0x54, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Color Tech+",DC_FAMILY_DIVESYSTEM_IDIVE, 0x55, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iDive Color Reb",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x56, DC_TRANSPORT_SERIAL, NULL},
-	{"Ratio",      "iX3M 2021 GPS Fancy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x60, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
-	{"Ratio",      "iX3M 2021 GPS Easy",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x61, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
-	{"Ratio",      "iX3M 2021 GPS Pro ",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x62, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
-	{"Ratio",      "iX3M 2021 GPS Deep",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x63, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
-	{"Ratio",      "iX3M 2021 GPS Tech+", DC_FAMILY_DIVESYSTEM_IDIVE, 0x64, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
-	{"Ratio",      "iX3M 2021 GPS Reb",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x65, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Fancy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x60, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Easy",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x61, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Pro ",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x62, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Deep",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x63, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Tech+", DC_FAMILY_DIVESYSTEM_IDIVE, 0x64, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2021 GPS Reb",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x65, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
 	{"Ratio",      "iX3M 2021 Pro Fancy", DC_FAMILY_DIVESYSTEM_IDIVE, 0x70, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M 2021 Pro Easy",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x71, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M 2021 Pro Pro",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x72, DC_TRANSPORT_SERIAL, NULL},
@@ -419,6 +422,8 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Liquivision", "Xeo",  DC_FAMILY_LIQUIVISION_LYNX, 1, DC_TRANSPORT_SERIAL, NULL},
 	{"Liquivision", "Lynx", DC_FAMILY_LIQUIVISION_LYNX, 2, DC_TRANSPORT_SERIAL, NULL},
 	{"Liquivision", "Kaon", DC_FAMILY_LIQUIVISION_LYNX, 3, DC_TRANSPORT_SERIAL, NULL},
+	/* Sporasub */
+	{"Sporasub", "SP2", DC_FAMILY_SPORASUB_SP2, 0, DC_TRANSPORT_SERIAL, NULL},
 
 	// Not merged upstream yet
 	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model) */
@@ -501,14 +506,16 @@ dc_match_oceanic (const void *key, const void *value)
 		0
 	};
 
-	return dc_match_number_with_prefix (key, &prefix);
+	const char *p = prefix;
+
+	return dc_match_number_with_prefix (key, &p);
 }
 
 static int
 dc_filter_internal (const void *key, const void *values, size_t count, size_t size, dc_match_t match, void *params_dst, const void *params_src, size_t params_size)
 {
 	if (key == NULL)
-		return 0;
+		return 1;
 
 	for (size_t i = 0; i < count; ++i) {
 		if (match (key, (const unsigned char *) values + i * size)) {
@@ -571,11 +578,13 @@ static int dc_filter_suunto (dc_transport_t transport, const void *userdata, voi
 		{0x1493, 0x0030}, // Eon Steel
 		{0x1493, 0x0033}, // Eon Core
 		{0x1493, 0x0035}, // D5
+		{0x1493, 0x0036}, // EON Steel Black
 	};
 	static const char * const bluetooth[] = {
 		"EON Steel",
 		"EON Core",
 		"Suunto D5",
+		"EON Steel Black",
 	};
 
 	if (transport == DC_TRANSPORT_USBHID) {
@@ -660,7 +669,7 @@ static int dc_filter_divesystem (dc_transport_t transport, const void *userdata,
 		"IX5M",
 	};
 
-	if (transport == DC_TRANSPORT_BLUETOOTH) {
+	if (transport == DC_TRANSPORT_BLUETOOTH || transport == DC_TRANSPORT_BLE) {
 		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_number_with_prefix);
 	}
 
@@ -680,6 +689,7 @@ static int dc_filter_oceanic (dc_transport_t transport, const void *userdata, vo
 		0x4654, // Oceanic Veo 4.0
 		0x4655, // Sherwood Wisdom 4
 		0x4656, // Oceanic Pro Plus 4
+		0x4742, // Sherwood Beacon
 		0x4743, // Aqualung i470TC
 	};
 
@@ -856,7 +866,7 @@ dc_descriptor_get_transports (dc_descriptor_t *descriptor)
 int
 dc_descriptor_filter (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata, void *params)
 {
-	if (descriptor == NULL || descriptor->filter == NULL)
+	if (descriptor == NULL || descriptor->filter == NULL || userdata == NULL)
 		return 1;
 
 	return descriptor->filter (transport, userdata, params);

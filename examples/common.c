@@ -93,6 +93,7 @@ static const backend_table_t g_backends[] = {
 	{"divecomputereu", DC_FAMILY_TECDIVING_DIVECOMPUTEREU, 0},
 	{"mclean",      DC_FAMILY_MCLEAN_EXTREME,      0},
 	{"lynx",        DC_FAMILY_LIQUIVISION_LYNX,    0},
+	{"sp2",         DC_FAMILY_SPORASUB_SP2,        0},
 
 	// Not merged upstream yet
 	{"descentmk1",  DC_FAMILY_GARMIN,              0},
