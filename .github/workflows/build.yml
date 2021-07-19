@@ -81,8 +81,37 @@ jobs:
       - uses: actions/checkout@v2
       - name: Install dependencies
         run: sudo apt-get install gcc-mingw-w64 binutils-mingw-w64 mingw-w64-tools
+      - name: Install libusb
+        env:
+          LIBUSB_VERSION: 1.0.24
+        run: |
+          wget -c https://github.com/libusb/libusb/archive/refs/tags/v${LIBUSB_VERSION}.tar.gz
+          tar xzf v${LIBUSB_VERSION}.tar.gz
+          pushd libusb-${LIBUSB_VERSION}
+          autoreconf --install --force
+          ./configure --host=${{ matrix.arch }}-w64-mingw32 --prefix=/usr
+          make
+          make install DESTDIR=$PWD/../artifacts
+          popd
+      - name: Install hidapi
+        env:
+          HIDAPI_VERSION: 0.10.1
+        run: |
+          wget -c https://github.com/libusb/hidapi/archive/refs/tags/hidapi-${HIDAPI_VERSION}.tar.gz
+          tar xzf hidapi-${HIDAPI_VERSION}.tar.gz
+          pushd hidapi-hidapi-${HIDAPI_VERSION}
+          autoreconf --install --force
+          ./configure --host=${{ matrix.arch }}-w64-mingw32 --prefix=/usr
+          make
+          make install DESTDIR=$PWD/../artifacts
+          popd
       - run: autoreconf --install --force
       - run: ./configure --host=${{ matrix.arch }}-w64-mingw32 --prefix=/usr
+        env:
+          PKG_CONFIG_LIBDIR: ${{ github.workspace }}/artifacts/usr/lib/pkgconfig
+          PKG_CONFIG_SYSROOT_DIR: ${{ github.workspace }}/artifacts
+          PKG_CONFIG_ALLOW_SYSTEM_CFLAGS: 1
+          PKG_CONFIG_ALLOW_SYSTEM_LIBS: 1
       - run: make
       - run: make distcheck
       - name: Package artifacts
@@ -93,3 +122,33 @@ jobs:
         with:
           name: ${{ github.job }}-${{ matrix.arch }}
           path: ${{ github.job }}-${{ matrix.arch }}.tar.gz
+
+  msvc:
+
+    name: Visual Studio
+
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x86, x64]
+
+    env:
+      CONFIGURATION: Release
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: msys2/setup-msys2@v2
+        with:
+          install: autoconf automake libtool pkg-config make gcc
+      - run: |
+          autoreconf --install --force
+          ./configure --prefix=/usr
+        shell: msys2 {0}
+      - uses: microsoft/setup-msbuild@v1.0.2
+      - run: msbuild -m -p:Platform=${{ matrix.platform }} -p:Configuration=${{ env.CONFIGURATION }} msvc/libdivecomputer.vcxproj
+      - uses: actions/upload-artifact@v2
+        with:
+          name: ${{ github.job }}-${{ matrix.platform }}
+          path: msvc/${{ matrix.platform }}/${{ env.CONFIGURATION }}/bin

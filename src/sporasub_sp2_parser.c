@@ -112,8 +112,12 @@ sporasub_sp2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 	const unsigned char *data = abstract->data;
 	unsigned int size = abstract->size;
 
+	dc_salinity_t *water = (dc_salinity_t *) value;
+
 	if (size < SZ_HEADER)
 		return DC_STATUS_DATAFORMAT;
+
+	unsigned int settings = data[0x1A];
 
 	if (value) {
 		switch (type) {
@@ -131,6 +135,10 @@ sporasub_sp2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 			break;
 		case DC_FIELD_TEMPERATURE_MAXIMUM:
 			*((double *) value) = array_uint16_le (data + 0x16) / 10.0;
+			break;
+		case DC_FIELD_SALINITY:
+			water->type = settings & 0x08 ? DC_WATER_FRESH : DC_WATER_SALT;
+			water->density = 0.0;
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
@@ -151,9 +159,10 @@ sporasub_sp2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 		return DC_STATUS_DATAFORMAT;
 
 	unsigned int nsamples = array_uint16_le(data);
+	unsigned int settings = data[0x1A];
 
 	// Get the sample interval.
-	unsigned int interval_idx = data[0x1A];
+	unsigned int interval_idx = settings & 0x03;
 	const unsigned int intervals[] = {1, 2, 5, 10};
 	if (interval_idx >= C_ARRAY_SIZE(intervals)) {
 		ERROR (abstract->context, "Invalid sample interval index %u", interval_idx);
@@ -170,8 +179,7 @@ sporasub_sp2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 		unsigned int value = array_uint32_le (data + offset);
 		unsigned int heartrate   = (value & 0xFF000000) >> 24;
 		unsigned int temperature = (value & 0x00FFC000) >> 14;
-		unsigned int unknown =     (value & 0x00003000) >> 12;
-		unsigned int depth =       (value & 0x00000FFF) >>  0;
+		unsigned int depth =       (value & 0x00003FFF) >>  0;
 
 		// Time (seconds)
 		time += interval;
