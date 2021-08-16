@@ -1403,6 +1403,11 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 
 	traverse_data(garmin);
 
+	// Device information
+	dc_field_add_string_fmt(&garmin->cache, "Serial", "%u", garmin->dive.serial);
+	dc_field_add_string_fmt(&garmin->cache, "Firmware", "%u.%02u",
+		garmin->dive.firmware / 100, garmin->dive.firmware % 100);
+
 	// These seem to be the "real" GPS dive coordinates
 	add_gps_string(garmin, "GPS1", &garmin->gps.SESSION.entry);
 	add_gps_string(garmin, "GPS2", &garmin->gps.SESSION.exit);
