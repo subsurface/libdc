@@ -19,6 +19,7 @@
  * MA 02110-1301 USA
  */
 
+#include <stdio.h>		// snprintf
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -60,6 +61,8 @@ enum eon_sample {
 	ES_setpoint_po2,	// uint32
 	ES_setpoint_automatic,	// bool
 	ES_bookmark,
+	ES_insertgas,		// uint16
+	ES_removegas,		// uint16
 };
 
 #define EON_MAX_GROUP 16
@@ -111,6 +114,9 @@ static const struct {
 	{ "Events.SetPoint.Automatic",		ES_setpoint_automatic },
 	{ "Events.DiveTimer.Active",		ES_none },
 	{ "Events.DiveTimer.Time",		ES_none },
+	{ "Events+GasSwitch.GasNumber",		ES_gasswitch },
+	{ "Events+GasEdit.InsertGasNumber",	ES_insertgas },
+	{ "Events+GasEdit.RemoveGasNumber",	ES_removegas },
 };
 
 static enum eon_sample lookup_descriptor_type(suunto_eonsteel_parser_t *eon, struct type_desc *desc)
@@ -581,6 +587,63 @@ static void sample_gas_switch_event(struct sample_data *info, unsigned short idx
 	if (info->callback) info->callback(DC_SAMPLE_GASMIX, sample, info->userdata);
 }
 
+static const char *mixname(suunto_eonsteel_parser_t *eon, int idx)
+{
+	dc_gasmix_t *mix;
+	static char name[32];
+	int o2, he;
+
+	if (idx < 1 || idx > MAXGASES)
+		return "invalid";
+
+	mix = &eon->cache.GASMIX[idx-1];
+	o2 = lrint(mix->oxygen * 100);
+	he = lrint(mix->helium * 100);
+	if (he) {
+		snprintf(name, sizeof(name), "%d/%d", o2, he);
+		return name;
+	}
+	if (o2 && o2 != 21) {
+		snprintf(name, sizeof(name), "NX%d", o2);
+		return name;
+	}
+	return "air";
+}
+
+static void sample_insert_gas_event(struct sample_data *info, unsigned short idx)
+{
+	suunto_eonsteel_parser_t *eon = info->eon;
+	dc_sample_value_t sample = {0};
+	char event[32];
+
+	if (!info->callback)
+		return;
+
+	snprintf(event, sizeof(event), "Create gas %d (%s)", idx, mixname(eon, idx));
+	sample.event.type = SAMPLE_EVENT_STRING;
+	sample.event.name = strdup(event);
+	sample.event.flags = SAMPLE_FLAGS_SEVERITY_INFO;
+
+	info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+}
+
+static void sample_remove_gas_event(struct sample_data *info, unsigned short idx)
+{
+	suunto_eonsteel_parser_t *eon = info->eon;
+	dc_sample_value_t sample = {0};
+	char event[32];
+
+	if (!info->callback)
+		return;
+
+	snprintf(event, sizeof(event), "Remove gas %d (%s)", idx, mixname(eon, idx));
+	sample.event.type = SAMPLE_EVENT_STRING;
+	sample.event.name = strdup(event);
+	sample.event.flags = SAMPLE_FLAGS_SEVERITY_INFO;
+
+	info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+}
+
 /*
  * Look up the string from an enumeration.
  *
@@ -885,6 +948,14 @@ static unsigned int handle_sample_type(const struct type_desc *desc, struct samp
 	case ES_setpoint_automatic:	// bool
 		sample_setpoint_automatic(info, data[0]);
 		return 1;
+
+	case ES_insertgas:
+		sample_insert_gas_event(info, array_uint16_le(data));
+		return 2;
+
+	case ES_removegas:
+		sample_remove_gas_event(info, array_uint16_le(data));
+		return 2;
 
 	default:
 		return 0;
