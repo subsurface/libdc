@@ -92,7 +92,7 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		if (model == 0x01)
 			rc = suunto_eon_parser_create (&parser, context, 1);
 		else
-			rc = suunto_vyper_parser_create (&parser, context);
+			rc = suunto_vyper_parser_create (&parser, context, serial);
 		break;
 	case DC_FAMILY_SUUNTO_VYPER2:
 	case DC_FAMILY_SUUNTO_D9:
