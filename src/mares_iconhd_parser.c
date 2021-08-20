@@ -20,6 +20,8 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>	/* for snprintf */
+#include <string.h>	/* for strdup */
 
 #include <libdivecomputer/units.h>
 
@@ -147,6 +149,7 @@ struct mares_iconhd_parser_t {
 	unsigned int samplerate;
 	unsigned int ntanks;
 	unsigned int ngasmixes;
+	unsigned int serial;
 	mares_iconhd_gasmix_t gasmix[NGASMIXES];
 	mares_iconhd_tank_t tank[NTANKS];
 };
@@ -506,7 +509,7 @@ mares_iconhd_parser_cache (mares_iconhd_parser_t *parser)
 }
 
 dc_status_t
-mares_iconhd_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+mares_iconhd_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
 {
 	mares_iconhd_parser_t *parser = NULL;
 
@@ -533,6 +536,7 @@ mares_iconhd_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 	parser->samplerate = 0;
 	parser->ntanks = 0;
 	parser->ngasmixes = 0;
+	parser->serial = serial;
 	for (unsigned int i = 0; i < NGASMIXES; ++i) {
 		parser->gasmix[i].oxygen = 0;
 		parser->gasmix[i].helium = 0;
@@ -635,6 +639,7 @@ mares_iconhd_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime
 	return DC_STATUS_SUCCESS;
 }
 
+#define BUFLEN 16
 
 static dc_status_t
 mares_iconhd_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
@@ -667,6 +672,8 @@ mares_iconhd_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_tank_t *tank = (dc_tank_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_field_string_t *string = (dc_field_string_t *) value;
+	char buf[BUFLEN];
 
 	if (value) {
 		switch (type) {
@@ -833,6 +840,17 @@ mares_iconhd_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 					return DC_STATUS_DATAFORMAT;
 				}
 			}
+			break;
+		case DC_FIELD_STRING:
+			switch(flags) {
+			case 0: /* serial */
+				string->desc = "Serial";
+				snprintf(buf, BUFLEN, "%u", parser->serial);
+				break;
+			default:
+				return DC_STATUS_UNSUPPORTED;
+			}
+			string->value = strdup(buf);
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
