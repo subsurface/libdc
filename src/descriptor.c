@@ -333,6 +333,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Cressi Goa */
 	{"Cressi", "Cartesio", DC_FAMILY_CRESSI_GOA, 1, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
 	{"Cressi", "Goa",      DC_FAMILY_CRESSI_GOA, 2, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
+	{"Cressi", "Neon",     DC_FAMILY_CRESSI_GOA, 9, DC_TRANSPORT_SERIAL, NULL},
 	/* Zeagle N2iTiON3 */
 	{"Zeagle",    "N2iTiON3",   DC_FAMILY_ZEAGLE_N2ITION3, 0, DC_TRANSPORT_SERIAL, NULL},
 	{"Apeks",     "Quantum X",  DC_FAMILY_ZEAGLE_N2ITION3, 0, DC_TRANSPORT_SERIAL, NULL},
@@ -681,6 +682,7 @@ static int dc_filter_oceanic (dc_transport_t transport, const void *userdata, vo
 {
 	static const unsigned int model[] = {
 		0x4552, // Oceanic Pro Plus X
+		0x455A, // Aqualung i750TC
 		0x4647, // Sherwood Sage
 		0x4648, // Aqualung i300C
 		0x4649, // Aqualung i200C
