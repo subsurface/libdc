@@ -92,7 +92,7 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		if (model == 0x01)
 			rc = suunto_eon_parser_create (&parser, context, 1);
 		else
-			rc = suunto_vyper_parser_create (&parser, context);
+			rc = suunto_vyper_parser_create (&parser, context, serial);
 		break;
 	case DC_FAMILY_SUUNTO_VYPER2:
 	case DC_FAMILY_SUUNTO_D9:
@@ -137,7 +137,7 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		rc = mares_darwin_parser_create (&parser, context, model);
 		break;
 	case DC_FAMILY_MARES_ICONHD:
-		rc = mares_iconhd_parser_create (&parser, context, model);
+		rc = mares_iconhd_parser_create (&parser, context, model, serial);
 		break;
 	case DC_FAMILY_HW_OSTC:
 		rc = hw_ostc_parser_create (&parser, context, serial);
