@@ -126,6 +126,12 @@ AS_IF([test "x$with_hidapi" != "xno"], [
 	AS_IF([test "x$have_hidapi" = "xyes"], [
 		AC_DEFINE([HAVE_HIDAPI], [1], [hidapi library])
 		DEPENDENCIES="$DEPENDENCIES hidapi"
+	], [
+	PKG_CHECK_MODULES([HIDAPI], [hidapi-libusb], [have_hidapi=yes], [have_hidapi=no])
+	AS_IF([test "x$have_hidapi" = "xyes"], [
+		AC_DEFINE([HAVE_HIDAPI], [1], [hidapi library])
+		DEPENDENCIES="$DEPENDENCIES hidapi"
+	])
 	])
 ])
 
