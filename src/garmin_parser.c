@@ -217,7 +217,7 @@ static void garmin_event(struct garmin_parser_t *garmin,
 		return;
 
 	case 57:
-		sample.gasmix = data - 1;
+		sample.gasmix = data;
 		garmin->callback(DC_SAMPLE_GASMIX, sample, garmin->userdata);
 		return;
 	}
