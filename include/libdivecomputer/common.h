@@ -114,6 +114,8 @@ typedef enum dc_family_t {
 	DC_FAMILY_LIQUIVISION_LYNX = (17 << 16),
 	/* Sporasub */
 	DC_FAMILY_SPORASUB_SP2 = (18 << 16),
+	/* Deep Six */
+	DC_FAMILY_DEEPSIX_EXCURSION = (19 << 16),
 
 	// Not merged upstream yet
 	/* Garmin */

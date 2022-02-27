@@ -102,19 +102,19 @@ typedef struct hw_ostc_sample_info_t {
 typedef struct hw_ostc_layout_t {
 	unsigned int datetime;
 	unsigned int maxdepth;
-	unsigned int avgdepth;
 	unsigned int divetime;
-	unsigned int atmospheric;
-	unsigned int salinity;
-	unsigned int duration;
 	unsigned int temperature;
-	unsigned int battery;
+	unsigned int atmospheric;
 	unsigned int desat;
 	unsigned int firmware;
+	unsigned int battery;
+	unsigned int battery_percentage;
+	unsigned int salinity;
+	unsigned int avgdepth;
+	unsigned int duration;
 	unsigned int deco_info1;
 	unsigned int deco_info2;
-	unsigned int decomode;
-	unsigned int battery_percentage;
+	unsigned int divemode;
 } hw_ostc_layout_t;
 
 typedef struct hw_ostc_gasmix_t {
@@ -158,55 +158,55 @@ static const dc_parser_vtable_t hw_ostc_parser_vtable = {
 static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	3,  /* datetime */
 	8,  /* maxdepth */
-	45, /* avgdepth */
 	10, /* divetime */
-	15, /* atmospheric */
-	43, /* salinity */
-	47, /* duration */
 	13, /* temperature */
-	34, /* battery volt after dive */
+	15, /* atmospheric */
 	17, /* desat */
 	32, /* firmware */
+	34, /* battery volt after dive */
+	0,  /* battery percentage TBD */
+	43, /* salinity */
+	45, /* avgdepth */
+	47, /* duration */
 	49, /* deco_info1 */
 	50, /* deco_info1 */
-	51, /* decomode */
-	0,  /* battery percentage TBD */
+	51, /* divemode */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	9,  /* datetime */
 	14, /* maxdepth */
-	45, /* avgdepth */
 	16, /* divetime */
-	21, /* atmospheric */
-	43, /* salinity */
-	47, /* duration */
 	19, /* temperature */
-	34, /* battery volt after dive */
+	21, /* atmospheric */
 	23, /* desat */
 	32, /* firmware */
+	34, /* battery volt after dive */
+	0,  /* battery percentage TBD */
+	43, /* salinity */
+	45, /* avgdepth */
+	47, /* duration */
 	49, /* deco_info1 */
 	50, /* deco_info2 */
-	51, /* decomode */
-	0,  /* battery percentage TBD */
+	51, /* divemode */
 };
 
 static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	12, /* datetime */
 	17, /* maxdepth */
-	73, /* avgdepth */
 	19, /* divetime */
-	24, /* atmospheric */
-	70, /* salinity */
-	75, /* duration */
 	22, /* temperature */
-	50, /* battery volt after dive */
+	24, /* atmospheric */
 	26, /* desat */
 	48, /* firmware */
+	50, /* battery volt after dive */
+	59, /* battery percentage */
+	70, /* salinity */
+	73, /* avgdepth */
+	75, /* duration */
 	77, /* deco_info1 */
 	78, /* deco_info2 */
-	79, /* decomode */
-        59, /* battery percentage */
+	82, /* divemode */
 };
 
 static unsigned int
@@ -306,7 +306,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 			}
 		}
 		// The first fixed setpoint is the initial setpoint in CCR mode.
-		if (data[82] == OSTC3_CC) {
+		if (data[layout->divemode] == OSTC3_CC || data[layout->divemode] == OSTC3_PSCR) {
 			initial_setpoint = data[60];
 		}
 		// Initial CNS
@@ -554,7 +554,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			break;
 		case DC_FIELD_DIVEMODE:
 			if (version == 0x21) {
-				switch (data[51]) {
+				switch (data[layout->divemode]) {
 				case OSTC_APNEA:
 					*((dc_divemode_t *) value) = DC_DIVEMODE_FREEDIVE;
 					break;
@@ -576,7 +576,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 					return DC_STATUS_DATAFORMAT;
 				}
 			} else if (version == 0x22) {
-				switch (data[51]) {
+				switch (data[layout->divemode]) {
 				case FROG_ZHL16:
 				case FROG_ZHL16_GF:
 					*((dc_divemode_t *) value) = DC_DIVEMODE_OC;
@@ -588,7 +588,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 					return DC_STATUS_DATAFORMAT;
 				}
 			} else if (version == 0x23 || version == 0x24) {
-				switch (data[82]) {
+				switch (data[layout->divemode]) {
 				case OSTC3_OC:
 					*((dc_divemode_t *) value) = DC_DIVEMODE_OC;
 					break;
@@ -653,28 +653,28 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 
 			case 4: /* Deco model */
 				string->desc = "Deco model";
-				if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16) ||
-						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
-						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
+				if (((version == 0x23 || version == 0x24) && data[layout->divemode] == OSTC3_ZHL16) ||
+						(version == 0x22 && data[layout->divemode] == FROG_ZHL16) ||
+						(version == 0x21 && (data[layout->divemode] == OSTC_ZHL16_OC || data[layout->divemode] == OSTC_ZHL16_CC)))
 					strncpy(buf, "ZH-L16", BUFLEN);
-				else if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16_GF) ||
-						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
-						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
+				else if (((version == 0x23 || version == 0x24) && data[layout->divemode] == OSTC3_ZHL16_GF) ||
+						(version == 0x22 && data[layout->divemode] == FROG_ZHL16_GF) ||
+						(version == 0x21 && (data[layout->divemode] == OSTC_ZHL16_OC_GF || data[layout->divemode] == OSTC_ZHL16_CC_GF)))
 					strncpy(buf, "ZH-L16-GF", BUFLEN);
-				else if (((version == 0x24) && data[layout->decomode] == OSTC4_VPM))
+				else if (((version == 0x24) && data[layout->divemode] == OSTC4_VPM))
 					strncpy(buf, "VPM", BUFLEN);
 				else
 					return DC_STATUS_DATAFORMAT;
 				break;
 			case 5: /* Deco model info */
 				string->desc = "Deco model info";
-				if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16) ||
-						(version == 0x22 && data[layout->decomode] == FROG_ZHL16) ||
-						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC || data[layout->decomode] == OSTC_ZHL16_CC)))
+				if (((version == 0x23 || version == 0x24) && data[layout->divemode] == OSTC3_ZHL16) ||
+						(version == 0x22 && data[layout->divemode] == FROG_ZHL16) ||
+						(version == 0x21 && (data[layout->divemode] == OSTC_ZHL16_OC || data[layout->divemode] == OSTC_ZHL16_CC)))
 					snprintf(buf, BUFLEN, "Saturation %u, Desaturation %u", layout->deco_info1, layout->deco_info2);
-				else if (((version == 0x23 || version == 0x24) && data[layout->decomode] == OSTC3_ZHL16_GF) ||
-						(version == 0x22 && data[layout->decomode] == FROG_ZHL16_GF) ||
-						(version == 0x21 && (data[layout->decomode] == OSTC_ZHL16_OC_GF || data[layout->decomode] == OSTC_ZHL16_CC_GF)))
+				else if (((version == 0x23 || version == 0x24) && data[layout->divemode] == OSTC3_ZHL16_GF) ||
+						(version == 0x22 && data[layout->divemode] == FROG_ZHL16_GF) ||
+						(version == 0x21 && (data[layout->divemode] == OSTC_ZHL16_OC_GF || data[layout->divemode] == OSTC_ZHL16_CC_GF)))
 					snprintf(buf, BUFLEN, "GF %u/%u", data[layout->deco_info1], data[layout->deco_info2]);
 				else
 					return DC_STATUS_DATAFORMAT;
