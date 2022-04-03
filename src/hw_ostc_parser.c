@@ -114,6 +114,7 @@ typedef struct hw_ostc_layout_t {
 	unsigned int duration;
 	unsigned int deco_info1;
 	unsigned int deco_info2;
+	unsigned int deco_model;
 	unsigned int divemode;
 } hw_ostc_layout_t;
 
@@ -170,6 +171,7 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc = {
 	47, /* duration */
 	49, /* deco_info1 */
 	50, /* deco_info1 */
+	0, /* deco_model */
 	51, /* divemode */
 };
 
@@ -188,6 +190,7 @@ static const hw_ostc_layout_t hw_ostc_layout_frog = {
 	47, /* duration */
 	49, /* deco_info1 */
 	50, /* deco_info2 */
+	0, /* deco_model */
 	51, /* divemode */
 };
 
@@ -206,6 +209,7 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 	75, /* duration */
 	77, /* deco_info1 */
 	78, /* deco_info2 */
+	79, /* deco_model */
 	82, /* divemode */
 };
 
@@ -653,11 +657,11 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 
 			case 4: /* Deco model */
 				string->desc = "Deco model";
-				if (((version == 0x23 || version == 0x24) && data[layout->divemode] == OSTC3_ZHL16) ||
+				if (((version == 0x23 || version == 0x24) && data[layout->deco_model] == OSTC3_ZHL16) ||
 						(version == 0x22 && data[layout->divemode] == FROG_ZHL16) ||
 						(version == 0x21 && (data[layout->divemode] == OSTC_ZHL16_OC || data[layout->divemode] == OSTC_ZHL16_CC)))
 					strncpy(buf, "ZH-L16", BUFLEN);
-				else if (((version == 0x23 || version == 0x24) && data[layout->divemode] == OSTC3_ZHL16_GF) ||
+				else if (((version == 0x23 || version == 0x24) && data[layout->deco_model] == OSTC3_ZHL16_GF) ||
 						(version == 0x22 && data[layout->divemode] == FROG_ZHL16_GF) ||
 						(version == 0x21 && (data[layout->divemode] == OSTC_ZHL16_OC_GF || data[layout->divemode] == OSTC_ZHL16_CC_GF)))
 					strncpy(buf, "ZH-L16-GF", BUFLEN);
@@ -668,11 +672,11 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				break;
 			case 5: /* Deco model info */
 				string->desc = "Deco model info";
-				if (((version == 0x23 || version == 0x24) && data[layout->divemode] == OSTC3_ZHL16) ||
+				if (((version == 0x23 || version == 0x24) && data[layout->deco_model] == OSTC3_ZHL16) ||
 						(version == 0x22 && data[layout->divemode] == FROG_ZHL16) ||
 						(version == 0x21 && (data[layout->divemode] == OSTC_ZHL16_OC || data[layout->divemode] == OSTC_ZHL16_CC)))
-					snprintf(buf, BUFLEN, "Saturation %u, Desaturation %u", layout->deco_info1, layout->deco_info2);
-				else if (((version == 0x23 || version == 0x24) && data[layout->divemode] == OSTC3_ZHL16_GF) ||
+					snprintf(buf, BUFLEN, "Saturation %u, Desaturation %u", data[layout->deco_info1], data[layout->deco_info2]);
+				else if (((version == 0x23 || version == 0x24) && data[layout->deco_model] == OSTC3_ZHL16_GF) ||
 						(version == 0x22 && data[layout->divemode] == FROG_ZHL16_GF) ||
 						(version == 0x21 && (data[layout->divemode] == OSTC_ZHL16_OC_GF || data[layout->divemode] == OSTC_ZHL16_CC_GF)))
 					snprintf(buf, BUFLEN, "GF %u/%u", data[layout->deco_info1], data[layout->deco_info2]);
