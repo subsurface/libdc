@@ -141,13 +141,53 @@ struct file_list {
 	struct fit_file *array;
 };
 
+static int
+char_to_int(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'a' && c <= 'z')
+		return c - 'a' + 10;
+	if (c >= 'A' && c <= 'Z')
+		return c - 'A' + 10;
+	return 0;
+}
+
+/* C4ND0302.fit -> 2022-04-23-13-03-02.fit */
+static void
+parse_short_name(const char *name, char *output)
+{
+	sprintf(output, "%d-%02d-%02d-%02d-%02d-%02d.fit", char_to_int(name[0]) + 2010, // Year
+		char_to_int(name[1]), // Month
+		char_to_int(name[2]), // Day
+		char_to_int(name[3]), // Hour
+		char_to_int(name[4]) * 10 + char_to_int(name[5]), // Minute
+		char_to_int(name[6]) * 10 + char_to_int(name[7])); // Second
+}
+
 static int name_cmp(const void *_a, const void *_b)
 {
 	const struct fit_file *a = _a;
 	const struct fit_file *b = _b;
 
+	const char *a_name = a->name;
+	const char *b_name = b->name;
+
+	char a_buffer[FIT_NAME_SIZE];
+	char b_buffer[FIT_NAME_SIZE];
+
+	if (strlen(a_name) == 12) {
+		parse_short_name(a_name, a_buffer);
+		a_name = a_buffer;
+	}
+
+	if (strlen(b_name) == 12) {
+		parse_short_name(b_name, b_buffer);
+		b_name = b_buffer;
+	}
+
 	// Sort reverse string ordering (newest first), so use 'b,a'
-	return strcmp(b->name, a->name);
+	return strcmp(b_name, a_name);
 }
 
 /*
