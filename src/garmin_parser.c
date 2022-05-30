@@ -564,7 +564,21 @@ DECLARE_FIELD(DEVICE_INFO, firmware, UINT16)
 }
 
 // SPORT
-DECLARE_FIELD(SPORT, sub_sport, ENUM) { garmin->dive.sub_sport = (ENUM) data; }
+DECLARE_FIELD(SPORT, sub_sport, ENUM) {
+	garmin->dive.sub_sport = (ENUM) data;
+	dc_divemode_t val;
+	switch (data) {
+	case 55: val = DC_DIVEMODE_GAUGE;
+		break;
+	case 56:
+	case 57: val = DC_DIVEMODE_FREEDIVE;
+		break;
+	case 63: val = DC_DIVEMODE_CCR;
+		break;
+	default: val = DC_DIVEMODE_OC;
+	}
+	DC_ASSIGN_FIELD(garmin->cache, DIVEMODE, val);
+}
 
 // DIVE_GAS - uses msg index
 DECLARE_FIELD(DIVE_GAS, helium, UINT8)
@@ -1502,7 +1516,7 @@ garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned i
 	case DC_FIELD_ATMOSPHERIC:
 		return DC_STATUS_UNSUPPORTED;
 	case DC_FIELD_DIVEMODE:
-		return DC_STATUS_UNSUPPORTED;
+		return DC_FIELD_VALUE(garmin->cache, value, DIVEMODE);
 	case DC_FIELD_TANK:
 		return DC_STATUS_UNSUPPORTED;
 	case DC_FIELD_STRING:
