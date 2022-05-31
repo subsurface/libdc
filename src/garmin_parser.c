@@ -1491,40 +1491,8 @@ garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned i
 
 	if (!value)
 		return DC_STATUS_INVALIDARGS;
-	if (type == DC_FIELD_TANK_COUNT)
-		type = DC_FIELD_GASMIX_COUNT;
 
-	/* This whole sequence should be standardized */
-	if (!(garmin->cache.initialized & (1 << type)))
-		return DC_STATUS_UNSUPPORTED;
-
-	switch (type) {
-	case DC_FIELD_DIVETIME:
-		return DC_FIELD_VALUE(garmin->cache, value, DIVETIME);
-	case DC_FIELD_MAXDEPTH:
-		return DC_FIELD_VALUE(garmin->cache, value, MAXDEPTH);
-	case DC_FIELD_AVGDEPTH:
-		return DC_FIELD_VALUE(garmin->cache, value, AVGDEPTH);
-	case DC_FIELD_GASMIX_COUNT:
-		return DC_FIELD_VALUE(garmin->cache, value, GASMIX_COUNT);
-	case DC_FIELD_GASMIX:
-		if (flags >= MAXGASES)
-			return DC_STATUS_UNSUPPORTED;
-		return DC_FIELD_INDEX(garmin->cache, value, GASMIX, flags);
-	case DC_FIELD_SALINITY:
-		return DC_FIELD_VALUE(garmin->cache, value, SALINITY);
-	case DC_FIELD_ATMOSPHERIC:
-		return DC_STATUS_UNSUPPORTED;
-	case DC_FIELD_DIVEMODE:
-		return DC_FIELD_VALUE(garmin->cache, value, DIVEMODE);
-	case DC_FIELD_TANK:
-		return DC_STATUS_UNSUPPORTED;
-	case DC_FIELD_STRING:
-		return dc_field_get_string(&garmin->cache, flags, (dc_field_string_t *)value);
-	default:
-		return DC_STATUS_UNSUPPORTED;
-	}
-	return DC_STATUS_SUCCESS;
+	return dc_field_get(garmin->cache, type, flags, value);
 }
 
 static dc_status_t
