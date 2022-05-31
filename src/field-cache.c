@@ -71,6 +71,9 @@ dc_status_t dc_field_get_string(dc_field_cache_t *cache, unsigned idx, dc_field_
 dc_status_t
 dc_field_get(dc_field_cache_t *cache, dc_field_type_t type, unsigned int flags, void* value)
 {
+	if (!value)
+		return DC_STATUS_INVALIDARGS;
+
 	if (!(cache->initialized & (1 << type)))
 		return DC_STATUS_UNSUPPORTED;
 

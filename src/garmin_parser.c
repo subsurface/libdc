@@ -1489,9 +1489,6 @@ garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned i
 {
 	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
 
-	if (!value)
-		return DC_STATUS_INVALIDARGS;
-
 	return dc_field_get(&garmin->cache, type, flags, value);
 }
 
