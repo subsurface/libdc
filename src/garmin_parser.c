@@ -30,8 +30,6 @@
 #include "array.h"
 #include "field-cache.h"
 
-#define C_ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
-
 #define MAXFIELDS 128
 
 struct msg_desc;

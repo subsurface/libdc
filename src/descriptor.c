@@ -335,6 +335,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Cressi Goa */
 	{"Cressi", "Cartesio", DC_FAMILY_CRESSI_GOA, 1, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
 	{"Cressi", "Goa",      DC_FAMILY_CRESSI_GOA, 2, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
+	{"Cressi", "Michelangelo", DC_FAMILY_CRESSI_GOA, 5, DC_TRANSPORT_SERIAL, NULL},
 	{"Cressi", "Neon",     DC_FAMILY_CRESSI_GOA, 9, DC_TRANSPORT_SERIAL, NULL},
 	/* Zeagle N2iTiON3 */
 	{"Zeagle",    "N2iTiON3",   DC_FAMILY_ZEAGLE_N2ITION3, 0, DC_TRANSPORT_SERIAL, NULL},
@@ -433,6 +434,9 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Crest",    "CR-4",      DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
 	{"Genesis",  "Centauri",  DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
 	{"Tusa",     "TC1",       DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
+	/* Seac Screen */
+	{"Seac", "Screen", DC_FAMILY_SEAC_SCREEN, 0, DC_TRANSPORT_SERIAL, NULL},
+	{"Seac", "Action", DC_FAMILY_SEAC_SCREEN, 0, DC_TRANSPORT_SERIAL, NULL},
 
 	// Not merged upstream yet
 	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model) */

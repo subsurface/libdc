@@ -218,7 +218,7 @@ suunto_common2_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	vendor.size = sizeof (device->version);
 	device_event_emit (abstract, DC_EVENT_VENDOR, &vendor);
 
-	return device_dump_read (abstract, dc_buffer_get_data (buffer),
+	return device_dump_read (abstract, 0, dc_buffer_get_data (buffer),
 		dc_buffer_get_size (buffer), SZ_PACKET);
 }
 
@@ -264,11 +264,7 @@ suunto_common2_device_foreach (dc_device_t *abstract, dc_dive_callback_t callbac
 	dc_event_devinfo_t devinfo;
 	devinfo.model = device->version[0];
 	devinfo.firmware = array_uint24_be (device->version + 1);
-	devinfo.serial = 0;
-	for (unsigned int i = 0; i < 4; ++i) {
-		devinfo.serial *= 100;
-		devinfo.serial += serial[i];
-	}
+	devinfo.serial = array_convert_bin2dec (serial, 4);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the header bytes.

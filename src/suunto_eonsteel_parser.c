@@ -32,8 +32,6 @@
 #include "platform.h"
 #include "field-cache.h"
 
-#define C_ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
-
 enum eon_sample {
 	ES_none = 0,
 	ES_dtime,		// duint16,precision=3 (time delta in ms)

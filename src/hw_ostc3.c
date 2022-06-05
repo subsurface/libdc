@@ -318,11 +318,29 @@ hw_ostc3_transfer (hw_ostc3_device_t *device,
 	}
 
 	if (input) {
-		// Send the input data packet.
-		status = hw_ostc3_write (device, progress, input, isize);
-		if (status != DC_STATUS_SUCCESS) {
-			ERROR (abstract->context, "Failed to send the data packet.");
-			return status;
+		if (cmd == WRITE) {
+			// Send the first byte of the input data packet.
+			status = hw_ostc3_write (device, progress, input, 1);
+			if (status != DC_STATUS_SUCCESS) {
+				ERROR (abstract->context, "Failed to send the data packet.");
+				return status;
+			}
+
+			dc_iostream_sleep (device->iostream, 10);
+
+			// Send the reamainder of the input data packet.
+			status = hw_ostc3_write (device, progress, input + 1, isize - 1);
+			if (status != DC_STATUS_SUCCESS) {
+				ERROR (abstract->context, "Failed to send the data packet.");
+				return status;
+			}
+		} else {
+			// Send the input data packet.
+			status = hw_ostc3_write (device, progress, input, isize);
+			if (status != DC_STATUS_SUCCESS) {
+				ERROR (abstract->context, "Failed to send the data packet.");
+				return status;
+			}
 		}
 	}
 
@@ -1643,6 +1661,21 @@ hw_ostc3_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	if (rc != DC_STATUS_SUCCESS) {
 		return rc;
 	}
+
+	// Emit a device info event.
+	dc_event_devinfo_t devinfo;
+	devinfo.firmware = device->firmware;
+	devinfo.serial = device->serial;
+	if (device->hardware != UNKNOWN) {
+		devinfo.model = device->hardware;
+	} else {
+		// Fallback to the serial number.
+		if (devinfo.serial > 10000)
+			devinfo.model = SPORT;
+		else
+			devinfo.model = OSTC3;
+	}
+	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate the required amount of memory.
 	if (!dc_buffer_resize (buffer, SZ_MEMORY)) {

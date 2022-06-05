@@ -61,6 +61,7 @@
 #include "liquivision_lynx.h"
 #include "sporasub_sp2.h"
 #include "deepsix_excursion.h"
+#include "seac_screen.h"
 
 // Not merged upstream yet
 #include "garmin.h"
@@ -232,6 +233,9 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 	case DC_FAMILY_DEEPSIX_EXCURSION:
 		rc = deepsix_excursion_device_open (&device, context, iostream);
 		break;
+	case DC_FAMILY_SEAC_SCREEN:
+		rc = seac_screen_device_open (&device, context, iostream);
+		break;
 	default:
 		return DC_STATUS_INVALIDARGS;
 
@@ -358,7 +362,7 @@ dc_device_dump (dc_device_t *device, dc_buffer_t *buffer)
 
 
 dc_status_t
-device_dump_read (dc_device_t *device, unsigned char data[], unsigned int size, unsigned int blocksize)
+device_dump_read (dc_device_t *device, unsigned int address, unsigned char data[], unsigned int size, unsigned int blocksize)
 {
 	if (device == NULL)
 		return DC_STATUS_UNSUPPORTED;
@@ -379,7 +383,7 @@ device_dump_read (dc_device_t *device, unsigned char data[], unsigned int size, 
 			len = blocksize;
 
 		// Read the packet.
-		dc_status_t rc = device->vtable->read (device, nbytes, data + nbytes, len);
+		dc_status_t rc = device->vtable->read (device, address + nbytes, data + nbytes, len);
 		if (rc != DC_STATUS_SUCCESS)
 			return rc;
 

@@ -22,6 +22,8 @@
 #ifndef ARRAY_H
 #define ARRAY_H
 
+#define C_ARRAY_SIZE(a) (sizeof (a) / sizeof *(a))
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -51,6 +53,9 @@ array_convert_hex2bin (const unsigned char input[], unsigned int isize, unsigned
 
 unsigned int
 array_convert_str2num (const unsigned char data[], unsigned int size);
+
+unsigned int
+array_convert_bin2dec (const unsigned char data[], unsigned int size);
 
 unsigned int
 array_convert_bcd2dec (const unsigned char data[], unsigned int size);

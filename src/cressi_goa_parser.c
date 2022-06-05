@@ -28,8 +28,6 @@
 
 #define ISINSTANCE(parser) dc_device_isinstance((parser), &cressi_goa_parser_vtable)
 
-#define C_ARRAY_SIZE(array) (sizeof (array) / sizeof *(array))
-
 #define SZ_HEADER          23
 #define SZ_HEADER_SCUBA    0x61
 #define SZ_HEADER_FREEDIVE 0x2B
@@ -44,6 +42,8 @@
 #define NITROX      1
 #define FREEDIVE    2
 #define GAUGE       3
+
+#define NGASMIXES 2
 
 typedef struct cressi_goa_parser_t cressi_goa_parser_t;
 
@@ -176,6 +176,15 @@ cressi_goa_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsign
 		parser->maxdepth = statistics.maxdepth;
 	}
 
+	unsigned int ngasmixes = 0;
+	if (divemode == SCUBA || divemode == NITROX) {
+		for (unsigned int i = 0; i < NGASMIXES; ++i) {
+			if (data[0x20 + 2 * i] == 0)
+				break;
+			ngasmixes++;
+		}
+	}
+
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 
 	if (value) {
@@ -187,7 +196,7 @@ cressi_goa_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsign
 			*((double *) value) = parser->maxdepth;
 			break;
 		case DC_FIELD_GASMIX_COUNT:
-			*((unsigned int *) value) = divemode == SCUBA || divemode == NITROX ? 2 : 0;
+			*((unsigned int *) value) = ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
 			gasmix->helium = 0.0;
