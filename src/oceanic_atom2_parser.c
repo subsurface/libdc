@@ -102,6 +102,7 @@
 #define AMPHOS2     0x4657
 #define BEACON      0x4742
 #define I470TC      0x4743
+#define I200CV2     0x4749
 
 #define NORMAL   0
 #define GAUGE    1
@@ -174,7 +175,7 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		model == A300 || model == MANTA ||
 		model == INSIGHT2 || model == ZEN ||
 		model == I300 || model == I550 ||
-		model == I200 || model == I200C ||
+		model == I200 || model == I200C || model == I200CV2 ||
 		model == I300C || model == GEO40 ||
 		model == VEO40 || model == I470TC) {
 		parser->headersize -= PAGESIZE;
@@ -301,6 +302,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case I300:
 		case I200:
 		case I200C:
+		case I200CV2:
 		case I100:
 		case I300C:
 		case GEO40:
@@ -768,8 +770,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 		parser->model == MANTA || parser->model == I300 ||
 		parser->model == I200 || parser->model == I100 ||
 		parser->model == I300C || parser->model == TALIS ||
-		parser->model == I200C || parser->model == GEO40 ||
-		parser->model == VEO40) {
+		parser->model == I200C || parser->model == I200CV2 ||
+		parser->model == GEO40 || parser->model == VEO40) {
 		have_pressure = 0;
 	}
 
@@ -930,7 +932,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 					parser->model == I200 || parser->model == I100 ||
 					parser->model == I300C || parser->model == I200C ||
 					parser->model == GEO40 || parser->model == VEO40 ||
-					parser->model == I470TC) {
+					parser->model == I470TC || parser->model == I200CV2) {
 					temperature = data[offset + 3];
 				} else if (parser->model == OCS || parser->model == TX1) {
 					temperature = data[offset + 1];
@@ -1009,7 +1011,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				parser->model == I200 || parser->model == I100 ||
 				parser->model == I300C || parser->model == I200C ||
 				parser->model == GEO40 || parser->model == VEO40 ||
-				parser->model == I470TC)
+				parser->model == I470TC || parser->model == I200CV2)
 				depth = (data[offset + 4] + (data[offset + 5] << 8)) & 0x0FFF;
 			else if (parser->model == ATOM1)
 				depth = data[offset + 3] * 16;
@@ -1065,7 +1067,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				parser->model == I100 || parser->model == I300C ||
 				parser->model == I450T || parser->model == I200C ||
 				parser->model == GEO40 || parser->model == VEO40 ||
-				parser->model == I470TC) {
+				parser->model == I470TC || parser->model == I200CV2) {
 				decostop = (data[offset + 7] & 0xF0) >> 4;
 				decotime = array_uint16_le(data + offset + 6) & 0x0FFF;
 				have_deco = 1;
