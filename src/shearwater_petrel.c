@@ -220,29 +220,42 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	case 0x0A0A: // Nerd 1
 		model = NERD;
 		break;
+	case 0x7E2D:
 	case 0x0E0D: // Nerd 2
 		model = NERD2;
 		break;
 	case 0x0404:
 	case 0x0909: // Petrel 1
-	case 0x0B0B: // Petrel 1 (newer hardware)
 		model = PETREL;
 		break;
 	case 0x0505:
-	case 0x0808: // Petrel 2
+	case 0x0808:
+	case 0x0838:
+	case 0x08A5:
+	case 0x7828:
+	case 0x7B2C:
+	case 0x8838: // Petrel 2
+	case 0x0B0B: // current docs (June 2023) imply this is a Petrel 2
 		model = PETREL;
 		break;
-	case 0x0707: // documentation list 0C0D for both Perdix and Perdix AI :-(
+	case 0xB407: // Petrel 3
+		model = PETREL3;
+		break;
+	case 0x0707: // Perdix
 		model = PERDIX;
 		break;
-	case 0x0C0C:
-	case 0x0C0D:
-	case 0x0D0D:
-	case 0x7C2D:
+	case 0x0C0C: // current docs (June 2023) imply this is not a valid hardware ID
+	case 0x0C0D: // current docs (June 2023) show this as Perdix AI
+	case 0x0D0D: // current docs (June 2023) imply this is not a valid hardware ID
+	case 0x7C2D: // Perdix AI
 		model = PERDIXAI;
+		break;
+	case 0xC407: // Perdix 2
+		model = PERDIX2;
 		break;
 	case 0x0F0F:
 	case 0x1F0A:
+	case 0x1F0F:
 		model = TERIC;
 		break;
 	case 0x1512:
