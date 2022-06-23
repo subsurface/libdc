@@ -440,6 +440,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	garmin_device_t *device = (garmin_device_t *) abstract;
 	dc_parser_t *parser;
 	char pathname[PATH_MAX];
+	char pathname_input[PATH_MAX];
 	size_t pathlen;
 	struct file_list files = {
 		0,     // nr
@@ -451,10 +452,10 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	dc_status_t rc;
 
 	// Read the directory name from the iostream
-	rc = dc_iostream_read(device->iostream, &pathname, sizeof(pathname)-1, &pathlen);
+	rc = dc_iostream_read(device->iostream, &pathname_input, sizeof(pathname_input)-1, &pathlen);
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
-	pathname[pathlen] = 0;
+	pathname_input[pathlen] = 0;
 
 #ifdef HAVE_LIBMTP
 	// if the user passes in a path, don't try to read via MTP
@@ -466,9 +467,10 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	// as FIT files, with names like "2018-08-20-10-23-30.fit".
 	// Make sure our buffer is big enough.
 	if (pathlen + strlen("/Garmin/Activity/") + FIT_NAME_SIZE + 2 > PATH_MAX) {
-		ERROR (abstract->context, "Invalid Garmin base directory '%s'", pathname);
+		ERROR (abstract->context, "Invalid Garmin base directory '%s'", pathname_input);
 		return DC_STATUS_IO;
 	}
+	strcpy(pathname, pathname_input);
 	if (pathlen && pathname[pathlen-1] != '/')
 		pathname[pathlen++] = '/';
 	strcpy(pathname + pathlen, "Garmin/Activity");
@@ -486,8 +488,13 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	{ // slight coding style violation to deal with the non-MTP case
 		dir = opendir(pathname);
 		if (!dir) {
-			ERROR (abstract->context, "Failed to open directory '%s'.", pathname);
-			return DC_STATUS_IO;
+			dir = opendir(pathname_input);
+			if (!dir) {
+				ERROR (abstract->context, "Failed to open directory '%s' or '%s'.", pathname, pathname_input);
+				return DC_STATUS_IO;
+			}
+			strcpy(pathname, pathname_input);
+			pathlen = strlen(pathname);
 		}
 		// Get the list of FIT files
 		rc = get_file_list(abstract, dir, &files);
