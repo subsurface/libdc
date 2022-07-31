@@ -100,6 +100,7 @@
 #define WISDOM4     0x4655
 #define PROPLUS4    0x4656
 #define AMPHOS2     0x4657
+#define AMPHOSAIR2  0x4658
 #define BEACON      0x4742
 #define I470TC      0x4743
 #define I200CV2     0x4749
@@ -175,7 +176,7 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		model == A300 || model == MANTA ||
 		model == INSIGHT2 || model == ZEN ||
 		model == I300 || model == I550 ||
-		model == I200 || model == I200C || model == I200CV2 ||
+		model == I200 || model == I200C ||
 		model == I300C || model == GEO40 ||
 		model == VEO40 || model == I470TC) {
 		parser->headersize -= PAGESIZE;
@@ -200,7 +201,8 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		parser->headersize = 5 * PAGESIZE;
 	} else if (model == PROPLUSX) {
 		parser->headersize = 3 * PAGESIZE;
-	} else if (model == I550C || model == WISDOM4) {
+	} else if (model == I550C || model == WISDOM4 ||
+		model == I200CV2) {
 		parser->headersize = 5 * PAGESIZE / 2;
 	}
 
@@ -282,6 +284,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case XPAIR:
 		case WISDOM4:
 		case I470TC:
+		case I200CV2:
 			datetime->year   = ((p[5] & 0xE0) >> 5) + ((p[7] & 0xE0) >> 2) + 2000;
 			datetime->month  = (p[3] & 0x0F);
 			datetime->day    = ((p[0] & 0x80) >> 3) + ((p[3] & 0xF0) >> 4);
@@ -302,7 +305,6 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case I300:
 		case I200:
 		case I200C:
-		case I200CV2:
 		case I100:
 		case I300C:
 		case GEO40:
@@ -320,6 +322,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case VOYAGER2G:
 		case TALIS:
 		case AMPHOS2:
+		case AMPHOSAIR2:
 			datetime->year   = (p[3] & 0x1F) + 2000;
 			datetime->month  = (p[7] & 0xF0) >> 4;
 			datetime->day    = ((p[3] & 0x80) >> 3) + ((p[5] & 0xF0) >> 4);
@@ -694,44 +697,21 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 	unsigned int interval = 1;
 	unsigned int samplerate = 1;
 	if (parser->mode != FREEDIVE) {
-		unsigned int idx = 0x17;
+		unsigned int offset = 0x17;
 		if (parser->model == A300CS || parser->model == VTX ||
 			parser->model == I450T || parser->model == I750TC ||
 			parser->model == PROPLUSX || parser->model == I770R ||
 			parser->model == SAGE || parser->model == BEACON)
-			idx = 0x1f;
-		switch (data[idx] & 0x03) {
-		case 0:
-			interval = 2;
-			break;
-		case 1:
-			interval = 15;
-			break;
-		case 2:
-			interval = 30;
-			break;
-		case 3:
-			interval = 60;
-			break;
-		}
+			offset = 0x1f;
+		const unsigned int intervals[] = {2, 15, 30, 60};
+		unsigned int idx = data[offset] & 0x03;
+		interval = intervals[idx];
 	} else if (parser->model == F11A || parser->model == F11B) {
-		unsigned int idx = 0x29;
-		switch (data[idx] & 0x03) {
-		case 0:
-			interval = 1;
-			samplerate = 4;
-			break;
-		case 1:
-			interval = 1;
-			samplerate = 2;
-			break;
-		case 2:
-			interval = 1;
-			break;
-		case 3:
-			interval = 2;
-			break;
-		}
+		const unsigned int intervals[] = {1, 1, 1, 2};
+		const unsigned int samplerates[] = {4, 2, 1, 1};
+		unsigned int idx = data[0x29] & 0x03;
+		interval = intervals[idx];
+		samplerate = samplerates[idx];
 		if (samplerate > 1) {
 			// Some models supports multiple samples per second.
 			// Since our smallest unit of time is one second, we can't
@@ -954,7 +934,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 						sign = (~data[offset + 5] & 0x04) >> 2;
 					else if (parser->model == VOYAGER2G || parser->model == AMPHOS ||
 						parser->model == AMPHOSAIR || parser->model == ZENAIR ||
-						parser->model == AMPHOS2)
+						parser->model == AMPHOS2 || parser->model == AMPHOSAIR2)
 						sign = (data[offset + 5] & 0x04) >> 2;
 					else if (parser->model == ATOM2 || parser->model == PROPLUS21 ||
 						parser->model == EPICA || parser->model == EPICB ||
@@ -985,7 +965,7 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 					parser->model == AMPHOSAIR || parser->model == I550 ||
 					parser->model == VISION || parser->model == XPAIR ||
 					parser->model == I550C || parser->model == PROPLUS4 ||
-					parser->model == WISDOM4)
+					parser->model == WISDOM4 || parser->model == AMPHOSAIR2)
 					pressure = (((data[offset + 0] & 0x03) << 8) + data[offset + 1]) * 5;
 				else if (parser->model == TX1 || parser->model == A300CS ||
 					parser->model == VTX || parser->model == I750TC ||
