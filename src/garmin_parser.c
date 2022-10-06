@@ -139,6 +139,7 @@ typedef struct garmin_parser_t {
 	} gps;
 
 	struct dc_field_cache cache;
+	unsigned char is_big_endian; // instead of bool
 } garmin_parser_t;
 
 typedef int (*garmin_data_cb_t)(unsigned char type, const unsigned char *data, int len, void *user);
@@ -390,6 +391,19 @@ struct field_desc {
 	void (*parse)(struct garmin_parser_t *, unsigned char base_type, const unsigned char *data);
 };
 
+static inline int base_type_is_integer(unsigned char base_type)
+{
+	return !memcmp(base_type_info[base_type].type_name + 1, "INT", 3);
+}
+
+static inline unsigned int array_uint_endian(const unsigned char *p, unsigned int type_size, unsigned char bigendian)
+{
+	if (bigendian)
+		return array_uint_be(p, type_size);
+	else
+		return array_uint_le(p, type_size);
+}
+
 #define DECLARE_FIELD(msg, name, type) __DECLARE_FIELD(msg##_##name, type)
 #define __DECLARE_FIELD(name, type) \
 	static void parse_##name(struct garmin_parser_t *, const type); \
@@ -397,10 +411,14 @@ struct field_desc {
 	{ \
 		if (strcmp(#type, base_type_info[base_type].type_name)) \
 			fprintf(stderr, "%s: %s should be %s\n", #name, #type, base_type_info[base_type].type_name); \
-		type val = *(type *)p; \
+		type val; \
+		if (base_type_info[base_type].type_size > 1 && base_type_is_integer(base_type)) \
+			val = (type)array_uint_endian(p, base_type_info[base_type].type_size, g->is_big_endian); \
+		else \
+			val = *(type *)p; \
 		if (val == type##_INVAL) return; \
 		DEBUG(g->base.context, "%s (%s): %lld", #name, #type, (long long)val); \
-		parse_##name(g, *(type *)p); \
+		parse_##name(g, val); \
 	} \
 	static const struct field_desc name##_field_##type = { #name, parse_##name##_##type }; \
 	static void parse_##name(struct garmin_parser_t *garmin, type data)
@@ -1217,18 +1235,13 @@ static int traverse_definition(struct garmin_parser_t *garmin,
 	struct type_desc *desc = garmin->type_desc + type;
 	int fields, devfields, len;
 
-	msg = array_uint16_le(data+2);
+	// data[1] tells us if this is big or little endian
+	garmin->is_big_endian = data[1] != 0;
+	msg = array_uint_endian(data + 2, 2, garmin->is_big_endian);
 	desc->msg_desc = lookup_msg_desc(msg, type, &desc->msg_name);
 	fields = data[4];
-
-	DEBUG(garmin->base.context, "Define local type %d: %02x %02x %04x %02x %s",
-		type, data[0], data[1], msg, fields, desc->msg_name);
-
-	if (data[1]) {
-		ERROR(garmin->base.context, "Only handling little-endian definitions\n");
-		return -1;
-	}
-
+	DEBUG(garmin->base.context, "Define local type %d: %02x %s %04x %02x %s",
+		type, data[0], data[1] ? "big-endian" : "little-endian", msg, fields, desc->msg_name);
 	if (fields > MAXFIELDS) {
 		ERROR(garmin->base.context, "Too many fields in description: %d (max %d)\n", fields, MAXFIELDS);
 		return -1;
@@ -1280,13 +1293,16 @@ traverse_data(struct garmin_parser_t *garmin)
 
 	hdrsize = data[0];
 	protocol = data[1];
-	profile = array_uint16_le(data+2);
+	profile = array_uint16_le(data+2);  // these two fields are always little endian
 	datasize = array_uint32_le(data+4);
-	if (memcmp(data+8, ".FIT", 4))
+	if (memcmp(data+8, ".FIT", 4)) {
+		DEBUG(garmin->base.context, " missing .FIT marker");
 		return DC_STATUS_IO;
-	if (hdrsize < 12 || datasize > len || datasize + hdrsize + 2 > len)
+	}
+	if (hdrsize < 12 || datasize > len || datasize + hdrsize + 2 > len) {
+		DEBUG(garmin->base.context, " inconsistent size information hdrsize %d datasize %d len %d", hdrsize, datasize, len);
 		return DC_STATUS_IO;
-
+	}
 	garmin->dive.protocol = protocol;
 	garmin->dive.profile = profile;
 
