@@ -32,6 +32,7 @@
 #define ISINSTANCE(device) dc_device_isinstance((device), &uwatec_smart_device_vtable)
 
 #define DATASIZE 254
+#define MAX_PACKETSIZE 256
 #define PACKETSIZE_USBHID_RX 64
 #define PACKETSIZE_USBHID_TX 32
 
@@ -308,12 +309,26 @@ uwatec_smart_usbhid_receive (uwatec_smart_device_t *device, dc_event_progress_t 
 {
 	dc_status_t rc = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
-	unsigned char buf[PACKETSIZE_USBHID_RX];
+	unsigned char buf[MAX_PACKETSIZE];
+	dc_transport_t transport;
+	unsigned int pktsize;
+
+	/*
+	 * USB HID uses 64-byte packets, BLE uses variable sized ones.
+	 *
+	 * BLE used to be limited to 64 bytes too, but firmware 2.0
+	 * seems to have increased that to at least 101 bytes (one odd
+	 * byte header and 100 bytes of data).
+	 */
+	transport = dc_iostream_get_transport(device->iostream);
+	pktsize = sizeof(buf);
+	if (transport == DC_TRANSPORT_USBHID)
+		pktsize = PACKETSIZE_USBHID_RX;
 
 	size_t nbytes = 0;
 	while (nbytes < size) {
 		size_t transferred = 0;
-		rc = dc_iostream_read (device->iostream, buf, sizeof(buf), &transferred);
+		rc = dc_iostream_read (device->iostream, buf, pktsize, &transferred);
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to receive the packet.");
 			return rc;
@@ -362,9 +377,11 @@ uwatec_smart_usbhid_receive (uwatec_smart_device_t *device, dc_event_progress_t 
 		 *
 		 * It may be just an oddly implemented sequence number. Whatever.
 		 */
-		unsigned int len = buf[0];
-		if (len + 1 > transferred)
-			len = transferred-1;
+		unsigned int len = transferred-1;
+		if (transport == DC_TRANSPORT_USBHID) {
+			if (len > buf[0])
+				len = buf[0];
+		}
 
 		HEXDUMP (abstract->context, DC_LOGLEVEL_DEBUG, "rcv", buf + 1, len);
 
