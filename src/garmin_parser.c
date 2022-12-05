@@ -88,6 +88,9 @@ struct record_data {
 
 	// RECORD_TANK_UPDATE
 	unsigned int sensor, pressure;
+
+	// RECORD_SETPOINT_CHANGE
+	unsigned int setpoint_actual_cbar;
 };
 
 #define RECORD_GASMIX		1
@@ -97,6 +100,7 @@ struct record_data {
 #define RECORD_DECO_MODEL	16
 #define RECORD_SENSOR_PROFILE	32
 #define RECORD_TANK_UPDATE	64
+#define RECORD_SETPOINT_CHANGE	128
 
 typedef struct garmin_parser_t {
 	dc_parser_t base;
@@ -121,6 +125,9 @@ typedef struct garmin_parser_t {
 		int utc_offset, time_offset;
 		unsigned int nr_sensor;
 		struct garmin_sensor sensor[MAX_SENSORS];
+		unsigned int setpoint_low_cbar, setpoint_high_cbar;
+		unsigned int setpoint_low_switch_depth_mm, setpoint_high_switch_depth_mm;
+        unsigned int setpoint_low_switch_mode, setpoint_high_switch_mode;
 	} dive;
 
 	// I count nine (!) different GPS fields Hmm.
@@ -194,6 +201,10 @@ static void garmin_event(struct garmin_parser_t *garmin,
 		[21] = { 3, "Battry Critical" },
 		[22] = { 1, "Safety stop begin" },
 		[23] = { 1, "Approaching deco stop" },
+		[24] = { 1, "Automatic switch to low setpoint" },
+		[25] = { 1, "Automatic switch to high setpoint" },
+		[26] = { 2, "Manual switch to low setpoint" },
+		[27] = { 2, "Manual switch to high setpoint" },
 		[32] = { 1, "Tank battery low" },	// No way to know which tank
 	};
 	dc_sample_value_t sample = {0};
@@ -210,6 +221,13 @@ static void garmin_event(struct garmin_parser_t *garmin,
 		sample.event.type = SAMPLE_EVENT_STRING;
 		sample.event.name = event_desc[data].name;
 		sample.event.flags =  event_desc[data].severity << SAMPLE_FLAGS_SEVERITY_SHIFT;
+
+		if (data == 24 || data == 25 || data == 26 || data == 27) {
+			// Update the actual setpoint used during the dive and report it
+			garmin->record_data.setpoint_actual_cbar = (data == 24 || data == 26) ? garmin->dive.setpoint_low_cbar : garmin->dive.setpoint_high_cbar;
+			garmin->record_data.pending |= RECORD_SETPOINT_CHANGE;
+		}
+
 		if (!sample.event.name)
 			return;
 		garmin->callback(DC_SAMPLE_EVENT, sample, garmin->userdata);
@@ -291,6 +309,13 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 		sample.pressure.tank = find_tank_index(garmin, record->sensor);
 		sample.pressure.value = record->pressure / 100.0;
 		garmin->callback(DC_SAMPLE_PRESSURE, sample, garmin->userdata);
+	}
+
+	if (pending & RECORD_SETPOINT_CHANGE) {
+		dc_sample_value_t sample = {0};
+
+		sample.setpoint = record->setpoint_actual_cbar / 100.0;
+		garmin->callback(DC_SAMPLE_SETPOINT, sample, garmin->userdata);
 	}
 }
 
@@ -671,7 +696,37 @@ DECLARE_FIELD(DIVE_SETTINGS, backlight_timeout, UINT8) { }
 DECLARE_FIELD(DIVE_SETTINGS, repeat_dive_interval, UINT16) { }
 DECLARE_FIELD(DIVE_SETTINGS, safety_stop_time, UINT16) { }
 DECLARE_FIELD(DIVE_SETTINGS, heart_rate_source_type, ENUM) { }
-DECLARE_FIELD(DIVE_SETTINGS, hear_rate_device_type, UINT8) { }
+DECLARE_FIELD(DIVE_SETTINGS, heart_rate_device_type, UINT8) { }
+DECLARE_FIELD(DIVE_SETTINGS, setpoint_low_switch_mode, ENUM)
+{
+	// 0 - manual, 1 - auto
+	garmin->dive.setpoint_low_switch_mode = data;
+}
+DECLARE_FIELD(DIVE_SETTINGS, setpoint_low_cbar, UINT8)
+{
+	garmin->dive.setpoint_low_cbar = data;
+
+	// The initial setpoint at the start of the dive is the low setpoint
+	garmin->record_data.setpoint_actual_cbar = garmin->dive.setpoint_low_cbar;
+	garmin->record_data.pending |= RECORD_SETPOINT_CHANGE;
+}
+DECLARE_FIELD(DIVE_SETTINGS, setpoint_low_switch_depth_mm, UINT32)
+{
+	garmin->dive.setpoint_low_switch_depth_mm = data;
+}
+DECLARE_FIELD(DIVE_SETTINGS, setpoint_high_switch_mode, ENUM)
+{
+	// 0 - manual, 1 - auto
+	garmin->dive.setpoint_high_switch_mode = data;
+}
+DECLARE_FIELD(DIVE_SETTINGS, setpoint_high_cbar, UINT8)
+{
+	garmin->dive.setpoint_high_cbar = data;
+}
+DECLARE_FIELD(DIVE_SETTINGS, setpoint_high_switch_depth_mm, UINT32)
+{
+	garmin->dive.setpoint_high_switch_depth_mm = data;
+}
 
 // SENSOR_PROFILE record for each ANT/BLE sensor.
 // We only care about sensor type 28 - Garmin tank pod.
@@ -793,7 +848,7 @@ DECLARE_MESG(ZONES_TARGET) = { };
 DECLARE_MESG(SPORT) = {
 	.maxfield = 2,
 	.field = {
-		SET_FIELD(SPORT, 1, sub_sport, ENUM),	// 53 - 57 are dive activities
+		SET_FIELD(SPORT, 1, sub_sport, ENUM),	// 53 - 57 and 63 are dive activities
 	}
 };
 
@@ -909,7 +964,7 @@ DECLARE_MESG(ACTIVITY) = { };
 DECLARE_MESG(FILE_CREATOR) = { };
 
 DECLARE_MESG(DIVE_SETTINGS) = {
-	.maxfield = 21,
+	.maxfield = 28,
 	.field = {
 		SET_FIELD(DIVE_SETTINGS, 0, name, STRING),		// Unused except in dive plans
 		SET_FIELD(DIVE_SETTINGS, 1, model, ENUM),		// model - Always 0 for Buhlmann ZHL-16C
@@ -931,7 +986,13 @@ DECLARE_MESG(DIVE_SETTINGS) = {
 		SET_FIELD(DIVE_SETTINGS, 17, repeat_dive_interval, UINT16), // seconds between surfacing and when the watch stops and saves your dive. Must be at least 20.
 		SET_FIELD(DIVE_SETTINGS, 18, safety_stop_time, UINT16),	// seconds; 180 or 300 are acceptable values
 		SET_FIELD(DIVE_SETTINGS, 19, heart_rate_source_type, ENUM), // For now all you need to know is source_type_local means WHR and source_type_antplus means strap data or off. (We're reusing existing infrastructure here which is why this is complex.)
-		SET_FIELD(DIVE_SETTINGS, 20, hear_rate_device_type, UINT8), // device type depending on heart_rate_source_type (ignorable for now)
+		SET_FIELD(DIVE_SETTINGS, 20, heart_rate_device_type, UINT8), // device type depending on heart_rate_source_type (ignorable for now)
+		SET_FIELD(DIVE_SETTINGS, 22, setpoint_low_switch_mode, ENUM), // CCR low setpoint switching mode
+		SET_FIELD(DIVE_SETTINGS, 23, setpoint_low_cbar, UINT8), // CCR low setpoint [centibar]
+		SET_FIELD(DIVE_SETTINGS, 24, setpoint_low_switch_depth_mm, UINT32), // CCR low setpoint switch depth [mm]
+		SET_FIELD(DIVE_SETTINGS, 25, setpoint_high_switch_mode, ENUM), // CCR high setpoint switching mode
+		SET_FIELD(DIVE_SETTINGS, 26, setpoint_high_cbar, UINT8), // CCR high setpoint [centibar]
+		SET_FIELD(DIVE_SETTINGS, 27, setpoint_high_switch_depth_mm, UINT32), // CCR high setpoint switch depth [mm]
 	}
 };
 DECLARE_MESG(DIVE_ALARM) = { };
@@ -1468,6 +1529,24 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 		static const char *name[] = { "Sensor 1", "Sensor 2", "Sensor 3", "Sensor 4", "Sensor 5" };
 		add_sensor_string(garmin, name[i], garmin->dive.sensor+i);
 	}
+
+    if (garmin->cache.DIVEMODE == DC_DIVEMODE_CCR) {
+	    dc_field_add_string_fmt(&garmin->cache, "Setpoint low [bar]", "%u.%02u",
+		    garmin->dive.setpoint_low_cbar / 100, (garmin->dive.setpoint_low_cbar % 100));
+	    dc_field_add_string(&garmin->cache, "Setpoint low mode", garmin->dive.setpoint_low_switch_mode ? "auto" : "manual");
+        if (garmin->dive.setpoint_low_switch_mode) {
+	        dc_field_add_string_fmt(&garmin->cache, "Setpoint low auto switch depth [m]", "%u.%01u",
+		        garmin->dive.setpoint_low_switch_depth_mm / 1000, (garmin->dive.setpoint_low_switch_depth_mm % 1000) / 100);
+        }
+
+	    dc_field_add_string_fmt(&garmin->cache, "Setpoint high [bar]", "%u.%02u",
+		    garmin->dive.setpoint_high_cbar / 100, (garmin->dive.setpoint_high_cbar % 100));
+	    dc_field_add_string(&garmin->cache, "Setpoint high mode", garmin->dive.setpoint_high_switch_mode ? "auto" : "manual");
+        if (garmin->dive.setpoint_high_switch_mode) {
+	        dc_field_add_string_fmt(&garmin->cache, "Setpoint high auto switch depth [m]", "%u.%01u",
+		        garmin->dive.setpoint_high_switch_depth_mm / 1000, (garmin->dive.setpoint_high_switch_depth_mm % 1000) / 100);
+        }
+    }
 
 	return DC_STATUS_SUCCESS;
 }

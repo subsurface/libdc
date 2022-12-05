@@ -9,7 +9,7 @@
  * The field cache 'string' interface has some simple rules:
  * the "descriptor" part is assumed to be a static allocation,
  * while the "value" is something that this interface will
- * alway sallocate with 'strdup()', so you can generate it
+ * always allocate with 'strdup()', so you can generate it
  * dynamically on the stack or whatever without having to
  * worry about it.
  */
