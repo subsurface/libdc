@@ -71,7 +71,7 @@ struct record_data {
 	double ceiling;
 
 	// RECORD_GASMIX
-	int index, gas_status;
+	int index, gas_status, gas_type;
 	dc_gasmix_t gasmix;
 
 	// RECORD_EVENT
@@ -127,7 +127,8 @@ typedef struct garmin_parser_t {
 		struct garmin_sensor sensor[MAX_SENSORS];
 		unsigned int setpoint_low_cbar, setpoint_high_cbar;
 		unsigned int setpoint_low_switch_depth_mm, setpoint_high_switch_depth_mm;
-        unsigned int setpoint_low_switch_mode, setpoint_high_switch_mode;
+		unsigned int setpoint_low_switch_mode, setpoint_high_switch_mode;
+		dc_tankinfo_t *current_tankinfo;
 	} dive;
 
 	// I count nine (!) different GPS fields Hmm.
@@ -220,7 +221,7 @@ static void garmin_event(struct garmin_parser_t *garmin,
 
 		sample.event.type = SAMPLE_EVENT_STRING;
 		sample.event.name = event_desc[data].name;
-		sample.event.flags =  event_desc[data].severity << SAMPLE_FLAGS_SEVERITY_SHIFT;
+		sample.event.flags = event_desc[data].severity << SAMPLE_FLAGS_SEVERITY_SHIFT;
 
 		if (data == 24 || data == 25 || data == 26 || data == 27) {
 			// Update the actual setpoint used during the dive and report it
@@ -236,6 +237,23 @@ static void garmin_event(struct garmin_parser_t *garmin,
 	case 57:
 		sample.gasmix = data;
 		garmin->callback(DC_SAMPLE_GASMIX, sample, garmin->userdata);
+
+		dc_tankinfo_t *tankinfo = &garmin->cache.tankinfo[data];
+		if (!garmin->dive.current_tankinfo || (*tankinfo & DC_TANKINFO_CC_DILUENT) != (*garmin->dive.current_tankinfo & DC_TANKINFO_CC_DILUENT)) {
+			dc_sample_value_t sample2 = {0};
+			sample2.event.type = SAMPLE_EVENT_STRING;
+			if (*tankinfo & DC_TANKINFO_CC_DILUENT) {
+				sample2.event.name = "Switched to closed circuit";
+			} else {
+				sample2.event.name = "Switched to open circuit bailout";
+			}
+			sample2.event.flags = 2 << SAMPLE_FLAGS_SEVERITY_SHIFT;
+
+			garmin->callback(DC_SAMPLE_EVENT, sample2, garmin->userdata);
+
+			garmin->dive.current_tankinfo = tankinfo;
+		}
+
 		return;
 	}
 }
@@ -260,7 +278,17 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 			int index = record->index;
 			if (enabled && index < MAXGASES) {
 				DC_ASSIGN_IDX(garmin->cache, GASMIX, index, record->gasmix);
-				DC_ASSIGN_FIELD(garmin->cache, GASMIX_COUNT, index+1);
+				if (index + 1 > garmin->cache.GASMIX_COUNT) {
+					DC_ASSIGN_FIELD(garmin->cache, GASMIX_COUNT, index + 1);
+					garmin->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
+				}
+
+				dc_tankinfo_t tankinfo = DC_TANKINFO_METRIC;
+				if (record->gas_type == 1) {
+					tankinfo |= DC_TANKINFO_CC_DILUENT;
+				}
+				garmin->cache.tankinfo[index] = tankinfo;
+				garmin->cache.initialized |= 1 << DC_FIELD_TANK;
 			}
 		}
 		if (pending & RECORD_DEVICE_INFO && record->device_index == 0) {
@@ -637,6 +665,12 @@ DECLARE_FIELD(DIVE_GAS, status, ENUM)
 	// 0 - disabled, 1 - enabled, 2 - backup
 	garmin->record_data.gas_status = data;
 }
+DECLARE_FIELD(DIVE_GAS, type, ENUM)
+{
+	// 0 - open circuit, 1 - CCR diluent
+	garmin->record_data.gas_type = data;
+	garmin->record_data.pending |= RECORD_GASMIX;
+}
 
 // DIVE_SUMMARY
 DECLARE_FIELD(DIVE_SUMMARY, avg_depth, UINT32) { DC_ASSIGN_FIELD(garmin->cache, AVGDEPTH, data / 1000.0); }
@@ -908,12 +942,13 @@ DECLARE_MESG(RECORD) = {
 };
 
 DECLARE_MESG(DIVE_GAS) = {
-	.maxfield = 3,
+	.maxfield = 4,
 	.field = {
 		// This uses a "message index" field to set the gas index
 		SET_FIELD(DIVE_GAS, 0, helium, UINT8),
 		SET_FIELD(DIVE_GAS, 1, oxygen, UINT8),
 		SET_FIELD(DIVE_GAS, 2, status, ENUM),
+		SET_FIELD(DIVE_GAS, 3, type, ENUM),
 	}
 };
 
@@ -1511,31 +1546,33 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 	//
 	// There's no way to match them up unless they are an identity
 	// mapping, so having two different ones doesn't actually work.
-	if (garmin->dive.nr_sensor > garmin->cache.GASMIX_COUNT)
+	if (garmin->dive.nr_sensor > garmin->cache.GASMIX_COUNT) {
 		DC_ASSIGN_FIELD(garmin->cache, GASMIX_COUNT, garmin->dive.nr_sensor);
+		garmin->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
+	}
 
 	for (int i = 0; i < garmin->dive.nr_sensor; i++) {
 		static const char *name[] = { "Sensor 1", "Sensor 2", "Sensor 3", "Sensor 4", "Sensor 5" };
 		add_sensor_string(garmin, name[i], garmin->dive.sensor+i);
 	}
 
-    if (garmin->cache.DIVEMODE == DC_DIVEMODE_CCR) {
-	    dc_field_add_string_fmt(&garmin->cache, "Setpoint low [bar]", "%u.%02u",
-		    garmin->dive.setpoint_low_cbar / 100, (garmin->dive.setpoint_low_cbar % 100));
-	    dc_field_add_string(&garmin->cache, "Setpoint low mode", garmin->dive.setpoint_low_switch_mode ? "auto" : "manual");
-        if (garmin->dive.setpoint_low_switch_mode) {
-	        dc_field_add_string_fmt(&garmin->cache, "Setpoint low auto switch depth [m]", "%u.%01u",
-		        garmin->dive.setpoint_low_switch_depth_mm / 1000, (garmin->dive.setpoint_low_switch_depth_mm % 1000) / 100);
-        }
+	if (garmin->cache.DIVEMODE == DC_DIVEMODE_CCR) {
+		dc_field_add_string_fmt(&garmin->cache, "Setpoint low [bar]", "%u.%02u",
+			garmin->dive.setpoint_low_cbar / 100, (garmin->dive.setpoint_low_cbar % 100));
+		dc_field_add_string(&garmin->cache, "Setpoint low mode", garmin->dive.setpoint_low_switch_mode ? "auto" : "manual");
+		if (garmin->dive.setpoint_low_switch_mode) {
+			dc_field_add_string_fmt(&garmin->cache, "Setpoint low auto switch depth [m]", "%u.%01u",
+				garmin->dive.setpoint_low_switch_depth_mm / 1000, (garmin->dive.setpoint_low_switch_depth_mm % 1000) / 100);
+		}
 
-	    dc_field_add_string_fmt(&garmin->cache, "Setpoint high [bar]", "%u.%02u",
-		    garmin->dive.setpoint_high_cbar / 100, (garmin->dive.setpoint_high_cbar % 100));
-	    dc_field_add_string(&garmin->cache, "Setpoint high mode", garmin->dive.setpoint_high_switch_mode ? "auto" : "manual");
-        if (garmin->dive.setpoint_high_switch_mode) {
-	        dc_field_add_string_fmt(&garmin->cache, "Setpoint high auto switch depth [m]", "%u.%01u",
-		        garmin->dive.setpoint_high_switch_depth_mm / 1000, (garmin->dive.setpoint_high_switch_depth_mm % 1000) / 100);
-        }
-    }
+		dc_field_add_string_fmt(&garmin->cache, "Setpoint high [bar]", "%u.%02u",
+			garmin->dive.setpoint_high_cbar / 100, (garmin->dive.setpoint_high_cbar % 100));
+		dc_field_add_string(&garmin->cache, "Setpoint high mode", garmin->dive.setpoint_high_switch_mode ? "auto" : "manual");
+		if (garmin->dive.setpoint_high_switch_mode) {
+			dc_field_add_string_fmt(&garmin->cache, "Setpoint high auto switch depth [m]", "%u.%01u",
+				garmin->dive.setpoint_high_switch_depth_mm / 1000, (garmin->dive.setpoint_high_switch_depth_mm % 1000) / 100);
+		}
+	}
 
 	return DC_STATUS_SUCCESS;
 }
