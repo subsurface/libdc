@@ -1170,9 +1170,12 @@ static void unknown_field(struct garmin_parser_t *garmin, const unsigned char *d
 			data += base_size;
 			len -= base_size;
 		}
+
+		/* Avoid debug printing limit */
+		len = sizeof(buffer);
 	}
 
-	DEBUG(garmin->base.context, "%s/%d %s '%s'", msg_name, field_nr, base_type_info[base_type].type_name, str);
+	DEBUG(garmin->base.context, "%s/%d %s '%.*s'", msg_name, field_nr, base_type_info[base_type].type_name, len, str);
 }
 
 
@@ -1220,20 +1223,6 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 			ERROR(garmin->base.context, "Data traversal size not a multiple of base size (%d vs %d)\n", len, base_size);
 			return -1;
 		}
-		// String
-		if (base_type == 7) {
-			int string_len = strnlen(data, size);
-			if (string_len >= size) {
-				ERROR(garmin->base.context, "Data traversal string bigger than remaining data\n");
-				return -1;
-			}
-			if (len <= string_len) {
-				ERROR(garmin->base.context, "field length %d, string length %d\n", len, string_len + 1);
-				return -1;
-			}
-		}
-
-
 
 		// Certain field numbers have fixed meaning across all messages
 		switch (field_nr) {
