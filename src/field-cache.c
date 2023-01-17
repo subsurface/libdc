@@ -93,8 +93,22 @@ dc_field_get(dc_field_cache_t *cache, dc_field_type_t type, unsigned int flags, 
 		return DC_FIELD_INDEX(*cache, value, GASMIX, flags);
 	case DC_FIELD_SALINITY:
 		return DC_FIELD_VALUE(*cache, value, SALINITY);
+	case DC_FIELD_ATMOSPHERIC:
+		return DC_FIELD_VALUE(*cache, value, ATMOSPHERIC);
 	case DC_FIELD_DIVEMODE:
 		return DC_FIELD_VALUE(*cache, value, DIVEMODE);
+	case DC_FIELD_TANK:
+		if (flags >= MAXGASES)
+			break;
+
+		dc_tank_t *tank = (dc_tank_t *) value;
+
+		tank->volume = cache->tanksize[flags];
+		tank->gasmix = flags;
+		tank->workpressure = cache->tankworkingpressure[flags];
+		tank->type = cache->tankinfo[flags];
+
+		return DC_STATUS_SUCCESS;
 	case DC_FIELD_STRING:
 		return dc_field_get_string(cache, flags, (dc_field_string_t *)value);
 	default:

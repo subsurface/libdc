@@ -1008,36 +1008,18 @@ suunto_eonsteel_parser_samples_foreach(dc_parser_t *abstract, dc_sample_callback
 static dc_status_t
 suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsigned int flags, void *value)
 {
-	dc_tank_t *tank = (dc_tank_t *) value;
-
 	suunto_eonsteel_parser_t *eon = (suunto_eonsteel_parser_t *)parser;
 
 	if (!(eon->cache.initialized & (1 << type)))
 		return DC_STATUS_UNSUPPORTED;
 
-	switch (type) {
-	case DC_FIELD_DIVETIME:
-		return DC_FIELD_VALUE(eon->cache, value, DIVETIME);
-	case DC_FIELD_MAXDEPTH:
-		return DC_FIELD_VALUE(eon->cache, value, MAXDEPTH);
-	case DC_FIELD_AVGDEPTH:
-		return DC_FIELD_VALUE(eon->cache, value, AVGDEPTH);
-	case DC_FIELD_GASMIX_COUNT:
-	case DC_FIELD_TANK_COUNT:
-		return DC_FIELD_VALUE(eon->cache, value, GASMIX_COUNT);
-	case DC_FIELD_GASMIX:
+	/* Fix up the cylinder info before using dc_field_get() */
+	if (type == DC_FIELD_TANK) {
 		if (flags >= MAXGASES)
 			return DC_STATUS_UNSUPPORTED;
-		return DC_FIELD_INDEX(eon->cache, value, GASMIX, flags);
-	case DC_FIELD_SALINITY:
-		return DC_FIELD_VALUE(eon->cache, value, SALINITY);
-	case DC_FIELD_ATMOSPHERIC:
-		return DC_FIELD_VALUE(eon->cache, value, ATMOSPHERIC);
-	case DC_FIELD_DIVEMODE:
-		return DC_FIELD_VALUE(eon->cache, value, DIVEMODE);
-	case DC_FIELD_TANK:
-		if (flags >= MAXGASES)
-			return DC_STATUS_UNSUPPORTED;
+
+		dc_tank_t *tank = (dc_tank_t *) value;
+
 		/*
 		 * Sadly it seems that the EON Steel doesn't tell us whether
 		 * we get imperial or metric data - the only indication is
@@ -1066,13 +1048,9 @@ suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsi
 			if (fabs(tank->volume - rint(tank->volume)) > 0.001)
 				tank->type += DC_TANKINFO_IMPERIAL - DC_TANKINFO_METRIC;
 		}
-		break;
-	case DC_FIELD_STRING:
-		return dc_field_get_string(&eon->cache, flags, (dc_field_string_t *)value);
-	default:
-		return DC_STATUS_UNSUPPORTED;
 	}
-	return DC_STATUS_SUCCESS;
+
+	return dc_field_get(&eon->cache, type, flags, value);
 }
 
 /*

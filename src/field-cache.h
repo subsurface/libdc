@@ -22,7 +22,7 @@ typedef struct dc_field_cache {
 	double highsetpoint;
 	double customsetpoint;
 
-	// This (slong with GASMIX) should be something like
+	// This (along with GASMIX) should be something like
 	//     dc_tank_t TANK[MAXGASES]
 	// but that's for later
 	dc_tankinfo_t tankinfo[MAXGASES];
