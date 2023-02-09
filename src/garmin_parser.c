@@ -449,7 +449,7 @@ static inline int base_type_is_integer(unsigned char base_type)
 	return !memcmp(base_type_info[base_type].type_name + 1, "INT", 3);
 }
 
-static inline unsigned int array_uint_endian(const unsigned char *p, unsigned int type_size, unsigned char bigendian)
+static inline unsigned long array_uint_endian(const unsigned char *p, unsigned int type_size, unsigned char bigendian)
 {
 	if (bigendian)
 		return array_uint_be(p, type_size);
