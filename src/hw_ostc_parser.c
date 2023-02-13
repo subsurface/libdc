@@ -525,7 +525,7 @@ hw_ostc_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 	return DC_STATUS_SUCCESS;
 }
 
-#define BUFLEN 32
+#define BUFLEN 64
 
 static dc_status_t
 hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value)
