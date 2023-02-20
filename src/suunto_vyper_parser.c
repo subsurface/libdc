@@ -56,6 +56,9 @@ static const dc_parser_vtable_t suunto_vyper_parser_vtable = {
 	sizeof(suunto_vyper_parser_t),
 	DC_FAMILY_SUUNTO_VYPER,
 	suunto_vyper_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	suunto_vyper_parser_get_datetime, /* datetime */
 	suunto_vyper_parser_get_field, /* fields */
 	suunto_vyper_parser_samples_foreach, /* samples_foreach */
@@ -243,6 +246,7 @@ suunto_vyper_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 
 	dc_gasmix_t *gas = (dc_gasmix_t *) value;
 	dc_tank_t *tank = (dc_tank_t *) value;
+	dc_decomodel_t *decomodel = (dc_decomodel_t *) value;
 	dc_field_string_t *string = (dc_field_string_t *) value;
 	char buf[BUFLEN];
 
@@ -303,6 +307,10 @@ suunto_vyper_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 			} else {
 				*((dc_divemode_t *) value) = DC_DIVEMODE_OC;
 			}
+			break;
+		case DC_FIELD_DECOMODEL:
+			decomodel->type = DC_DECOMODEL_RGBM;
+			decomodel->conservatism = (data[4] & 0x0F) / 3;
 			break;
 		case DC_FIELD_STRING:
 			switch(flags) {

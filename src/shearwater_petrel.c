@@ -248,6 +248,7 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	case 0x0C0D: // current docs (June 2023) show this as Perdix AI
 	case 0x0D0D: // current docs (June 2023) imply this is not a valid hardware ID
 	case 0x7C2D: // Perdix AI
+	case 0x8D6C:
 		model = PERDIXAI;
 		break;
 	case 0xC407: // Perdix 2

@@ -63,11 +63,11 @@ static int dc_filter_oceanic (dc_transport_t transport, const void *userdata, vo
 static int dc_filter_mclean (dc_transport_t transport, const void *userdata, void *params);
 static int dc_filter_atomic (dc_transport_t transport, const void *userdata, void *params);
 static int dc_filter_deepsix (dc_transport_t transport, const void *userdata, void *params);
+static int dc_filter_deepblu (dc_transport_t transport, const void *userdata, void *params);
+static int dc_filter_oceans (dc_transport_t transport, const void *userdata, void *params);
 
 // Not merged upstream yet
 static int dc_filter_garmin (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_deepblu (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_oceans(dc_transport_t transport, const void *userdata, void *params);
 
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
@@ -176,6 +176,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Scubapro", "Aladin A1",           DC_FAMILY_UWATEC_SMART, 0x25, DC_TRANSPORT_BLE, dc_filter_uwatec},
 	{"Scubapro", "Mantis 2",            DC_FAMILY_UWATEC_SMART, 0x26, DC_TRANSPORT_SERIAL, NULL},
 	{"Scubapro", "Aladin A2",           DC_FAMILY_UWATEC_SMART, 0x28, DC_TRANSPORT_BLE, dc_filter_uwatec},
+	{"Scubapro", "G2 TEK",              DC_FAMILY_UWATEC_SMART, 0x31, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
 	{"Scubapro", "G2",                  DC_FAMILY_UWATEC_SMART, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
 	{"Scubapro", "G2 Console",          DC_FAMILY_UWATEC_SMART, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
 	{"Scubapro", "G2 HUD",              DC_FAMILY_UWATEC_SMART, 0x42, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
@@ -257,7 +258,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Sherwood", "Vision",              DC_FAMILY_OCEANIC_ATOM2, 0x4556, DC_TRANSPORT_SERIAL, NULL},
 	{"Oceanic",  "VTX",                 DC_FAMILY_OCEANIC_ATOM2, 0x4557, DC_TRANSPORT_SERIAL, NULL},
 	{"Aqualung", "i300",                DC_FAMILY_OCEANIC_ATOM2, 0x4559, DC_TRANSPORT_SERIAL, NULL},
-	{"Aqualung", "i750TC",              DC_FAMILY_OCEANIC_ATOM2, 0x455A, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_oceanic},
+	{"Aqualung", "i750TC",              DC_FAMILY_OCEANIC_ATOM2, 0x455A, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Aqualung", "i450T",               DC_FAMILY_OCEANIC_ATOM2, 0x4641, DC_TRANSPORT_SERIAL, NULL},
 	{"Aqualung", "i550",                DC_FAMILY_OCEANIC_ATOM2, 0x4642, DC_TRANSPORT_SERIAL, NULL},
 	{"Aqualung", "i200",                DC_FAMILY_OCEANIC_ATOM2, 0x4646, DC_TRANSPORT_SERIAL, NULL},
@@ -276,6 +277,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Sherwood", "Beacon",              DC_FAMILY_OCEANIC_ATOM2, 0x4742, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Aqualung", "i470TC",              DC_FAMILY_OCEANIC_ATOM2, 0x4743, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	{"Aqualung", "i200Cv2",             DC_FAMILY_OCEANIC_ATOM2, 0x4749, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
+	{"Oceanic",  "Geo Air",             DC_FAMILY_OCEANIC_ATOM2, 0x474B, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_oceanic},
 	/* Mares Nemo */
 	{"Mares", "Nemo",         DC_FAMILY_MARES_NEMO, 0, DC_TRANSPORT_SERIAL, NULL},
 	{"Mares", "Nemo Steel",   DC_FAMILY_MARES_NEMO, 0, DC_TRANSPORT_SERIAL, NULL},
@@ -335,8 +337,9 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Cressi", "Newton",   DC_FAMILY_CRESSI_LEONARDO, 5, DC_TRANSPORT_SERIAL, NULL},
 	{"Cressi", "Drake",    DC_FAMILY_CRESSI_LEONARDO, 6, DC_TRANSPORT_SERIAL, NULL},
 	/* Cressi Goa */
-	{"Cressi", "Cartesio", DC_FAMILY_CRESSI_GOA, 1, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
-	{"Cressi", "Goa",      DC_FAMILY_CRESSI_GOA, 2, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, NULL},
+	{"Cressi", "Cartesio", DC_FAMILY_CRESSI_GOA, 1, DC_TRANSPORT_SERIAL, NULL},
+	{"Cressi", "Goa",      DC_FAMILY_CRESSI_GOA, 2, DC_TRANSPORT_SERIAL, NULL},
+	{"Cressi", "Donatello",    DC_FAMILY_CRESSI_GOA, 4, DC_TRANSPORT_SERIAL, NULL},
 	{"Cressi", "Michelangelo", DC_FAMILY_CRESSI_GOA, 5, DC_TRANSPORT_SERIAL, NULL},
 	{"Cressi", "Neon",     DC_FAMILY_CRESSI_GOA, 9, DC_TRANSPORT_SERIAL, NULL},
 	/* Zeagle N2iTiON3 */
@@ -443,9 +446,14 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Crest",    "CR-4",      DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
 	{"Genesis",  "Centauri",  DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
 	{"Tusa",     "TC1",       DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
+	{"Scorpena", "Alpha",     DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
 	/* Seac Screen */
 	{"Seac", "Screen", DC_FAMILY_SEAC_SCREEN, 0, DC_TRANSPORT_SERIAL, NULL},
 	{"Seac", "Action", DC_FAMILY_SEAC_SCREEN, 0, DC_TRANSPORT_SERIAL, NULL},
+	/* Deepblu Cosmiq */
+	{"Deepblu", "Cosmiq+", DC_FAMILY_DEEPBLU_COSMIQ, 0, DC_TRANSPORT_BLE, dc_filter_deepblu},
+	/* Oceans S1 */
+	{"Oceans", "S1", DC_FAMILY_OCEANS_S1, 0, DC_TRANSPORT_BLE, dc_filter_oceans},
 
 	// Not merged upstream yet
 	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model) */
@@ -453,10 +461,6 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* for the Mk2 we are using the model of the global model - the APAC model is 3702 */
 	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
 	{"Garmin", "Descent Mk2/Mk2i", DC_FAMILY_GARMIN, 3258, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
-	/* Deepblu */
-	{"Deepblu", "Cosmiq+", DC_FAMILY_DEEPBLU, 0, DC_TRANSPORT_BLE, dc_filter_deepblu},
-	/* Oceans S1 */
-	{ "Oceans", "S1", DC_FAMILY_OCEANS_S1, 0, DC_TRANSPORT_BLE, dc_filter_oceans },
 };
 
 static int
@@ -571,7 +575,7 @@ static int dc_filter_uwatec (dc_transport_t transport, const void *userdata, voi
 		"UWATEC Galileo Sol",
 	};
 	static const dc_usb_desc_t usbhid[] = {
-		{0x2e6c, 0x3201}, // G2
+		{0x2e6c, 0x3201}, // G2, G2 TEK
 		{0x2e6c, 0x3211}, // G2 Console
 		{0x2e6c, 0x4201}, // G2 HUD
 		{0xc251, 0x2006}, // Aladin Square
@@ -582,6 +586,7 @@ static int dc_filter_uwatec (dc_transport_t transport, const void *userdata, voi
 		"HUD",
 		"A1",
 		"A2",
+		"G2 TEK",
 	};
 
 	if (transport == DC_TRANSPORT_IRDA) {
@@ -718,6 +723,7 @@ static int dc_filter_oceanic (dc_transport_t transport, const void *userdata, vo
 		0x4742, // Sherwood Beacon
 		0x4743, // Aqualung i470TC
 		0x4749, // Aqualung i200C (newer model)
+		0x474B, // Oceanic Geo Air
 	};
 
 	if (transport == DC_TRANSPORT_BLE) {
@@ -766,24 +772,11 @@ static int dc_filter_deepsix (dc_transport_t transport, const void *userdata, vo
 		"Crest-CR4",
 		"CENTAURI",
 		"TC1",
+		"ALPHA",
 	};
 
 	if (transport == DC_TRANSPORT_BLE) {
 		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_name);
-	}
-
-	return 1;
-}
-
-// Not merged upstream yet
-static int dc_filter_garmin (dc_transport_t transport, const void *userdata, void *params)
-{
-	static const dc_usb_desc_t usbhid[] = {
-		{0x091e, 0x2b2b}, // Garmin Descent Mk1
-	};
-
-	if (transport == DC_TRANSPORT_USBSTORAGE) {
-		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usb);
 	}
 
 	return 1;
@@ -802,14 +795,28 @@ static int dc_filter_deepblu (dc_transport_t transport, const void *userdata, vo
 	return 1;
 }
 
-static int dc_filter_oceans(dc_transport_t transport, const void* userdata, void *params)
+static int dc_filter_oceans (dc_transport_t transport, const void *userdata, void *params)
 {
-	static const char* const ble[] = {
+	static const char * const bluetooth[] = {
 		"S1",
 	};
 
 	if (transport == DC_TRANSPORT_BLE) {
-		return DC_FILTER_INTERNAL(userdata, ble, 0, dc_match_prefix);
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_prefix);
+	}
+
+	return 1;
+}
+
+// Not merged upstream yet
+static int dc_filter_garmin (dc_transport_t transport, const void *userdata, void *params)
+{
+	static const dc_usb_desc_t usbhid[] = {
+		{0x091e, 0x2b2b}, // Garmin Descent Mk1
+	};
+
+	if (transport == DC_TRANSPORT_USBSTORAGE) {
+		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usb);
 	}
 
 	return 1;

@@ -48,6 +48,9 @@ struct reefnet_sensusultra_parser_t {
 };
 
 static dc_status_t reefnet_sensusultra_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
+static dc_status_t reefnet_sensusultra_parser_set_clock (dc_parser_t *abstract, unsigned int devtime, dc_ticks_t systime);
+static dc_status_t reefnet_sensusultra_parser_set_atmospheric (dc_parser_t *abstract, double atmospheric);
+static dc_status_t reefnet_sensusultra_parser_set_density (dc_parser_t *abstract, double density);
 static dc_status_t reefnet_sensusultra_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t reefnet_sensusultra_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t reefnet_sensusultra_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -56,6 +59,9 @@ static const dc_parser_vtable_t reefnet_sensusultra_parser_vtable = {
 	sizeof(reefnet_sensusultra_parser_t),
 	DC_FAMILY_REEFNET_SENSUSULTRA,
 	reefnet_sensusultra_parser_set_data, /* set_data */
+	reefnet_sensusultra_parser_set_clock, /* set_clock */
+	reefnet_sensusultra_parser_set_atmospheric, /* set_atmospheric */
+	reefnet_sensusultra_parser_set_density, /* set_density */
 	reefnet_sensusultra_parser_get_datetime, /* datetime */
 	reefnet_sensusultra_parser_get_field, /* fields */
 	reefnet_sensusultra_parser_samples_foreach, /* samples_foreach */
@@ -79,8 +85,8 @@ reefnet_sensusultra_parser_create (dc_parser_t **out, dc_context_t *context, uns
 	}
 
 	// Set the default values.
-	parser->atmospheric = ATM;
-	parser->hydrostatic = 1025.0 * GRAVITY;
+	parser->atmospheric = DEF_ATMOSPHERIC;
+	parser->hydrostatic = DEF_DENSITY_SALT * GRAVITY;
 	parser->devtime = devtime;
 	parser->systime = systime;
 	parser->cached = 0;
@@ -117,6 +123,40 @@ reefnet_sensusultra_parser_set_calibration (dc_parser_t *abstract, double atmosp
 
 	parser->atmospheric = atmospheric;
 	parser->hydrostatic = hydrostatic;
+
+	return DC_STATUS_SUCCESS;
+}
+
+
+static dc_status_t
+reefnet_sensusultra_parser_set_clock (dc_parser_t *abstract, unsigned int devtime, dc_ticks_t systime)
+{
+	reefnet_sensusultra_parser_t *parser = (reefnet_sensusultra_parser_t *) abstract;
+
+	parser->devtime = devtime;
+	parser->systime = systime;
+
+	return DC_STATUS_SUCCESS;
+}
+
+
+static dc_status_t
+reefnet_sensusultra_parser_set_atmospheric (dc_parser_t *abstract, double atmospheric)
+{
+	reefnet_sensusultra_parser_t *parser = (reefnet_sensusultra_parser_t *) abstract;
+
+	parser->atmospheric = atmospheric;
+
+	return DC_STATUS_SUCCESS;
+}
+
+
+static dc_status_t
+reefnet_sensusultra_parser_set_density (dc_parser_t *abstract, double density)
+{
+	reefnet_sensusultra_parser_t *parser = (reefnet_sensusultra_parser_t *) abstract;
+
+	parser->hydrostatic = density * GRAVITY;
 
 	return DC_STATUS_SUCCESS;
 }

@@ -120,12 +120,12 @@ AS_IF([test "x$with_libmtp" != "xno"], [
 AC_ARG_WITH([hidapi],
 	[AS_HELP_STRING([--without-hidapi],
 		[Build without the hidapi library])],
-	[], [with_hidapi=auto])
+	[], [with_hidapi=hidapi])
 AS_IF([test "x$with_hidapi" != "xno"], [
-	PKG_CHECK_MODULES([HIDAPI], [hidapi], [have_hidapi=yes], [have_hidapi=no])
+	PKG_CHECK_MODULES([HIDAPI], [$with_hidapi], [have_hidapi=yes], [have_hidapi=no])
 	AS_IF([test "x$have_hidapi" = "xyes"], [
 		AC_DEFINE([HAVE_HIDAPI], [1], [hidapi library])
-		DEPENDENCIES="$DEPENDENCIES hidapi"
+		DEPENDENCIES="$DEPENDENCIES $with_hidapi"
 	])
 ])
 
@@ -170,7 +170,7 @@ AC_CHECK_HEADERS([sys/socket.h linux/types.h linux/irda.h], , , [
 # Checks for header files.
 AC_CHECK_HEADERS([linux/serial.h])
 AC_CHECK_HEADERS([IOKit/serial/ioss.h])
-AC_CHECK_HEADERS([getopt.h])
+AC_CHECK_HEADERS([unistd.h getopt.h])
 AC_CHECK_HEADERS([sys/param.h])
 AC_CHECK_HEADERS([pthread.h])
 AC_CHECK_HEADERS([mach/mach_time.h])

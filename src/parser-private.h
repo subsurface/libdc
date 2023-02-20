@@ -25,6 +25,10 @@
 #include <libdivecomputer/context.h>
 #include <libdivecomputer/parser.h>
 
+#define DEF_DENSITY_FRESH 1000.0
+#define DEF_DENSITY_SALT  1025.0
+#define DEF_ATMOSPHERIC   ATM
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -47,6 +51,12 @@ struct dc_parser_vtable_t {
 	dc_family_t type;
 
 	dc_status_t (*set_data) (dc_parser_t *parser, const unsigned char *data, unsigned int size);
+
+	dc_status_t (*set_clock) (dc_parser_t *parser, unsigned int devtime, dc_ticks_t systime);
+
+	dc_status_t (*set_atmospheric) (dc_parser_t *parser, double atmospheric);
+
+	dc_status_t (*set_density) (dc_parser_t *parser, double density);
 
 	dc_status_t (*datetime) (dc_parser_t *parser, dc_datetime_t *datetime);
 

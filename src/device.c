@@ -62,11 +62,11 @@
 #include "sporasub_sp2.h"
 #include "deepsix_excursion.h"
 #include "seac_screen.h"
+#include "deepblu_cosmiq.h"
+#include "oceans_s1.h"
 
 // Not merged upstream yet
 #include "garmin.h"
-#include "deepblu.h"
-#include "oceans_s1.h"
 
 #include "device-private.h"
 #include "context-private.h"
@@ -236,18 +236,18 @@ dc_device_open (dc_device_t **out, dc_context_t *context, dc_descriptor_t *descr
 	case DC_FAMILY_SEAC_SCREEN:
 		rc = seac_screen_device_open (&device, context, iostream);
 		break;
+	case DC_FAMILY_DEEPBLU_COSMIQ:
+		rc = deepblu_cosmiq_device_open (&device, context, iostream);
+		break;
+	case DC_FAMILY_OCEANS_S1:
+		rc = oceans_s1_device_open (&device, context, iostream);
+		break;
 	default:
 		return DC_STATUS_INVALIDARGS;
 
 	// Not merged upstream yet
 	case DC_FAMILY_GARMIN:
 		rc = garmin_device_open (&device, context, iostream, dc_descriptor_get_model (descriptor));
-		break;
-	case DC_FAMILY_DEEPBLU:
-		rc = deepblu_device_open (&device, context, iostream);
-		break;
-	case DC_FAMILY_OCEANS_S1:
-		rc = oceans_s1_device_open(&device, context, iostream);
 		break;
 	}
 
@@ -419,6 +419,9 @@ dc_device_timesync (dc_device_t *device, const dc_datetime_t *datetime)
 
 	if (device->vtable->timesync == NULL)
 		return DC_STATUS_UNSUPPORTED;
+
+	if (datetime == NULL)
+		return DC_STATUS_INVALIDARGS;
 
 	return device->vtable->timesync (device, datetime);
 }

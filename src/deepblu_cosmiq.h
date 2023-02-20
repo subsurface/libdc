@@ -1,7 +1,8 @@
 /*
- * Deepblu Cosmiq+ downloading/parsing
+ * libdivecomputer
  *
  * Copyright (C) 2018 Linus Torvalds
+ * Copyright (C) 2022 Jef Driesen
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -19,8 +20,8 @@
  * MA 02110-1301 USA
  */
 
-#ifndef DEEPBLU_H
-#define DEEPBLU_H
+#ifndef DEEPBLU_COSMIQ_H
+#define DEEPBLU_COSMIQ_H
 
 #include <libdivecomputer/context.h>
 #include <libdivecomputer/iostream.h>
@@ -32,12 +33,12 @@ extern "C" {
 #endif /* __cplusplus */
 
 dc_status_t
-deepblu_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream);
+deepblu_cosmiq_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream);
 
 dc_status_t
-deepblu_parser_create (dc_parser_t **parser, dc_context_t *context);
+deepblu_cosmiq_parser_create (dc_parser_t **parser, dc_context_t *context);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
-#endif /* DEEPBLU_H */
+#endif /* DEEPBLU_COSMIQ_H */

@@ -79,13 +79,23 @@
 #define M_OC_REC   6
 #define M_FREEDIVE 7
 
+#define AI_OFF   0
+#define AI_HPCCR 4
+#define AI_ON    5
+
+#define GF       0
+#define VPMB     1
+#define VPMB_GFS 2
+#define DCIEM    3
+
 #define METRIC   0
 #define IMPERIAL 1
 
-#define NGASMIXES 10
-#define MAXSTRINGS 32
-#define NTANKS    4
+#define NGASMIXES 20
+#define NFIXED    10
+#define NTANKS    6
 #define NRECORDS  8
+#define MAXSTRINGS 32
 
 #define PREDATOR 2
 #define PETREL   3
@@ -98,6 +108,7 @@ typedef struct shearwater_predator_parser_t shearwater_predator_parser_t;
 typedef struct shearwater_predator_gasmix_t {
 	unsigned int oxygen;
 	unsigned int helium;
+	unsigned int diluent;
 } shearwater_predator_gasmix_t;
 
 typedef struct shearwater_predator_tank_t {
@@ -131,6 +142,7 @@ struct shearwater_predator_parser_t {
 	shearwater_predator_gasmix_t gasmix[NGASMIXES];
 	shearwater_predator_tank_t tank[NTANKS];
 	unsigned int tankidx[NTANKS];
+	unsigned int aimode;
 	unsigned int calibrated;
 	double calibration[3];
 	unsigned int serial;
@@ -153,6 +165,9 @@ static const dc_parser_vtable_t shearwater_predator_parser_vtable = {
 	sizeof(shearwater_predator_parser_t),
 	DC_FAMILY_SHEARWATER_PREDATOR,
 	shearwater_predator_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	shearwater_predator_parser_get_datetime, /* datetime */
 	shearwater_predator_parser_get_field, /* fields */
 	shearwater_predator_parser_samples_foreach, /* samples_foreach */
@@ -163,6 +178,9 @@ static const dc_parser_vtable_t shearwater_petrel_parser_vtable = {
 	sizeof(shearwater_predator_parser_t),
 	DC_FAMILY_SHEARWATER_PETREL,
 	shearwater_predator_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	shearwater_predator_parser_get_datetime, /* datetime */
 	shearwater_predator_parser_get_field, /* fields */
 	shearwater_predator_parser_samples_foreach, /* samples_foreach */
@@ -171,11 +189,11 @@ static const dc_parser_vtable_t shearwater_petrel_parser_vtable = {
 
 
 static unsigned int
-shearwater_predator_find_gasmix (shearwater_predator_parser_t *parser, unsigned int o2, unsigned int he)
+shearwater_predator_find_gasmix (shearwater_predator_parser_t *parser, unsigned int o2, unsigned int he, unsigned int dil)
 {
 	unsigned int i = 0;
 	while (i < parser->ngasmixes) {
-		if (o2 == parser->gasmix[i].oxygen && he == parser->gasmix[i].helium)
+		if (o2 == parser->gasmix[i].oxygen && he == parser->gasmix[i].helium && dil == parser->gasmix[i].diluent)
 			break;
 		i++;
 	}
@@ -230,6 +248,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 	for (unsigned int i = 0; i < NGASMIXES; ++i) {
 		parser->gasmix[i].oxygen = 0;
 		parser->gasmix[i].helium = 0;
+		parser->gasmix[i].diluent = 0;
 	}
 	parser->ntanks = 0;
 	for (unsigned int i = 0; i < NTANKS; ++i) {
@@ -244,13 +263,14 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 		parser->tank[i].battery = 0;
 		parser->tankidx[i] = i;
 	}
+	parser->aimode = AI_OFF;
 	parser->calibrated = 0;
 	for (unsigned int i = 0; i < 3; ++i) {
 		parser->calibration[i] = 0.0;
 	}
 	parser->units = METRIC;
-	parser->density = 1025;
-	parser->atmospheric = ATM / (BAR / 1000);
+	parser->density = DEF_DENSITY_SALT;
+	parser->atmospheric = DEF_ATMOSPHERIC / (BAR / 1000);
 
 	DC_ASSIGN_FIELD(parser->cache, DIVEMODE, DC_DIVEMODE_OC);
 
@@ -294,6 +314,7 @@ shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char 
 	for (unsigned int i = 0; i < NGASMIXES; ++i) {
 		parser->gasmix[i].oxygen = 0;
 		parser->gasmix[i].helium = 0;
+		parser->gasmix[i].diluent = 0;
 	}
 	parser->ntanks = 0;
 	for (unsigned int i = 0; i < NTANKS; ++i) {
@@ -307,13 +328,14 @@ shearwater_predator_parser_set_data (dc_parser_t *abstract, const unsigned char 
 		memset (parser->tank[i].name, 0, sizeof (parser->tank[i].name));
 		parser->tankidx[i] = i;
 	}
+	parser->aimode = AI_OFF;
 	parser->calibrated = 0;
 	for (unsigned int i = 0; i < 3; ++i) {
 		parser->calibration[i] = 0.0;
 	}
 	parser->units = METRIC;
-	parser->density = 1025;
-	parser->atmospheric = ATM / (BAR / 1000);
+	parser->density = DEF_DENSITY_SALT;
+	parser->atmospheric = DEF_ATMOSPHERIC / (BAR / 1000);
 
 	DC_ASSIGN_FIELD(parser->cache, DIVEMODE, DC_DIVEMODE_OC);
 
@@ -495,10 +517,18 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	unsigned int divemode = M_OC_TEC;
 
 	// Get the gas mixes.
-	unsigned int ngasmixes = 0;
+	unsigned int ngasmixes = NFIXED;
 	shearwater_predator_gasmix_t gasmix[NGASMIXES] = {0};
 	shearwater_predator_tank_t tank[NTANKS] = {0};
-	unsigned int o2_previous = 0, he_previous = 0;
+	unsigned int o2_previous = UNDEFINED, he_previous = UNDEFINED, dil_previous = UNDEFINED;
+	unsigned int aimode = AI_OFF;
+	if (!pnf) {
+		for (unsigned int i = 0; i < NFIXED; ++i) {
+			gasmix[i].oxygen = data[20 + i];
+			gasmix[i].helium = data[30 + i];
+			gasmix[i].diluent = i >= 5;
+		}
+	}
 
 	unsigned int offset = headersize;
 	unsigned int length = size - footersize;
@@ -515,18 +545,20 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		if (type == LOG_RECORD_DIVE_SAMPLE) {
 			// Status flags.
 			unsigned int status = data[offset + 11 + pnf];
-			if ((status & OC) == 0) {
+			unsigned int ccr = (status & OC) == 0;
+			if (ccr) {
 				divemode = status & SC ? M_SC : M_CC;
 			}
 
 			// Gaschange.
 			unsigned int o2 = data[offset + 7 + pnf];
 			unsigned int he = data[offset + 8 + pnf];
-			if (o2 != o2_previous || he != he_previous) {
+			if ((o2 != o2_previous || he != he_previous || ccr != dil_previous) &&
+				(o2 != 0 || he != 0)) {
 				// Find the gasmix in the list.
 				unsigned int idx = 0;
 				while (idx < ngasmixes) {
-					if (o2 == gasmix[idx].oxygen && he == gasmix[idx].helium)
+					if (o2 == gasmix[idx].oxygen && he == gasmix[idx].helium && ccr == gasmix[idx].diluent)
 						break;
 					idx++;
 				}
@@ -539,11 +571,13 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 					}
 					gasmix[idx].oxygen = o2;
 					gasmix[idx].helium = he;
+					gasmix[idx].diluent = ccr;
 					ngasmixes = idx + 1;
 				}
 
 				o2_previous = o2;
 				he_previous = he;
+				dil_previous = ccr;
 			}
 
 			// Tank pressure
@@ -559,17 +593,18 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 					// level (0=normal, 1=critical, 2=warning), and the lower 12
 					// bits the tank pressure in units of 2 psi.
 					unsigned int pressure = array_uint16_be (data + offset + pnf + idx[i]);
+					unsigned int id = (aimode == AI_HPCCR ? 4 : 0) + i;
 					if (pressure < 0xFFF0) {
 						unsigned int battery = 1u << (pressure >> 12);
 						pressure &= 0x0FFF;
-						if (!tank[i].active) {
-							tank[i].active = 1;
-							tank[i].beginpressure = pressure;
-							tank[i].endpressure = pressure;
-							tank[i].battery = 0;
+						if (!tank[id].active) {
+							tank[id].active = 1;
+							tank[id].beginpressure = pressure;
+							tank[id].endpressure = pressure;
+							tank[id].battery = 0;
 						}
-						tank[i].endpressure = pressure;
-						tank[i].battery |= battery;
+						tank[id].endpressure = pressure;
+						tank[id].battery |= battery;
 					}
 				}
 			}
@@ -578,14 +613,33 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			if (logversion >= 13) {
 				for (unsigned int i = 0; i < 2; ++i) {
 					unsigned int pressure = array_uint16_be (data + offset + pnf + i * 2);
+					unsigned int id = 2 + i;
 					if (pressure < 0xFFF0) {
 						pressure &= 0x0FFF;
-						if (!tank[i + 2].active) {
-							tank[i + 2].active = 1;
-							tank[i + 2].beginpressure = pressure;
-							tank[i + 2].endpressure = pressure;
+						if (!tank[id].active) {
+							tank[id].active = 1;
+							tank[id].beginpressure = pressure;
+							tank[id].endpressure = pressure;
 						}
-						tank[i + 2].endpressure = pressure;
+						tank[id].endpressure = pressure;
+					}
+				}
+			}
+			// Tank pressure (HP CCR)
+			if (logversion >= 14) {
+				for (unsigned int i = 0; i < 2; ++i) {
+					unsigned int pressure = array_uint16_be (data + offset + pnf + 4 + i * 2);
+					unsigned int id = 4 + i;
+					if (pressure) {
+						if (!tank[id].active) {
+							tank[id].active = 1;
+							tank[id].enabled = 1;
+							tank[id].beginpressure = pressure;
+							tank[id].endpressure = pressure;
+							tank[id].name[0] = i == 0 ? 'D': 'O';
+							tank[id].name[1] = 0;
+						}
+						tank[id].endpressure = pressure;
 					}
 				}
 			}
@@ -596,24 +650,41 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			// Opening record
 			parser->opening[type - LOG_RECORD_OPENING_0] = offset;
 
-			if (type == LOG_RECORD_OPENING_4) {
+			if (type == LOG_RECORD_OPENING_0) {
+				for (unsigned int i = 0; i < NFIXED; ++i) {
+					gasmix[i].oxygen = data[offset + 20 + i];
+					gasmix[i].diluent = i >= 5;
+				}
+				for (unsigned int i = 0; i < 2; ++i) {
+					gasmix[i].helium = data[offset + 30 + i];
+				}
+			} else if (type == LOG_RECORD_OPENING_1) {
+				for (unsigned int i = 2; i < NFIXED; ++i) {
+					gasmix[i].helium = data[offset + 1 + i - 2];
+				}
+			} else if (type == LOG_RECORD_OPENING_4) {
 				// Log version
 				logversion = data[offset + 16];
 
 				// Air integration mode
 				if (logversion >= 7) {
-					unsigned int airmode = data[offset + 28];
+					aimode = data[offset + 28];
 					if (logversion < 13) {
-						if (airmode == 1 || airmode == 2) {
-							tank[airmode - 1].enabled = 1;
-						} else if (airmode == 3) {
+						if (aimode == 1 || aimode == 2) {
+							tank[aimode - 1].enabled = 1;
+						} else if (aimode == 3) {
 							tank[0].enabled = 1;
 							tank[1].enabled = 1;
 						}
 					}
-					if (airmode == 4) {
-						tank[0].enabled = 1;
-						tank[1].enabled = 1;
+					if (logversion < 14) {
+						if (aimode == AI_HPCCR) {
+							for (unsigned int i = 0; i < 2; ++i) {
+								tank[4 + i].enabled = 1;
+								tank[4 + i].name[0] = i == 0 ? 'D': 'O';
+								tank[4 + i].name[1] = 0;
+							}
+						}
 					}
 				}
 			} else if (type == LOG_RECORD_OPENING_5) {
@@ -733,9 +804,14 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	parser->logversion = logversion;
 	parser->headersize = headersize;
 	parser->footersize = footersize;
-	parser->ngasmixes = ngasmixes;
-	for (unsigned int i = 0; i < ngasmixes; ++i) {
-		parser->gasmix[i] = gasmix[i];
+	parser->ngasmixes = 0;
+	if (divemode != M_FREEDIVE) {
+		for (unsigned int i = 0; i < ngasmixes; ++i) {
+			if (gasmix[i].oxygen == 0 && gasmix[i].helium == 0)
+				continue;
+			parser->gasmix[parser->ngasmixes] = gasmix[i];
+			parser->ngasmixes++;
+		}
 	}
 	parser->ntanks = 0;
 	for (unsigned int i = 0; i < NTANKS; ++i) {
@@ -747,6 +823,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			parser->tankidx[i] = UNDEFINED;
 		}
 	}
+	parser->aimode = aimode;
 	parser->units = data[parser->opening[0] + 8];
 	parser->atmospheric = array_uint16_be (data + parser->opening[1] + (parser->pnf ? 16 : 47));
 	parser->density = array_uint16_be (data + parser->opening[3] + (parser->pnf ? 3 : 83));
@@ -801,9 +878,13 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
 
+	unsigned int decomodel_idx = parser->pnf ? parser->opening[2] + 18 : 67;
+	unsigned int gf_idx        = parser->pnf ? parser->opening[0] +  4 : 4;
+
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_tank_t *tank = (dc_tank_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_decomodel_t *decomodel = (dc_decomodel_t *) value;
 	dc_field_string_t *string = (dc_field_string_t *) value;
 
 	if (value) {
@@ -853,6 +934,27 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			break;
 		case DC_FIELD_DIVEMODE:
 			return DC_FIELD_VALUE(parser->cache, value, DIVEMODE);
+		case DC_FIELD_DECOMODEL:
+			switch (data[decomodel_idx]) {
+			case GF:
+				decomodel->type = DC_DECOMODEL_BUHLMANN;
+				decomodel->conservatism = 0;
+				decomodel->params.gf.low  = data[gf_idx + 0];
+				decomodel->params.gf.high = data[gf_idx + 1];
+				break;
+			case VPMB:
+			case VPMB_GFS:
+				decomodel->type = DC_DECOMODEL_VPM;
+				decomodel->conservatism = data[decomodel_idx + 1];
+				break;
+			case DCIEM:
+				decomodel->type = DC_DECOMODEL_DCIEM;
+				decomodel->conservatism = 0;
+				break;
+			default:
+				return DC_STATUS_DATAFORMAT;
+			}
+			break;
 		case DC_FIELD_STRING:
 			return dc_field_get_string(&parser->cache, flags, string);
 		default:
@@ -878,7 +980,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		return rc;
 
 	// Previous gas mix.
-	unsigned int o2_previous = 0, he_previous = 0;
+	unsigned int o2_previous = UNDEFINED, he_previous = UNDEFINED, dil_previous = UNDEFINED;
 
 	// Sample interval.
 	unsigned int time = 0;
@@ -942,8 +1044,9 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 
 			// Status flags.
 			unsigned int status = data[offset + pnf + 11];
+			unsigned int ccr = (status & OC) == 0;
 
-			if ((status & OC) == 0) {
+			if (ccr) {
 				// PPO2
 				if ((status & PPO2_EXTERNAL) == 0) {
 					if (!parser->calibrated) {
@@ -984,8 +1087,9 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 			// Gaschange.
 			unsigned int o2 = data[offset + pnf + 7];
 			unsigned int he = data[offset + pnf + 8];
-			if (o2 != o2_previous || he != he_previous) {
-				unsigned int idx = shearwater_predator_find_gasmix (parser, o2, he);
+			if ((o2 != o2_previous || he != he_previous || ccr != dil_previous) &&
+				(o2 != 0 || he != 0)) {
+				unsigned int idx = shearwater_predator_find_gasmix (parser, o2, he, ccr);
 				if (idx >= parser->ngasmixes) {
 					ERROR (abstract->context, "Invalid gas mix.");
 					return DC_STATUS_DATAFORMAT;
@@ -995,6 +1099,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
 				o2_previous = o2;
 				he_previous = he;
+				dil_previous = ccr;
 			}
 
 			// Deco stop / NDL.
@@ -1027,9 +1132,10 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 					// level (0=normal, 1=critical, 2=warning), and the lower 12
 					// bits the tank pressure in units of 2 psi.
 					unsigned int pressure = array_uint16_be (data + offset + pnf + idx[i]);
+					unsigned int id = (parser->aimode == AI_HPCCR ? 4 : 0) + i;
 					if (pressure < 0xFFF0) {
 						pressure &= 0x0FFF;
-						sample.pressure.tank = parser->tankidx[i];
+						sample.pressure.tank = parser->tankidx[id];
 						sample.pressure.value = pressure * 2 * PSI / BAR;
 						if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
 					}
@@ -1052,9 +1158,22 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 			if (parser->logversion >= 13) {
 				for (unsigned int i = 0; i < 2; ++i) {
 					unsigned int pressure = array_uint16_be (data + offset + pnf + i * 2);
+					unsigned int id = 2 + i;
 					if (pressure < 0xFFF0) {
 						pressure &= 0x0FFF;
-						sample.pressure.tank = parser->tankidx[i + 2];
+						sample.pressure.tank = parser->tankidx[id];
+						sample.pressure.value = pressure * 2 * PSI / BAR;
+						if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+					}
+				}
+			}
+			// Tank pressure (HP CCR)
+			if (parser->logversion >= 14) {
+				for (unsigned int i = 0; i < 2; ++i) {
+					unsigned int pressure = array_uint16_be (data + offset + pnf + 4 + i * 2);
+					unsigned int id = 4 + i;
+					if (pressure) {
+						sample.pressure.tank = parser->tankidx[id];
 						sample.pressure.value = pressure * 2 * PSI / BAR;
 						if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
 					}

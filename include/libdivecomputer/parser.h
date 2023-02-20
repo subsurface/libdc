@@ -67,6 +67,7 @@ typedef enum dc_field_type_t {
 	DC_FIELD_TANK_COUNT,
 	DC_FIELD_TANK,
 	DC_FIELD_DIVEMODE,
+	DC_FIELD_DECOMODEL,
 	DC_FIELD_STRING,
 } dc_field_type_t;
 
@@ -223,6 +224,43 @@ typedef struct dc_tank_t {
     double endpressure;   /* End pressure (bar) */
 } dc_tank_t;
 
+typedef enum dc_decomodel_type_t {
+	DC_DECOMODEL_NONE,
+	DC_DECOMODEL_BUHLMANN,
+	DC_DECOMODEL_VPM,
+	DC_DECOMODEL_RGBM,
+	DC_DECOMODEL_DCIEM,
+} dc_decomodel_type_t;
+
+/*
+ * Decompression model
+ *
+ * The type field contains the decompression algorithm.
+ *
+ * The (optional) conservatism field contains the personal adjustment
+ * setting of the algorithm. The exact interpretation depends on the
+ * dive computer, but the default value (zero) will typically correspond
+ * to the neutral setting, while a positive value is more conservative
+ * and a negative value more aggressive.
+ *
+ * The (optional) params field contains the parameters of the algorithm:
+ *
+ * DC_DECOMODEL_BUHLMANN: The Gradient Factor (GF) parameters low and
+ * high. For a pure Buhlmann algorithm (e.g. without GF enabled), both
+ * values are 100. If GF are enabled, but the actual parameter values
+ * are not available from the dive computer, both values are zero.
+ */
+typedef struct dc_decomodel_t {
+	dc_decomodel_type_t type;
+	int conservatism;
+	union {
+		struct {
+			unsigned int high;
+			unsigned int low;
+		} gf;
+	} params;
+} dc_decomodel_t;
+
 typedef struct dc_field_string_t {
 	const char *desc;
 	const char *value;
@@ -274,6 +312,15 @@ dc_parser_new2 (dc_parser_t **parser, dc_context_t *context, dc_descriptor_t *de
 
 dc_family_t
 dc_parser_get_type (dc_parser_t *parser);
+
+dc_status_t
+dc_parser_set_clock (dc_parser_t *parser, unsigned int devtime, dc_ticks_t systime);
+
+dc_status_t
+dc_parser_set_atmospheric (dc_parser_t *parser, double atmospheric);
+
+dc_status_t
+dc_parser_set_density (dc_parser_t *parser, double density);
 
 dc_status_t
 dc_parser_set_data (dc_parser_t *parser, const unsigned char *data, unsigned int size);

@@ -816,11 +816,11 @@ static void sample_setpoint_type(const struct type_desc *desc, struct sample_dat
 	}
 
 	if (!strcasecmp(type, "Low"))
-		sample.ppo2 = info->eon->cache.lowsetpoint;
+		sample.setpoint = info->eon->cache.lowsetpoint;
 	else if (!strcasecmp(type, "High"))
-		sample.ppo2 = info->eon->cache.highsetpoint;
+		sample.setpoint = info->eon->cache.highsetpoint;
 	else if (!strcasecmp(type, "Custom"))
-		sample.ppo2 = info->eon->cache.customsetpoint;
+		sample.setpoint = info->eon->cache.customsetpoint;
 	else {
 		DEBUG(info->eon->base.context, "sample_setpoint_type(%u) unknown type '%s'", value, type);
 		free(type);
@@ -1514,6 +1514,9 @@ static const dc_parser_vtable_t suunto_eonsteel_parser_vtable = {
 	sizeof(suunto_eonsteel_parser_t),
 	DC_FAMILY_SUUNTO_EONSTEEL,
 	suunto_eonsteel_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	suunto_eonsteel_parser_get_datetime, /* datetime */
 	suunto_eonsteel_parser_get_field, /* fields */
 	suunto_eonsteel_parser_samples_foreach, /* samples_foreach */

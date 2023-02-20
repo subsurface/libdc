@@ -46,6 +46,9 @@ static const dc_parser_vtable_t sporasub_sp2_parser_vtable = {
 	sizeof(sporasub_sp2_parser_t),
 	DC_FAMILY_SPORASUB_SP2,
 	sporasub_sp2_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	sporasub_sp2_parser_get_datetime, /* datetime */
 	sporasub_sp2_parser_get_field, /* fields */
 	sporasub_sp2_parser_samples_foreach, /* samples_foreach */

@@ -1,7 +1,7 @@
 /*
  * libdivecomputer
  *
- * Copyright (C) 2008 Jef Driesen
+ * Copyright (C) 2022 Jef Driesen
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -19,40 +19,17 @@
  * MA 02110-1301 USA
  */
 
-#ifndef EXAMPLES_UTILS_H
-#define EXAMPLES_UTILS_H
+#ifndef OCEANS_S1_COMMON_H
+#define OCEANS_S1_COMMON_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
-#ifdef _MSC_VER
-#define snprintf _snprintf
-#define strcasecmp _stricmp
-#define strncasecmp _strnicmp
-#endif
-
-#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
-#define FUNCTION __func__
-#else
-#define FUNCTION __FUNCTION__
-#endif
-
-#if defined(__GNUC__)
-#define ATTR_FORMAT_PRINTF(a,b) __attribute__((format(printf, a, b)))
-#else
-#define ATTR_FORMAT_PRINTF(a,b)
-#endif
-
-#define WARNING(expr) message("WARNING: %s [in %s:%d (%s)]\n", expr, __FILE__, __LINE__, FUNCTION)
-#define ERROR(expr)   message("ERROR: %s [in %s:%d (%s)]\n", expr, __FILE__, __LINE__, FUNCTION)
-
-int message (const char* fmt, ...) ATTR_FORMAT_PRINTF(1, 2);
-
-void message_set_logfile (const char* filename);
+int
+oceans_s1_getline (char **line, size_t *linelen, const unsigned char **data, size_t *size);
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
-
-#endif /* EXAMPLES_UTILS_H */
+#endif /* OCEANS_S1_COMMON_H */

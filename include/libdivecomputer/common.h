@@ -118,14 +118,14 @@ typedef enum dc_family_t {
 	DC_FAMILY_DEEPSIX_EXCURSION = (19 << 16),
 	/* Seac Screen */
 	DC_FAMILY_SEAC_SCREEN = (20 << 16),
+	/* Deepblu Cosmiq */
+	DC_FAMILY_DEEPBLU_COSMIQ = (21 << 16),
+	/* Oceans S1 */
+	DC_FAMILY_OCEANS_S1 = (22 << 16),
 
 	// Not merged upstream yet
 	/* Garmin */
 	DC_FAMILY_GARMIN = (100 << 16),
-	/* Deepblu */
-	DC_FAMILY_DEEPBLU = (101 << 16),
-	/* Oceans S1 */
-	DC_FAMILY_OCEANS_S1 = (102 << 16),
 } dc_family_t;
 
 #ifdef __cplusplus

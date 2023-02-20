@@ -29,6 +29,7 @@
 #define ISINSTANCE(parser) dc_device_isinstance((parser), &divesystem_idive_parser_vtable)
 
 #define ISIX3M(model) ((model) >= 0x21)
+#define ISIX3M2(model) ((model) >= 0x60 && (model) < 0x1000)
 
 #define SZ_HEADER_IDIVE 0x32
 #define SZ_SAMPLE_IDIVE 0x2A
@@ -47,6 +48,15 @@
 #define GAUGE    3
 #define FREEDIVE 4
 #define INVALID  0xFFFFFFFF
+
+#define BUHLMANN 0
+#define VPM      1
+#define DUAL     2
+
+#define IX3M2_BUHLMANN 0
+#define IX3M2_ZHL16B   1
+#define IX3M2_ZHL16C   2
+#define IX3M2_VPM      3
 
 typedef struct divesystem_idive_parser_t divesystem_idive_parser_t;
 
@@ -74,6 +84,9 @@ struct divesystem_idive_parser_t {
 	unsigned int ntanks;
 	divesystem_idive_gasmix_t gasmix[NGASMIXES];
 	divesystem_idive_tank_t tank[NTANKS];
+	unsigned int algorithm;
+	unsigned int gf_low;
+	unsigned int gf_high;
 };
 
 static dc_status_t divesystem_idive_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -85,6 +98,9 @@ static const dc_parser_vtable_t divesystem_idive_parser_vtable = {
 	sizeof(divesystem_idive_parser_t),
 	DC_FAMILY_DIVESYSTEM_IDIVE,
 	divesystem_idive_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	divesystem_idive_parser_get_datetime, /* datetime */
 	divesystem_idive_parser_get_field, /* fields */
 	divesystem_idive_parser_samples_foreach, /* samples_foreach */
@@ -129,6 +145,10 @@ divesystem_idive_parser_create (dc_parser_t **out, dc_context_t *context, unsign
 		parser->tank[i].beginpressure = 0;
 		parser->tank[i].endpressure = 0;
 	}
+	parser->algorithm = INVALID;
+	parser->gf_low = INVALID;
+	parser->gf_high = INVALID;
+
 
 	*out = (dc_parser_t*) parser;
 
@@ -157,6 +177,9 @@ divesystem_idive_parser_set_data (dc_parser_t *abstract, const unsigned char *da
 		parser->tank[i].beginpressure = 0;
 		parser->tank[i].endpressure = 0;
 	}
+	parser->algorithm = INVALID;
+	parser->gf_low = INVALID;
+	parser->gf_high = INVALID;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -280,6 +303,7 @@ divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_tank_t *tank = (dc_tank_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_decomodel_t *decomodel = (dc_decomodel_t *) value;
 
 	if (value) {
 		switch (type) {
@@ -343,6 +367,46 @@ divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 				return DC_STATUS_DATAFORMAT;
 			}
 			break;
+		case DC_FIELD_DECOMODEL:
+			if (parser->algorithm == INVALID)
+				return DC_STATUS_UNSUPPORTED;
+			if (ISIX3M2(parser->model)) {
+				switch (parser->algorithm) {
+				case IX3M2_BUHLMANN:
+				case IX3M2_ZHL16B:
+				case IX3M2_ZHL16C:
+					decomodel->type = DC_DECOMODEL_BUHLMANN;
+					decomodel->conservatism = 0;
+					decomodel->params.gf.low = parser->gf_low;
+					decomodel->params.gf.high = parser->gf_high;
+					break;
+				case IX3M2_VPM:
+					decomodel->type = DC_DECOMODEL_VPM;
+					decomodel->conservatism = 0;
+					break;
+				default:
+					ERROR (abstract->context, "Unknown deco algorithm %02x.", parser->algorithm);
+					return DC_STATUS_DATAFORMAT;
+				}
+			} else {
+				switch (parser->algorithm) {
+				case BUHLMANN:
+				case DUAL:
+					decomodel->type = DC_DECOMODEL_BUHLMANN;
+					decomodel->conservatism = 0;
+					decomodel->params.gf.low = parser->gf_low;
+					decomodel->params.gf.high = parser->gf_high;
+					break;
+				case VPM:
+					decomodel->type = DC_DECOMODEL_VPM;
+					decomodel->conservatism = 0;
+					break;
+				default:
+					ERROR (abstract->context, "Unknown deco algorithm %02x.", parser->algorithm);
+					return DC_STATUS_DATAFORMAT;
+				}
+			}
+			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
 		}
@@ -371,6 +435,10 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 	unsigned int divemode = INVALID;
 	unsigned int tank_previous = INVALID;
 	unsigned int tank_idx = INVALID;
+	unsigned int algorithm = INVALID;
+	unsigned int algorithm_previous = INVALID;
+	unsigned int gf_low = INVALID;
+	unsigned int gf_high = INVALID;
 
 	unsigned int firmware = 0;
 	unsigned int apos4 = 0;
@@ -431,6 +499,22 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		}
 		if (divemode == INVALID) {
 			divemode = mode;
+		}
+
+		// Deco model
+		unsigned int s_algorithm = data[offset + 14];
+		unsigned int s_gf_high = data[offset + 15];
+		unsigned int s_gf_low  = data[offset + 16];
+		if (s_algorithm != algorithm_previous) {
+			if (algorithm_previous != INVALID) {
+				WARNING (abstract->context, "Deco algorithm changed from %02x to %02x.", algorithm_previous, s_algorithm);
+			}
+			algorithm_previous = s_algorithm;
+		}
+		if (algorithm == INVALID) {
+			algorithm = s_algorithm;
+			gf_low = s_gf_low;
+			gf_high = s_gf_high;
 		}
 
 		// Setpoint
@@ -501,6 +585,11 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 			unsigned int flags = data[offset + 47] & 0xF0;
 			unsigned int pressure = data[offset + 49];
 
+			if (flags & 0x20) {
+				// 300 bar transmitter.
+				pressure *= 2;
+			}
+
 			if (flags & 0x80) {
 				// No active transmitter available
 			} else if (flags & 0x40) {
@@ -560,6 +649,9 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 	parser->maxdepth = maxdepth;
 	parser->divetime = time;
 	parser->divemode = divemode;
+	parser->algorithm = algorithm;
+	parser->gf_low = gf_low;
+	parser->gf_high = gf_high;
 	parser->cached = 1;
 
 	return DC_STATUS_SUCCESS;

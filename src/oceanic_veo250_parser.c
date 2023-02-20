@@ -31,12 +31,6 @@
 
 #define ISINSTANCE(parser) dc_parser_isinstance((parser), &oceanic_veo250_parser_vtable)
 
-#define REACTPRO 0x4247
-#define VEO200   0x424B
-#define VEO250   0x424C
-#define INSIGHT  0x425A
-#define REACTPROWHITE 0x4354
-
 typedef struct oceanic_veo250_parser_t oceanic_veo250_parser_t;
 
 struct oceanic_veo250_parser_t {
@@ -57,6 +51,9 @@ static const dc_parser_vtable_t oceanic_veo250_parser_vtable = {
 	sizeof(oceanic_veo250_parser_t),
 	DC_FAMILY_OCEANIC_VEO250,
 	oceanic_veo250_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	oceanic_veo250_parser_get_datetime, /* datetime */
 	oceanic_veo250_parser_get_field, /* fields */
 	oceanic_veo250_parser_samples_foreach, /* samples_foreach */

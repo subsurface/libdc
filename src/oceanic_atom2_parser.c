@@ -33,78 +33,6 @@
 
 #define ISINSTANCE(parser) dc_parser_isinstance((parser), &oceanic_atom2_parser_vtable)
 
-#define ATOM1       0x4250
-#define EPICA       0x4257
-#define VT3         0x4258
-#define T3A         0x4259
-#define ATOM2       0x4342
-#define GEO         0x4344
-#define MANTA       0x4345
-#define DATAMASK    0x4347
-#define COMPUMASK   0x4348
-#define OC1A        0x434E
-#define F10A        0x434D
-#define WISDOM2     0x4350
-#define INSIGHT2    0x4353
-#define ELEMENT2    0x4357
-#define VEO20       0x4359
-#define VEO30       0x435A
-#define ZEN         0x4441
-#define ZENAIR      0x4442
-#define ATMOSAI2    0x4443
-#define PROPLUS21   0x4444
-#define GEO20       0x4446
-#define VT4         0x4447
-#define OC1B        0x4449
-#define VOYAGER2G   0x444B
-#define ATOM3       0x444C
-#define DG03        0x444D
-#define OCS         0x4450
-#define OC1C        0x4451
-#define VT41        0x4452
-#define EPICB       0x4453
-#define T3B         0x4455
-#define ATOM31      0x4456
-#define A300AI      0x4457
-#define WISDOM3     0x4458
-#define A300        0x445A
-#define TX1         0x4542
-#define MUNDIAL2    0x4543
-#define AMPHOS      0x4545
-#define AMPHOSAIR   0x4546
-#define PROPLUS3    0x4548
-#define F11A        0x4549
-#define OCI         0x454B
-#define A300CS      0x454C
-#define TALIS       0x454E
-#define MUNDIAL3    0x4550
-#define PROPLUSX    0x4552
-#define F10B        0x4553
-#define F11B        0x4554
-#define XPAIR       0x4555
-#define VISION      0x4556
-#define VTX         0x4557
-#define I300        0x4559
-#define I750TC      0x455A
-#define I450T       0x4641
-#define I550        0x4642
-#define I200        0x4646
-#define SAGE        0x4647
-#define I300C       0x4648
-#define I200C       0x4649
-#define I100        0x464E
-#define I770R       0x4651
-#define I550C       0x4652
-#define GEO40       0x4653
-#define VEO40       0x4654
-#define WISDOM4     0x4655
-#define PROPLUS4    0x4656
-#define AMPHOS2     0x4657
-#define AMPHOSAIR2  0x4658
-#define BEACON      0x4742
-#define I470TC      0x4743
-#define I200CV2     0x4749
-
 #define NORMAL   0
 #define GAUGE    1
 #define FREEDIVE 2
@@ -143,6 +71,9 @@ static const dc_parser_vtable_t oceanic_atom2_parser_vtable = {
 	sizeof(oceanic_atom2_parser_t),
 	DC_FAMILY_OCEANIC_ATOM2,
 	oceanic_atom2_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	oceanic_atom2_parser_get_datetime, /* datetime */
 	oceanic_atom2_parser_get_field, /* fields */
 	oceanic_atom2_parser_samples_foreach, /* samples_foreach */
@@ -178,7 +109,8 @@ oceanic_atom2_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		model == I300 || model == I550 ||
 		model == I200 || model == I200C ||
 		model == I300C || model == GEO40 ||
-		model == VEO40 || model == I470TC) {
+		model == VEO40 || model == I470TC ||
+		model == GEOAIR) {
 		parser->headersize -= PAGESIZE;
 	} else if (model == VT4 || model == VT41) {
 		parser->headersize += PAGESIZE;
@@ -285,6 +217,7 @@ oceanic_atom2_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetim
 		case WISDOM4:
 		case I470TC:
 		case I200CV2:
+		case GEOAIR:
 			datetime->year   = ((p[5] & 0xE0) >> 5) + ((p[7] & 0xE0) >> 2) + 2000;
 			datetime->month  = (p[3] & 0x0F);
 			datetime->day    = ((p[0] & 0x80) >> 3) + ((p[3] & 0xF0) >> 4);
@@ -735,7 +668,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 		parser->model == VTX || parser->model == I450T ||
 		parser->model == I750TC || parser->model == PROPLUSX ||
 		parser->model == I770R || parser->model == I470TC ||
-		parser->model == SAGE || parser->model == BEACON) {
+		parser->model == SAGE || parser->model == BEACON ||
+		parser->model == GEOAIR) {
 		samplesize = PAGESIZE;
 	}
 
@@ -912,7 +846,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 					parser->model == I200 || parser->model == I100 ||
 					parser->model == I300C || parser->model == I200C ||
 					parser->model == GEO40 || parser->model == VEO40 ||
-					parser->model == I470TC || parser->model == I200CV2) {
+					parser->model == I470TC || parser->model == I200CV2 ||
+					parser->model == GEOAIR) {
 					temperature = data[offset + 3];
 				} else if (parser->model == OCS || parser->model == TX1) {
 					temperature = data[offset + 1];
@@ -956,7 +891,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			if (have_pressure) {
 				if (parser->model == OC1A || parser->model == OC1B ||
 					parser->model == OC1C || parser->model == OCI ||
-					parser->model == I450T || parser->model == I470TC)
+					parser->model == I450T || parser->model == I470TC ||
+					parser->model == GEOAIR)
 					pressure = (data[offset + 10] + (data[offset + 11] << 8)) & 0x0FFF;
 				else if (parser->model == VT4 || parser->model == VT41||
 					parser->model == ATOM3 || parser->model == ATOM31 ||
@@ -991,7 +927,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				parser->model == I200 || parser->model == I100 ||
 				parser->model == I300C || parser->model == I200C ||
 				parser->model == GEO40 || parser->model == VEO40 ||
-				parser->model == I470TC || parser->model == I200CV2)
+				parser->model == I470TC || parser->model == I200CV2 ||
+				parser->model == GEOAIR)
 				depth = (data[offset + 4] + (data[offset + 5] << 8)) & 0x0FFF;
 			else if (parser->model == ATOM1)
 				depth = data[offset + 3] * 16;
@@ -1047,7 +984,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				parser->model == I100 || parser->model == I300C ||
 				parser->model == I450T || parser->model == I200C ||
 				parser->model == GEO40 || parser->model == VEO40 ||
-				parser->model == I470TC || parser->model == I200CV2) {
+				parser->model == I470TC || parser->model == I200CV2 ||
+				parser->model == GEOAIR) {
 				decostop = (data[offset + 7] & 0xF0) >> 4;
 				decotime = array_uint16_le(data + offset + 6) & 0x0FFF;
 				have_deco = 1;
@@ -1072,7 +1010,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			} else if (parser->model == I450T || parser->model == OC1A ||
 				parser->model == OC1B || parser->model == OC1C ||
 				parser->model == OCI || parser->model == PROPLUSX ||
-				parser->model == I770R || parser->model == I470TC) {
+				parser->model == I770R || parser->model == I470TC ||
+				parser->model == GEOAIR) {
 				rbt = array_uint16_le(data + offset + 8) & 0x01FF;
 				have_rbt = 1;
 			} else if (parser->model == VISION || parser->model == XPAIR ||
@@ -1089,7 +1028,8 @@ oceanic_atom2_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			// Bookmarks
 			unsigned int have_bookmark = 0;
 			if (parser->model == OC1A || parser->model == OC1B ||
-				parser->model == OC1C || parser->model == OCI) {
+				parser->model == OC1C || parser->model == OCI ||
+				parser->model == GEOAIR) {
 				have_bookmark = data[offset + 12] & 0x80;
 			}
 			if (have_bookmark) {

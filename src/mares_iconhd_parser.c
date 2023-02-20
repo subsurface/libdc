@@ -276,6 +276,9 @@ static const dc_parser_vtable_t mares_iconhd_parser_vtable = {
 	sizeof(mares_iconhd_parser_t),
 	DC_FAMILY_MARES_ICONHD,
 	mares_iconhd_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	mares_iconhd_parser_get_datetime, /* datetime */
 	mares_iconhd_parser_get_field, /* fields */
 	mares_iconhd_parser_samples_foreach, /* samples_foreach */
@@ -1089,6 +1092,7 @@ mares_iconhd_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 			unsigned int depth = 0, temperature = 0;
 			unsigned int gasmix = 0, alarms = 0;
 			unsigned int decostop = 0, decodepth = 0, decotime = 0, tts = 0;
+			unsigned int bookmark = 0;
 			if (parser->model == GENIUS || parser->model == HORIZON) {
 				if (parser->logformat == 1) {
 					if (!mares_genius_isvalid (data + offset, SDPT_SIZE, SDPT_TYPE)) {
@@ -1102,6 +1106,7 @@ mares_iconhd_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 					alarms      = array_uint32_le (data + offset + marker + 0x14);
 					misc        = array_uint32_le (data + offset + marker + 0x18);
 					deco        = array_uint32_le (data + offset + marker + 0x1C);
+					bookmark    = (misc >>  2) & 0x0F;
 					gasmix      = (misc >>  6) & 0x0F;
 					decostop    = (misc >> 10) & 0x01;
 					if (decostop) {
@@ -1123,6 +1128,7 @@ mares_iconhd_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 					decotime    = array_uint16_le (data + offset + marker + 0x0A);
 					alarms      = array_uint32_le (data + offset + marker + 0x0C);
 					misc        = array_uint32_le (data + offset + marker + 0x14);
+					bookmark    = (misc >>  2) & 0x0F;
 					gasmix      = (misc >>  6) & 0x0F;
 					decostop    = (misc >> 18) & 0x01;
 					decodepth   = (misc >> 19) & 0x7F;
@@ -1157,6 +1163,15 @@ mares_iconhd_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 					if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
 					gasmix_previous = gasmix;
 				}
+			}
+
+			// Bookmark
+			if (bookmark) {
+				sample.event.type = SAMPLE_EVENT_BOOKMARK;
+				sample.event.time = 0;
+				sample.event.flags = 0;
+				sample.event.value = bookmark;
+				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
 			}
 
 			if (parser->model == GENIUS || parser->model == HORIZON) {

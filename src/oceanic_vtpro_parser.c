@@ -31,8 +31,6 @@
 
 #define ISINSTANCE(parser) dc_parser_isinstance((parser), &oceanic_vtpro_parser_vtable)
 
-#define AERIS500AI 0x4151
-
 typedef struct oceanic_vtpro_parser_t oceanic_vtpro_parser_t;
 
 struct oceanic_vtpro_parser_t {
@@ -53,6 +51,9 @@ static const dc_parser_vtable_t oceanic_vtpro_parser_vtable = {
 	sizeof(oceanic_vtpro_parser_t),
 	DC_FAMILY_OCEANIC_VTPRO,
 	oceanic_vtpro_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	oceanic_vtpro_parser_get_datetime, /* datetime */
 	oceanic_vtpro_parser_get_field, /* fields */
 	oceanic_vtpro_parser_samples_foreach, /* samples_foreach */

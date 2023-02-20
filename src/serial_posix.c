@@ -30,13 +30,13 @@
 #include <fcntl.h>	// fcntl
 #include <termios.h>	// tcgetattr, tcsetattr, cfsetispeed, cfsetospeed, tcflush, tcsendbreak
 #include <sys/ioctl.h>	// ioctl
+#include <sys/select.h>	// select
 #ifdef HAVE_LINUX_SERIAL_H
 #include <linux/serial.h>
 #endif
 #ifdef HAVE_IOKIT_SERIAL_IOSS_H
 #include <IOKit/serial/ioss.h>
 #endif
-#include <stdio.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <fnmatch.h>
@@ -225,7 +225,7 @@ dc_serial_iterator_next (dc_iterator_t *abstract, void *out)
 				continue;
 
 			char filename[sizeof(device->name)];
-			int n = snprintf (filename, sizeof (filename), "%s/%s", DIRNAME, ep->d_name);
+			int n = dc_platform_snprintf (filename, sizeof (filename), "%s/%s", DIRNAME, ep->d_name);
 			if (n < 0 || (size_t) n >= sizeof (filename)) {
 				return DC_STATUS_NOMEMORY;
 			}

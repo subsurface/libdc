@@ -357,6 +357,9 @@ static const dc_parser_vtable_t garmin_parser_vtable = {
 	sizeof(garmin_parser_t),
 	DC_FAMILY_GARMIN,
 	garmin_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	garmin_parser_get_datetime, /* datetime */
 	garmin_parser_get_field, /* fields */
 	garmin_parser_samples_foreach, /* samples_foreach */

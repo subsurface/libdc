@@ -182,6 +182,8 @@
     <ClCompile Include="..\src\cressi_leonardo_parser.c" />
     <ClCompile Include="..\src\custom.c" />
     <ClCompile Include="..\src\datetime.c" />
+    <ClCompile Include="..\src\deepblu_cosmiq.c" />
+    <ClCompile Include="..\src\deepblu_cosmiq_parser.c" />
     <ClCompile Include="..\src\deepsix_excursion.c" />
     <ClCompile Include="..\src\deepsix_excursion_parser.c" />
     <ClCompile Include="..\src\descriptor.c" />
@@ -217,6 +219,9 @@
     <ClCompile Include="..\src\oceanic_veo250_parser.c" />
     <ClCompile Include="..\src\oceanic_vtpro.c" />
     <ClCompile Include="..\src\oceanic_vtpro_parser.c" />
+    <ClCompile Include="..\src\oceans_s1.c" />
+    <ClCompile Include="..\src\oceans_s1_common.c" />
+    <ClCompile Include="..\src\oceans_s1_parser.c" />
     <ClCompile Include="..\src\parser.c" />
     <ClCompile Include="..\src\platform.c" />
     <ClCompile Include="..\src\rbstream.c" />
@@ -308,6 +313,7 @@
     <ClInclude Include="..\src\cressi_edy.h" />
     <ClInclude Include="..\src\cressi_goa.h" />
     <ClInclude Include="..\src\cressi_leonardo.h" />
+    <ClInclude Include="..\src\deepblu_cosmiq.h" />
     <ClInclude Include="..\src\deepsix_excursion.h" />
     <ClInclude Include="..\src\descriptor-private.h" />
     <ClInclude Include="..\src\device-private.h" />
@@ -330,6 +336,8 @@
     <ClInclude Include="..\src\oceanic_common.h" />
     <ClInclude Include="..\src\oceanic_veo250.h" />
     <ClInclude Include="..\src\oceanic_vtpro.h" />
+    <ClInclude Include="..\src\oceans_s1.h" />
+    <ClInclude Include="..\src\oceans_s1_common.h" />
     <ClInclude Include="..\src\parser-private.h" />
     <ClInclude Include="..\src\platform.h" />
     <ClInclude Include="..\src\rbstream.h" />

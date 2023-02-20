@@ -66,6 +66,9 @@
 #define TEC   2
 #define REC   3
 
+#define ZHL16GF 0
+#define RGBM    1
+
 #define NORMAL                 0
 #define BOOKMARK               1
 #define ALARM_DEPTH            2
@@ -123,6 +126,9 @@ static const dc_parser_vtable_t liquivision_lynx_parser_vtable = {
 	sizeof(liquivision_lynx_parser_t),
 	DC_FAMILY_LIQUIVISION_LYNX,
 	liquivision_lynx_parser_set_data, /* set_data */
+	NULL, /* set_clock */
+	NULL, /* set_atmospheric */
+	NULL, /* set_density */
 	liquivision_lynx_parser_get_datetime, /* datetime */
 	liquivision_lynx_parser_get_field, /* fields */
 	liquivision_lynx_parser_samples_foreach, /* samples_foreach */
@@ -231,6 +237,7 @@ liquivision_lynx_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_tank_t *tank = (dc_tank_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
+	dc_decomodel_t *decomodel = (dc_decomodel_t *) value;
 
 	if (value) {
 		switch (type) {
@@ -286,6 +293,22 @@ liquivision_lynx_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 				default:
 					return DC_STATUS_DATAFORMAT;
 				}
+			}
+			break;
+		case DC_FIELD_DECOMODEL:
+			switch (abstract->data[93]) {
+			case ZHL16GF:
+				decomodel->type = DC_DECOMODEL_BUHLMANN;
+				decomodel->conservatism = 0;
+				decomodel->params.gf.low  = 0;
+				decomodel->params.gf.high = 0;
+				break;
+			case RGBM:
+				decomodel->type = DC_DECOMODEL_RGBM;
+				decomodel->conservatism = 0;
+				break;
+			default:
+				return DC_STATUS_DATAFORMAT;
 			}
 			break;
 		case DC_FIELD_GASMIX_COUNT:

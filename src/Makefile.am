@@ -77,6 +77,9 @@ libdivecomputer_la_SOURCES = \
 	sporasub_sp2.h sporasub_sp2.c sporasub_sp2_parser.c \
 	deepsix_excursion.h deepsix_excursion.c deepsix_excursion_parser.c \
 	seac_screen.h seac_screen.c seac_screen_parser.c \
+	deepblu_cosmiq.h deepblu_cosmiq.c deepblu_cosmiq_parser.c \
+	oceans_s1_common.h oceans_s1_common.c \
+	oceans_s1.h oceans_s1.c oceans_s1_parser.c \
 	socket.h socket.c \
 	irda.c \
 	usb.c \
@@ -88,9 +91,7 @@ libdivecomputer_la_SOURCES = \
 libdivecomputer_la_SOURCES += \
 	usb_storage.c \
 	field-cache.h field-cache.c \
-	garmin.h garmin.c garmin_parser.c \
-	deepblu.h deepblu.c deepblu_parser.c \
-	oceans_s1.h oceans_s1.c oceans_s1_parser.c
+	garmin.h garmin.c garmin_parser.c
 
 if OS_WIN32
 libdivecomputer_la_SOURCES += serial_win32.c

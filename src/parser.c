@@ -35,7 +35,6 @@
 #include "uwatec_memomouse.h"
 #include "uwatec_smart.h"
 #include "oceanic_atom2.h"
-#include "oceanic_atom2.h"
 #include "oceanic_veo250.h"
 #include "oceanic_vtpro.h"
 #include "mares_darwin.h"
@@ -62,11 +61,11 @@
 #include "sporasub_sp2.h"
 #include "deepsix_excursion.h"
 #include "seac_screen.h"
+#include "deepblu_cosmiq.h"
+#include "oceans_s1.h"
 
 // Not merged upstream yet
 #include "garmin.h"
-#include "deepblu.h"
-#include "oceans_s1.h"
 
 #include "context-private.h"
 #include "parser-private.h"
@@ -197,18 +196,18 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 	case DC_FAMILY_SEAC_SCREEN:
 		rc = seac_screen_parser_create (&parser, context);
 		break;
+	case DC_FAMILY_DEEPBLU_COSMIQ:
+		rc = deepblu_cosmiq_parser_create (&parser, context);
+		break;
+	case DC_FAMILY_OCEANS_S1:
+		rc = oceans_s1_parser_create (&parser, context);
+		break;
 	default:
 		return DC_STATUS_INVALIDARGS;
 
 	// Not merged upstream yet
 	case DC_FAMILY_GARMIN:
 		rc = garmin_parser_create (&parser, context);
-		break;
-	case DC_FAMILY_DEEPBLU:
-		rc = deepblu_parser_create (&parser, context);
-		break;
-	case DC_FAMILY_OCEANS_S1:
-		rc = oceans_s1_parser_create(&parser, context);
 		break;
 	}
 
@@ -287,6 +286,45 @@ dc_parser_get_type (dc_parser_t *parser)
 		return DC_FAMILY_NULL;
 
 	return parser->vtable->type;
+}
+
+
+dc_status_t
+dc_parser_set_clock (dc_parser_t *parser, unsigned int devtime, dc_ticks_t systime)
+{
+	if (parser == NULL)
+		return DC_STATUS_UNSUPPORTED;
+
+	if (parser->vtable->set_clock == NULL)
+		return DC_STATUS_UNSUPPORTED;
+
+	return parser->vtable->set_clock (parser, devtime, systime);
+}
+
+
+dc_status_t
+dc_parser_set_atmospheric (dc_parser_t *parser, double atmospheric)
+{
+	if (parser == NULL)
+		return DC_STATUS_UNSUPPORTED;
+
+	if (parser->vtable->set_atmospheric == NULL)
+		return DC_STATUS_UNSUPPORTED;
+
+	return parser->vtable->set_atmospheric (parser, atmospheric);
+}
+
+
+dc_status_t
+dc_parser_set_density (dc_parser_t *parser, double density)
+{
+	if (parser == NULL)
+		return DC_STATUS_UNSUPPORTED;
+
+	if (parser->vtable->set_density == NULL)
+		return DC_STATUS_UNSUPPORTED;
+
+	return parser->vtable->set_density (parser, density);
 }
 
 
