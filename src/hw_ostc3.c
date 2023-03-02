@@ -1506,7 +1506,7 @@ hw_ostc3_device_fwupdate3 (dc_device_t *abstract, const char *filename)
 }
 
 static dc_status_t
-hw_ostc3_device_fwupdate4 (dc_device_t *abstract, const char *filename)
+hw_ostc3_device_fwupdate4 (dc_device_t *abstract, const char *filename, bool forceUpdate)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	hw_ostc3_device_t *device = (hw_ostc3_device_t *) abstract;
@@ -1577,7 +1577,7 @@ hw_ostc3_device_fwupdate4 (dc_device_t *abstract, const char *filename)
 		// Upload the firmware blob.
 		// The update is skipped if the two versions are already
 		// identical, or if the blob is not present on the device.
-		if (memcmp(data + offset + 12, fwinfo, sizeof(fwinfo)) != 0 &&
+		if ((memcmp(data + offset + 12, fwinfo, sizeof(fwinfo)) != 0 || forceUpdate) &&
 			!array_isequal(fwinfo, sizeof(fwinfo), 0xFF))
 		{
 			status = hw_ostc3_transfer (device, &progress, S_UPLOAD,
@@ -1600,7 +1600,7 @@ error:
 }
 
 dc_status_t
-hw_ostc3_device_fwupdate (dc_device_t *abstract, const char *filename)
+hw_ostc3_device_fwupdate (dc_device_t *abstract, const char *filename, bool forceUpdate)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	hw_ostc3_device_t *device = (hw_ostc3_device_t *) abstract;
@@ -1615,8 +1615,12 @@ hw_ostc3_device_fwupdate (dc_device_t *abstract, const char *filename)
 	}
 
 	if (device->hardware == OSTC4) {
-		return hw_ostc3_device_fwupdate4 (abstract, filename);
+		return hw_ostc3_device_fwupdate4 (abstract, filename, forceUpdate);
 	} else {
+		if (forceUpdate) {
+			return DC_STATUS_INVALIDARGS;
+		}
+
 		return hw_ostc3_device_fwupdate3 (abstract, filename);
 	}
 }

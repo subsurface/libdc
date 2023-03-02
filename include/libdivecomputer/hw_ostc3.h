@@ -22,6 +22,8 @@
 #ifndef DC_HW_OSTC3_H
 #define DC_HW_OSTC3_H
 
+#include <stdbool.h>
+
 #include "common.h"
 #include "device.h"
 #include "datetime.h"
@@ -55,7 +57,7 @@ dc_status_t
 hw_ostc3_device_config_reset (dc_device_t *abstract);
 
 dc_status_t
-hw_ostc3_device_fwupdate (dc_device_t *abstract, const char *filename);
+hw_ostc3_device_fwupdate (dc_device_t *abstract, const char *filename, bool forceUpdate);
 
 #ifdef __cplusplus
 }
