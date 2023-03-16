@@ -573,6 +573,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				return DC_STATUS_UNSUPPORTED;
 			*((double *) value) = array_uint16_le (data + layout->avgdepth) / 100.0;
 			break;
+		case DC_FIELD_TANK_COUNT:
 		case DC_FIELD_GASMIX_COUNT:
 			*((unsigned int *) value) = parser->ngasmixes;
 			break;
@@ -580,6 +581,19 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
+			break;
+		case DC_FIELD_TANK:
+			if (flags >= parser->ngasmixes) {
+				return DC_STATUS_UNSUPPORTED;
+			}
+
+			dc_tank_t *tank = (dc_tank_t *) value;
+
+			tank->volume = 0.0;
+			tank->gasmix = flags;
+			tank->workpressure = 0.0;
+			tank->type = DC_TANKINFO_METRIC | (parser->gasmix[flags].diluent ? DC_TANKINFO_CC_DILUENT : 0);
+
 			break;
 		case DC_FIELD_SALINITY:
 			if (salinity < 100 || salinity > 104)
