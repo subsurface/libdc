@@ -140,6 +140,7 @@ typedef struct hw_ostc_parser_t {
 	unsigned int initial_setpoint;
 	unsigned int initial_cns;
 	hw_ostc_gasmix_t gasmix[NGASMIXES];
+	unsigned int current_divemode_ccr;
 } hw_ostc_parser_t;
 
 static dc_status_t hw_ostc_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
@@ -801,6 +802,27 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 }
 
 
+static void hw_ostc_notify_bailout(hw_ostc_parser_t *parser, const unsigned char *data, unsigned int index, dc_sample_callback_t callback, void *userdata)
+{
+	if (parser->current_divemode_ccr != parser->gasmix[index].diluent) {
+		dc_sample_value_t sample = {
+			.event.type = SAMPLE_EVENT_STRING,
+			.event.flags = SAMPLE_FLAGS_SEVERITY_INFO,
+		};
+		if (parser->gasmix[index].diluent) {
+			sample.event.name = "Switched to closed circuit";
+		} else {
+			sample.event.name = "Switched to open circuit bailout";
+		}
+
+		if (callback) {
+			callback(DC_SAMPLE_EVENT, sample, userdata);
+		}
+
+		parser->current_divemode_ccr = parser->gasmix[index].diluent;
+	}
+}
+
 static dc_status_t
 hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
 {
@@ -915,6 +937,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 	// Get the CCR mode.
 	unsigned int ccr = hw_ostc_is_ccr (divemode, version);
+	parser->current_divemode_ccr = ccr;
 
 	unsigned int time = 0;
 	unsigned int nsamples = 0;
@@ -1046,6 +1069,9 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 			sample.gasmix = idx;
 			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+
+			hw_ostc_notify_bailout(parser, data, idx, callback, userdata);
+
 			offset += 2;
 			length -= 2;
 		}
@@ -1069,6 +1095,9 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 			sample.gasmix = idx;
 			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
 			tank = idx;
+
+			hw_ostc_notify_bailout(parser, data, idx, callback, userdata);
+
 			offset++;
 			length--;
 		}
@@ -1111,6 +1140,9 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 				sample.gasmix = idx;
 				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+
+				hw_ostc_notify_bailout(parser, data, idx, callback, userdata);
+
 				offset += 2;
 				length -= 2;
 			}
@@ -1244,6 +1276,9 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 				sample.gasmix = idx;
 				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+
+				hw_ostc_notify_bailout(parser, data, idx, callback, userdata);
+
 				offset += 2;
 				length -= 2;
 			}
