@@ -1057,7 +1057,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				return DC_STATUS_DATAFORMAT;
 			}
 			unsigned int idx = data[offset];
-			if (parser->model == OSTC4 && ccr && idx > parser->nfixed && idx <= parser->nfixed + OSTC4_CC_DILUENT_GAS_OFFSET) {
+			if (idx > parser->nfixed && idx <= parser->nfixed + OSTC4_CC_DILUENT_GAS_OFFSET) {
 				// OSTC4 reports gas changes to another diluent with an offset
 				idx -= OSTC4_CC_DILUENT_GAS_OFFSET;
 			}
