@@ -39,6 +39,7 @@
 
 #define MAXCONFIG 7
 #define NGASMIXES 15
+#define OSTC4_CC_DILUENT_GAS_OFFSET 5
 
 #define UNDEFINED 0xFFFFFFFF
 
@@ -1021,8 +1022,15 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				return DC_STATUS_DATAFORMAT;
 			}
 			unsigned int o2 = data[offset];
+			unsigned int diluent;
+			if (parser->model == OSTC4) {
+				// all manually added gas mixes on OSTC4 are OC gases
+				diluent = 0;
+			} else {
+				diluent = ccr;
+			}
 			unsigned int he = data[offset + 1];
-			unsigned int idx = hw_ostc_find_gasmix (parser, o2, he, ccr, MANUAL);
+			unsigned int idx = hw_ostc_find_gasmix (parser, o2, he, diluent, MANUAL);
 			if (idx >= parser->ngasmixes) {
 				if (idx >= NGASMIXES) {
 					ERROR (abstract->context, "Maximum number of gas mixes reached.");
@@ -1032,7 +1040,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				parser->gasmix[idx].helium = he;
 				parser->gasmix[idx].type = 0;
 				parser->gasmix[idx].enabled = 1;
-				parser->gasmix[idx].diluent = ccr;
+				parser->gasmix[idx].diluent = diluent;
 				parser->ngasmixes = idx + 1;
 			}
 
@@ -1049,9 +1057,9 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				return DC_STATUS_DATAFORMAT;
 			}
 			unsigned int idx = data[offset];
-			if (parser->model == OSTC4 && ccr && idx > parser->nfixed) {
-				// Fix the OSTC4 diluent index.
-				idx -= parser->nfixed;
+			if (parser->model == OSTC4 && ccr && idx > parser->nfixed && idx <= parser->nfixed + OSTC4_CC_DILUENT_GAS_OFFSET) {
+				// OSTC4 reports gas changes to another diluent with an offset
+				idx -= OSTC4_CC_DILUENT_GAS_OFFSET;
 			}
 			if (idx < 1 || idx > parser->nfixed) {
 				ERROR(abstract->context, "Invalid gas mix (%u).", idx);
