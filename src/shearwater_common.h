@@ -34,6 +34,9 @@ extern "C" {
 #define ID_FIRMWARE  0x8011
 #define ID_LOGUPLOAD 0x8021
 #define ID_HARDWARE  0x8050
+#define ID_TIME      0x9030
+
+#define WDBI_TIME_PACKET_SIZE 7
 
 #define PREDATOR 2
 #define PETREL   3
@@ -66,6 +69,10 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
 
 dc_status_t
 shearwater_common_identifier (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id);
+
+dc_status_t shearwater_common_can_wdbi (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id);
+
+dc_status_t shearwater_common_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
 
 #ifdef __cplusplus
 }

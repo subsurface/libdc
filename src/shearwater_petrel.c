@@ -44,6 +44,16 @@ typedef struct shearwater_petrel_device_t {
 	unsigned char fingerprint[4];
 } shearwater_petrel_device_t;
 
+
+static dc_status_t shearwater_petrel_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
+{
+	// The Teric will need a different implementation
+	// to properly support time zones
+
+	return shearwater_common_device_timesync(abstract, datetime);
+}
+
+
 static dc_status_t shearwater_petrel_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
 static dc_status_t shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
 static dc_status_t shearwater_petrel_device_close (dc_device_t *abstract);
@@ -56,7 +66,7 @@ static const dc_device_vtable_t shearwater_petrel_device_vtable = {
 	NULL, /* write */
 	NULL, /* dump */
 	shearwater_petrel_device_foreach, /* foreach */
-	NULL, /* timesync */
+	shearwater_petrel_device_timesync,
 	shearwater_petrel_device_close /* close */
 };
 

@@ -36,6 +36,11 @@
 #define ESC_END   0xDC
 #define ESC_ESC   0xDD
 
+// SIDs for CAN WDBI (Write Data By Identifier) as defined by ISO 14229-1
+// (the RDBI command is implemented in shearwater_common_identifier)
+#define CAN_WDBI_REQUEST_SID 0x2E
+#define CAN_WDBI_RESPONSE_SID 0x6E
+
 dc_status_t
 shearwater_common_setup (shearwater_common_device_t *device, dc_context_t *context, dc_iostream_t *iostream)
 {
@@ -545,6 +550,83 @@ shearwater_common_identifier (shearwater_common_device_t *device, dc_buffer_t *b
 		ERROR (abstract->context, "Insufficient buffer space available.");
 		return DC_STATUS_NOMEMORY;
 	}
+
+	return rc;
+}
+
+
+dc_status_t shearwater_common_can_wdbi (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id)
+{
+	dc_device_t *abstract = (dc_device_t *)device;
+
+	unsigned n = 0;
+	char request_header[] = {
+		CAN_WDBI_REQUEST_SID,
+		(id >> 8) & 0xFF,
+		id & 0xFF
+	};
+	if (!dc_buffer_prepend(buffer, request_header, sizeof(request_header))) {
+		ERROR(abstract->context, "Insufficient buffer space available.");
+		return DC_STATUS_NOMEMORY;
+	}
+
+	char response[SZ_PACKET];
+	dc_status_t rc = shearwater_common_transfer(device, dc_buffer_get_data(buffer), dc_buffer_get_size(buffer), response, sizeof(response), &n);
+	if (rc != DC_STATUS_SUCCESS) {
+		return rc;
+	}
+
+	// Verify the response.
+	if (n < 3 || response[0] != CAN_WDBI_RESPONSE_SID || response[1] != request_header[1] || response[2] != request_header[2]) {
+		ERROR(abstract->context, "Unexpected response packet.");
+
+		return DC_STATUS_PROTOCOL;
+	}
+
+	return rc;
+}
+
+
+dc_status_t shearwater_common_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
+{
+	shearwater_common_device_t *device = (shearwater_common_device_t *)abstract;
+
+	dc_datetime_t local_time;
+	memcpy(&local_time, datetime, sizeof(local_time));
+
+	// We need to supply a unix timestamp in _local_ time
+	local_time.timezone = DC_TIMEZONE_NONE;
+
+	dc_ticks_t unix_timestamp = dc_datetime_mktime(&local_time);
+	if (unix_timestamp == -1) {
+		ERROR(abstract->context, "Invalid date/time value specified.");
+
+		return DC_STATUS_INVALIDARGS;
+	}
+
+	char shearwater_timestamp[] = {
+		(unix_timestamp >> 24) & 0xFF,
+		(unix_timestamp >> 16) & 0xFF,
+		(unix_timestamp >> 8) & 0xFF,
+		unix_timestamp & 0xFF
+	};
+
+	dc_buffer_t *buffer = dc_buffer_new(WDBI_TIME_PACKET_SIZE);
+	if (buffer == NULL) {
+		ERROR(abstract->context, "Insufficient buffer space available.");
+		dc_buffer_free(buffer);
+
+		return DC_STATUS_NOMEMORY;
+	}
+
+	dc_buffer_append(buffer, shearwater_timestamp, 4);
+
+	dc_status_t rc = shearwater_common_can_wdbi(device, buffer, ID_TIME);
+	if (rc != DC_STATUS_SUCCESS) {
+		ERROR(abstract->context, "Failed to write the dive computer time.");
+	}
+
+	dc_buffer_free(buffer);
 
 	return rc;
 }
