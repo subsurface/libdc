@@ -253,7 +253,6 @@ AC_CONFIG_FILES([
    include/libdivecomputer/Makefile
    include/libdivecomputer/version.h
    src/Makefile
-   src/libdivecomputer.rc
    doc/Makefile
    doc/doxygen.cfg
    doc/man/Makefile

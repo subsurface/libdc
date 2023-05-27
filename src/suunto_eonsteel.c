@@ -29,6 +29,7 @@
 #include "array.h"
 #include "platform.h"
 #include "checksum.h"
+#include "hdlc.h"
 
 #define EONSTEEL 0
 #define EONCORE  1
@@ -80,14 +81,10 @@ struct directory_entry {
 #define MAXDATA_SIZE 2048
 #define CRC_SIZE    4
 
-// HDLC special characters
-#define END     0x7E
-#define ESC     0x7D
-#define ESC_BIT 0x20
-
 static dc_status_t suunto_eonsteel_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
 static dc_status_t suunto_eonsteel_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
 static dc_status_t suunto_eonsteel_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
+static dc_status_t suunto_eonsteel_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t suunto_eonsteel_device_vtable = {
 	sizeof(suunto_eonsteel_device_t),
@@ -98,7 +95,7 @@ static const dc_device_vtable_t suunto_eonsteel_device_vtable = {
 	NULL, /* dump */
 	suunto_eonsteel_device_foreach, /* foreach */
 	suunto_eonsteel_device_timesync, /* timesync */
-	NULL /* close */
+	suunto_eonsteel_device_close /* close */
 };
 
 static const char dive_directory[] = "0:/dives";
@@ -125,156 +122,6 @@ static struct directory_entry *alloc_dirent(int type, int len, const char *name)
 		res->name[len] = 0;
 	}
 	return res;
-}
-
-static void put_le16(unsigned short val, unsigned char *p)
-{
-	p[0] = val;
-	p[1] = val >> 8;
-}
-
-static void put_le32(unsigned int val, unsigned char *p)
-{
-	p[0] = val;
-	p[1] = val >> 8;
-	p[2] = val >> 16;
-	p[3] = val >> 24;
-}
-
-static dc_status_t
-suunto_eonsteel_hdlc_write (suunto_eonsteel_device_t *device, const unsigned char data[], size_t size, size_t *actual)
-{
-	dc_status_t status = DC_STATUS_SUCCESS;
-	unsigned char buffer[20];
-	size_t nbytes = 0;
-
-	// Start of the packet.
-	buffer[nbytes++] = END;
-
-	for (size_t i = 0; i < size; ++i) {
-		unsigned char c = data[i];
-
-		if (c == END || c == ESC) {
-			// Append the escape character.
-			buffer[nbytes++] = ESC;
-
-			// Flush the buffer if necessary.
-			if (nbytes >= sizeof(buffer)) {
-				status = dc_iostream_write(device->iostream, buffer, nbytes, NULL);
-				if (status != DC_STATUS_SUCCESS) {
-					ERROR(device->base.context, "Failed to send the packet.");
-					return status;
-				}
-
-				nbytes = 0;
-			}
-
-			// Escape the character.
-			c ^= ESC_BIT;
-		}
-
-		// Append the character.
-		buffer[nbytes++] = c;
-
-		// Flush the buffer if necessary.
-		if (nbytes >= sizeof(buffer)) {
-			status = dc_iostream_write(device->iostream, buffer, nbytes, NULL);
-			if (status != DC_STATUS_SUCCESS) {
-				ERROR(device->base.context, "Failed to send the packet.");
-				return status;
-			}
-
-			nbytes = 0;
-		}
-	}
-
-	// End of the packet.
-	buffer[nbytes++] = END;
-
-	// Flush the buffer.
-	status = dc_iostream_write(device->iostream, buffer, nbytes, NULL);
-	if (status != DC_STATUS_SUCCESS) {
-		ERROR(device->base.context, "Failed to send the packet.");
-		return status;
-	}
-
-	if (actual)
-		*actual = size;
-
-	return status;
-
-}
-
-static dc_status_t
-suunto_eonsteel_hdlc_read (suunto_eonsteel_device_t *device, unsigned char data[], size_t size, size_t *actual)
-{
-	dc_status_t status = DC_STATUS_SUCCESS;
-	unsigned char buffer[20];
-	unsigned int initialized = 0;
-	unsigned int escaped = 0;
-	size_t nbytes = 0;
-
-	while (1) {
-		// Read a single data packet.
-		size_t transferred = 0;
-		status = dc_iostream_read(device->iostream, buffer, sizeof(buffer), &transferred);
-		if (status != DC_STATUS_SUCCESS) {
-			ERROR(device->base.context, "Failed to receive the packet.");
-			return status;
-		}
-
-		for (size_t i = 0; i < transferred; ++i) {
-			unsigned char c = buffer[i];
-
-			if (c == END) {
-				if (escaped) {
-					ERROR (device->base.context, "HDLC frame escaped the special character %02x.", c);
-					return DC_STATUS_PROTOCOL;
-				}
-
-				if (initialized) {
-					goto done;
-				}
-
-				initialized = 1;
-				continue;
-			}
-
-			if (!initialized) {
-				continue;
-			}
-
-			if (c == ESC) {
-				if (escaped) {
-					ERROR (device->base.context, "HDLC frame escaped the special character %02x.", c);
-					return DC_STATUS_PROTOCOL;
-				}
-				escaped = 1;
-				continue;
-			}
-
-			if (escaped) {
-				c ^= ESC_BIT;
-				escaped = 0;
-			}
-
-			if (nbytes < size)
-				data[nbytes] = c;
-			nbytes++;
-
-		}
-	}
-
-done:
-	if (nbytes > size) {
-		ERROR(device->base.context, "Insufficient buffer space available.");
-		return DC_STATUS_PROTOCOL;
-	}
-
-	if (actual)
-		*actual = nbytes;
-
-	return status;
 }
 
 /*
@@ -338,7 +185,7 @@ suunto_eonsteel_receive_ble(suunto_eonsteel_device_t *device, unsigned char data
 	unsigned char buffer[HEADER_SIZE + MAXDATA_SIZE + CRC_SIZE];
 	size_t transferred = 0;
 
-	rc = suunto_eonsteel_hdlc_read(device, buffer, sizeof(buffer), &transferred);
+	rc = dc_iostream_read(device->iostream, buffer, sizeof(buffer), &transferred);
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR(device->base.context, "Failed to receive the packet.");
 		return rc;
@@ -352,7 +199,7 @@ suunto_eonsteel_receive_ble(suunto_eonsteel_device_t *device, unsigned char data
 	unsigned int nbytes = transferred - CRC_SIZE;
 
 	unsigned int crc = array_uint32_le(buffer + nbytes);
-	unsigned int ccrc = checksum_crc32(buffer, nbytes);
+	unsigned int ccrc = checksum_crc32r(buffer, nbytes);
 	if (crc != ccrc) {
 		ERROR(device->base.context, "Invalid checksum (expected %08x, received %08x).", ccrc, crc);
 		return DC_STATUS_PROTOCOL;
@@ -394,16 +241,16 @@ suunto_eonsteel_send(suunto_eonsteel_device_t *device,
 	buf[1] = size + HEADER_SIZE;
 
 	// 2-byte LE command word
-	put_le16(cmd, buf + 2);
+	array_uint16_le_set(buf + 2, cmd);
 
 	// 4-byte LE magic value (starts at 1)
-	put_le32(device->magic, buf + 4);
+	array_uint32_le_set(buf + 4, device->magic);
 
 	// 2-byte LE sequence number;
-	put_le16(device->seq, buf + 8);
+	array_uint16_le_set(buf + 8, device->seq);
 
 	// 4-byte LE length
-	put_le32(size, buf + 10);
+	array_uint32_le_set(buf + 10, size);
 
 	// .. followed by actual data
 	if (size) {
@@ -411,11 +258,11 @@ suunto_eonsteel_send(suunto_eonsteel_device_t *device,
 	}
 
 	// 4 byte LE checksum
-	unsigned int crc = checksum_crc32(buf + 2, size + HEADER_SIZE);
-	put_le32(crc, buf + 14 + size);
+	unsigned int crc = checksum_crc32r(buf + 2, size + HEADER_SIZE);
+	array_uint32_le_set(buf + 14 + size, crc);
 
 	if (dc_iostream_get_transport(device->iostream) == DC_TRANSPORT_BLE) {
-		rc = suunto_eonsteel_hdlc_write(device, buf + 2, size + HEADER_SIZE + CRC_SIZE, NULL);
+		rc = dc_iostream_write(device->iostream, buf + 2, size + HEADER_SIZE + CRC_SIZE, NULL);
 	} else {
 		rc = dc_iostream_write(device->iostream, buf, sizeof(buf) - CRC_SIZE, NULL);
 	}
@@ -591,8 +438,8 @@ read_file(suunto_eonsteel_device_t *eon, const char *filename, dc_buffer_t *buf)
 		ask = size;
 		if (ask > 1024)
 			ask = 1024;
-		put_le32(1234, cmdbuf+0);	// Not file offset, after all
-		put_le32(ask, cmdbuf+4);	// Size of read
+		array_uint32_le_set(cmdbuf + 0, 1234);	// Not file offset, after all
+		array_uint32_le_set(cmdbuf + 4, ask);	// Size of read
 		rc = suunto_eonsteel_transfer(eon, CMD_FILE_READ,
 			cmdbuf, 8, result, sizeof(result), &n);
 		if (rc != DC_STATUS_SUCCESS) {
@@ -705,7 +552,7 @@ get_file_list(suunto_eonsteel_device_t *eon, struct directory_entry **res)
 	unsigned int n = 0;
 	unsigned int cmdlen;
 
-	put_le32(0, cmd);
+	array_uint32_le_set(cmd, 0);
 	memcpy(cmd + 4, dive_directory, sizeof(dive_directory));
 	cmdlen = 4 + sizeof(dive_directory);
 	rc = suunto_eonsteel_transfer(eon, CMD_DIR_OPEN,
@@ -771,6 +618,7 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, dc_iostrea
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	suunto_eonsteel_device_t *eon = NULL;
+	dc_transport_t transport = dc_iostream_get_transport (iostream);
 
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
@@ -780,17 +628,26 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, dc_iostrea
 		return DC_STATUS_NOMEMORY;
 
 	// Set up the magic handshake fields
-	eon->iostream = iostream;
 	eon->model = model;
 	eon->magic = INIT_MAGIC;
 	eon->seq = INIT_SEQ;
 	memset (eon->version, 0, sizeof (eon->version));
 	memset (eon->fingerprint, 0, sizeof (eon->fingerprint));
 
+	if (transport == DC_TRANSPORT_BLE) {
+		status = dc_hdlc_open (&eon->iostream, context, iostream, 20, 20);
+		if (status != DC_STATUS_SUCCESS) {
+			ERROR (context, "Failed to create the HDLC stream.");
+			goto error_free;
+		}
+	} else {
+		eon->iostream = iostream;
+	}
+
 	status = dc_iostream_set_timeout(eon->iostream, 5000);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the timeout.");
-		goto error_free;
+		goto error_free_iostream;
 	}
 
 	const unsigned char init[] = {0x02, 0x00, 0x2a, 0x00};
@@ -798,16 +655,32 @@ suunto_eonsteel_device_open(dc_device_t **out, dc_context_t *context, dc_iostrea
 		init, sizeof(init), eon->version, sizeof(eon->version), NULL);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR(context, "unable to initialize device");
-		goto error_free;
+		goto error_free_iostream;
 	}
 
 	*out = (dc_device_t *) eon;
 
 	return DC_STATUS_SUCCESS;
 
+error_free_iostream:
+	if (transport == DC_TRANSPORT_BLE) {
+		dc_iostream_close (eon->iostream);
+	}
 error_free:
-	free(eon);
+	dc_device_deallocate ((dc_device_t *) eon);
 	return status;
+}
+
+static dc_status_t
+suunto_eonsteel_device_close (dc_device_t *abstract)
+{
+	suunto_eonsteel_device_t *device = (suunto_eonsteel_device_t *) abstract;
+
+	if (dc_iostream_get_transport (device->iostream) == DC_TRANSPORT_BLE) {
+		return dc_iostream_close (device->iostream);
+	}
+
+	return DC_STATUS_SUCCESS;
 }
 
 static dc_status_t
@@ -890,7 +763,7 @@ suunto_eonsteel_device_foreach(dc_device_t *abstract, dc_dive_callback_t callbac
 				break;
 			}
 
-			put_le32(time, buf);
+			array_uint32_le_set(buf, time);
 
 			if (memcmp (buf, eon->fingerprint, sizeof (eon->fingerprint)) == 0) {
 				skip = 1;

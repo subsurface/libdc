@@ -63,6 +63,7 @@
 #include "seac_screen.h"
 #include "deepblu_cosmiq.h"
 #include "oceans_s1.h"
+#include "divesoft_freedom.h"
 
 // Not merged upstream yet
 #include "garmin.h"
@@ -201,6 +202,9 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, dc_family_t fa
 		break;
 	case DC_FAMILY_OCEANS_S1:
 		rc = oceans_s1_parser_create (&parser, context);
+		break;
+	case DC_FAMILY_DIVESOFT_FREEDOM:
+		rc = divesoft_freedom_parser_create (&parser, context);
 		break;
 	default:
 		return DC_STATUS_INVALIDARGS;

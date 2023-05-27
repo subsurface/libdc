@@ -65,6 +65,7 @@ static int dc_filter_atomic (dc_transport_t transport, const void *userdata, voi
 static int dc_filter_deepsix (dc_transport_t transport, const void *userdata, void *params);
 static int dc_filter_deepblu (dc_transport_t transport, const void *userdata, void *params);
 static int dc_filter_oceans (dc_transport_t transport, const void *userdata, void *params);
+static int dc_filter_divesoft (dc_transport_t transport, const void *userdata, void *params);
 
 // Not merged upstream yet
 static int dc_filter_garmin (dc_transport_t transport, const void *userdata, void *params);
@@ -454,6 +455,9 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Deepblu", "Cosmiq+", DC_FAMILY_DEEPBLU_COSMIQ, 0, DC_TRANSPORT_BLE, dc_filter_deepblu},
 	/* Oceans S1 */
 	{"Oceans", "S1", DC_FAMILY_OCEANS_S1, 0, DC_TRANSPORT_BLE, dc_filter_oceans},
+	/* Divesoft Freedom */
+	{"Divesoft", "Freedom", DC_FAMILY_DIVESOFT_FREEDOM, 19, DC_TRANSPORT_BLE, dc_filter_divesoft},
+	{"Divesoft", "Liberty", DC_FAMILY_DIVESOFT_FREEDOM, 10, DC_TRANSPORT_BLE, dc_filter_divesoft},
 
 	// Not merged upstream yet
 	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model) */
@@ -799,6 +803,20 @@ static int dc_filter_oceans (dc_transport_t transport, const void *userdata, voi
 {
 	static const char * const bluetooth[] = {
 		"S1",
+	};
+
+	if (transport == DC_TRANSPORT_BLE) {
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_prefix);
+	}
+
+	return 1;
+}
+
+static int dc_filter_divesoft (dc_transport_t transport, const void *userdata, void *params)
+{
+	static const char * const bluetooth[] = {
+		"Freedom",
+		"Liberty",
 	};
 
 	if (transport == DC_TRANSPORT_BLE) {
