@@ -47,8 +47,71 @@ typedef struct shearwater_petrel_device_t {
 
 static dc_status_t shearwater_petrel_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
 {
-	// The Teric will need a different implementation
-	// to properly support time zones
+	shearwater_common_device_t *device = (shearwater_common_device_t *)abstract;
+
+	unsigned int model = 0;
+	shearwater_common_read_model(device, &model);
+	if (model == TERIC) {
+		dc_ticks_t unix_timestamp = dc_datetime_mktime(datetime);
+		if (unix_timestamp == -1) {
+			ERROR(abstract->context, "Invalid date/time value specified.");
+
+			return DC_STATUS_INVALIDARGS;
+		}
+
+		dc_buffer_t *buffer = dc_buffer_new(WDBI_TIME_PACKET_SIZE);
+		if (buffer == NULL) {
+			ERROR(abstract->context, "Insufficient buffer space available.");
+			dc_buffer_free(buffer);
+
+			return DC_STATUS_NOMEMORY;
+		}
+
+		char shearwater_timestamp[] = {
+			(unix_timestamp >> 24) & 0xFF,
+			(unix_timestamp >> 16) & 0xFF,
+			(unix_timestamp >> 8) & 0xFF,
+			unix_timestamp & 0xFF,
+		};
+		dc_buffer_append(buffer, shearwater_timestamp, 4);
+
+		dc_status_t rc = shearwater_common_can_wdbi(device, buffer, ID_UTC_TIME);
+		if (rc != DC_STATUS_SUCCESS) {
+			ERROR(abstract->context, "Failed to write the dive computer UTC time.");
+		}
+
+		dc_buffer_clear(buffer);
+
+		int local_time_offset_minutes = datetime->timezone / 60;
+		char shearwater_local_time_offset[] = {
+			(local_time_offset_minutes >> 24) & 0xFF,
+			(local_time_offset_minutes >> 16) & 0xFF,
+			(local_time_offset_minutes >> 8) & 0xFF,
+			local_time_offset_minutes & 0xFF,
+		};
+		dc_buffer_append(buffer, shearwater_local_time_offset, 4);
+
+		rc = shearwater_common_can_wdbi(device, buffer, ID_LOCAL_TIME_OFFSET);
+		if (rc != DC_STATUS_SUCCESS) {
+			ERROR(abstract->context, "Failed to write the dive computer local time offset.");
+		}
+
+		dc_buffer_clear(buffer);
+
+		// We don't have a way to determine the daylight savings time setting,
+		// but the required offset is already factored into ID_LOCAL_TIME_OFFSET
+		char shearwater_local_time_dst[] = { 0, 0, 0, 0 };
+		dc_buffer_append(buffer, shearwater_local_time_dst, 4);
+
+		rc = shearwater_common_can_wdbi(device, buffer, ID_LOCAL_TIME_DST);
+		if (rc != DC_STATUS_SUCCESS) {
+			ERROR(abstract->context, "Failed to write the dive computer DST setting.");
+		}
+
+		dc_buffer_free(buffer);
+
+		return rc;
+	}
 
 	return shearwater_common_device_timesync(abstract, datetime);
 }
@@ -209,73 +272,8 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	// Convert to a number.
 	unsigned int firmware = str2num (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer), 1);
 
-	// Read the hardware type.
-	rc = shearwater_common_identifier (&device->base, buffer, ID_HARDWARE);
-	if (rc != DC_STATUS_SUCCESS) {
-		ERROR (abstract->context, "Failed to read the hardware type.");
-		dc_buffer_free (buffer);
-		dc_buffer_free (manifests);
-		return rc;
-	}
-
-	// Convert and map to the model number.
-	unsigned int hardware = array_uint_be (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer));
 	unsigned int model = 0;
-	switch (hardware) {
-	case 0x0101:
-	case 0x0202:
-		model = PREDATOR;
-		break;
-	case 0x0606:
-	case 0x0A0A: // Nerd 1
-		model = NERD;
-		break;
-	case 0x7E2D:
-	case 0x0E0D: // Nerd 2
-		model = NERD2;
-		break;
-	case 0x0404:
-	case 0x0909: // Petrel 1
-		model = PETREL;
-		break;
-	case 0x0505:
-	case 0x0808:
-	case 0x0838:
-	case 0x08A5:
-	case 0x7828:
-	case 0x7B2C:
-	case 0x8838: // Petrel 2
-	case 0x0B0B: // current docs (June 2023) imply this is a Petrel 2
-		model = PETREL;
-		break;
-	case 0xB407: // Petrel 3
-		model = PETREL3;
-		break;
-	case 0x0707: // Perdix
-		model = PERDIX;
-		break;
-	case 0x0C0C: // current docs (June 2023) imply this is not a valid hardware ID
-	case 0x0C0D: // current docs (June 2023) show this as Perdix AI
-	case 0x0D0D: // current docs (June 2023) imply this is not a valid hardware ID
-	case 0x7C2D: // Perdix AI
-	case 0x8D6C:
-		model = PERDIXAI;
-		break;
-	case 0xC407: // Perdix 2
-		model = PERDIX2;
-		break;
-	case 0x0F0F:
-	case 0x1F0A:
-	case 0x1F0F:
-		model = TERIC;
-		break;
-	case 0x1512:
-		model = PEREGRINE;
-		break;
-	default:
-		// return a model of 0 which is unknown
-		WARNING (abstract->context, "Unknown hardware type %04x. Assuming Petrel.", hardware);
-	}
+	shearwater_common_read_model((shearwater_common_device_t *)device, &model);
 
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
