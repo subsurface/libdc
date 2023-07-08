@@ -240,7 +240,7 @@ hw_ostc3_write (hw_ostc3_device_t *device, dc_event_progress_t *progress, const 
 	size_t nbytes = 0;
 	while (nbytes < size) {
 		// Set the maximum packet size.
-		size_t length = 1024;
+		size_t length = 64;
 
 		// Limit the packet size to the total size.
 		if (nbytes + length > size)
@@ -1717,6 +1717,10 @@ hw_ostc3_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	dc_status_t rc = hw_ostc3_device_init (device, SERVICE);
 	if (rc != DC_STATUS_SUCCESS) {
 		return rc;
+	}
+
+	if (device->hardware == OSTC4) {
+		return DC_STATUS_UNSUPPORTED;
 	}
 
 	// Emit a device info event.
