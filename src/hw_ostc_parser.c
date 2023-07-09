@@ -578,12 +578,21 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			*((unsigned int *) value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
+			if (flags >= parser->ngasmixes) {
+				return DC_STATUS_UNSUPPORTED;
+			}
+
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
+			if (!parser->gasmix[flags].enabled) {
+				// Indicate that this gasmix is not active
+				return DC_STATUS_UNSUPPORTED;
+			}
+
 			break;
 		case DC_FIELD_TANK:
-			if (flags >= parser->ngasmixes) {
+			if (flags >= parser->ngasmixes || !parser->gasmix[flags].enabled) {
 				return DC_STATUS_UNSUPPORTED;
 			}
 
