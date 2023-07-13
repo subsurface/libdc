@@ -1144,14 +1144,6 @@ static const struct msg_desc *lookup_msg_desc(unsigned short msg, int local, con
 	return desc;
 }
 
-static int traverse_compressed(struct garmin_parser_t *garmin,
-	const unsigned char *data, unsigned int size,
-	unsigned char type, unsigned int time)
-{
-	fprintf(stderr, "Compressed record for local type %d:\n", type);
-	return -1;
-}
-
 static int all_data_inval(const unsigned char *data, int base_type, int len)
 {
 	int base_size = base_type_info[base_type].type_size;
@@ -1413,10 +1405,17 @@ traverse_data(struct garmin_parser_t *garmin)
 				newtime += 0x20;
 			time = newtime;
 
-			len = traverse_compressed(garmin, data, datasize, type, time);
+			// Compressed records are like normal records
+			// with that added relative timestamp
+			DEBUG(garmin->base.context, "Compressed record for type %d", type);
+			HEXDUMP(garmin->base.context, DC_LOGLEVEL_DEBUG, "data", data, 40);
+			parse_ANY_timestamp(garmin, time);
+			len = traverse_regular(garmin, data, datasize, type, &time);
 		} else if (record & 0x40) {	// Definition record?
 			len = traverse_definition(garmin, data, datasize, record);
 		} else {			// Normal data record
+			DEBUG(garmin->base.context, "Regular record for type %d", record);
+			HEXDUMP(garmin->base.context, DC_LOGLEVEL_DEBUG, "data", data, 40);
 			len = traverse_regular(garmin, data, datasize, record, &time);
 		}
 		if (len <= 0 || len > datasize)
