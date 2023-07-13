@@ -1241,20 +1241,17 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 
 		if (!len) {
 			ERROR(garmin->base.context, "field with zero length\n");
-			return -1;
+			return total_len + size;
 		}
 
 		if (size < len) {
 			ERROR(garmin->base.context, "Data traversal size bigger than remaining data (%d vs %d)\n", len, size);
-			return -1;
+			return total_len + size;
 		}
 
 		if (base_type > 16) {
 			ERROR(garmin->base.context, "Unknown base type %d\n", base_type);
-			data += size;
-			len -= size;
-			total_len += size;
-			continue;
+			return total_len + size;
 		}
 		base_size = base_type_info[base_type].type_size;
 		if (len % base_size) {
