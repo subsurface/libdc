@@ -38,7 +38,7 @@ struct msg_desc;
 struct type_desc {
 	const char *msg_name;
 	const struct msg_desc *msg_desc;
-	unsigned char nrfields;
+	unsigned char nrfields, devfields;
 	unsigned char fields[MAXFIELDS][3];
 };
 
@@ -1281,6 +1281,31 @@ static int traverse_regular(struct garmin_parser_t *garmin,
 		size -= len;
 	}
 
+	for (int i = 0; i < desc->devfields; i++) {
+		int desc_idx = i + desc->nrfields;
+		const unsigned char *field = desc->fields[desc_idx];
+		unsigned int field_nr = field[0];
+		unsigned int len = field[1];
+		unsigned int type = field[2];
+
+		DEBUG(garmin->base.context, "Developer field %d %02x type %02x", i, field_nr, type);
+
+		if (!len) {
+			ERROR(garmin->base.context, "  developer field with zero length\n");
+			return -1;
+		}
+
+		if (size < len) {
+			ERROR(garmin->base.context, "  developer field bigger than remaining data (%d vs %d)\n", len, size);
+			return -1;
+		}
+
+		HEXDUMP(garmin->base.context, DC_LOGLEVEL_DEBUG, "data", data, len);
+		data += len;
+		total_len += len;
+		size -= len;
+	}
+
 	return total_len;
 }
 
@@ -1328,18 +1353,41 @@ static int traverse_definition(struct garmin_parser_t *garmin,
 	desc->nrfields = fields;
 	len = 5 + fields*3;
 	devfields = 0;
-	if (record & 0x20) {
-		devfields = data[len];
-		len += 1 + devfields*3;
-		ERROR(garmin->base.context, "NO support for developer fields yet\n");
-		return -1;
-	}
 
 	for (int i = 0; i < fields; i++) {
 		unsigned char *field = desc->fields[i];
 		memcpy(field, data + (5+i*3), 3);
 		DEBUG(garmin->base.context, "  %d: %02x %02x %02x", i, field[0], field[1], field[2]);
 	}
+
+	data += len;
+
+	/* Developer fields after the regular ones */
+	if (record & 0x20) {
+		devfields = data[0];
+		DEBUG(garmin->base.context, "Developer field (rec=%02x len=%d, devfields=%d)",
+			record, len, devfields);
+		HEXDUMP (garmin->base.context, DC_LOGLEVEL_DEBUG, "data", data, 40);
+
+		/*
+		 * one byte of dev field numbers, each three bytes in size
+		 * (number/size/index)
+		 */
+		len += 1 + 3*devfields;
+
+		for (int i = 0; i < devfields; i++) {
+			int idx = fields + i;
+			unsigned char *field = desc->fields[idx];
+			if (idx > MAXFIELDS) {
+				ERROR(garmin->base.context, "Too many dev fields in description: %d+%d (max %d)\n", fields, i, MAXFIELDS);
+				return -1;
+			}
+			memcpy(field, data + (1+i*3), 3);
+			DEBUG(garmin->base.context, "  %d: %02x %02x %02x", i, field[0], field[1], field[2]);
+		}
+	}
+
+	desc->devfields = devfields;
 
 	return len;
 }
