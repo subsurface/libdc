@@ -52,6 +52,7 @@ typedef struct garmin_device_t {
 	dc_device_t base;
 	dc_iostream_t *iostream;
 	unsigned char fingerprint[FIT_NAME_SIZE];
+	unsigned int model;
 #ifdef HAVE_LIBMTP
 	unsigned char use_mtp;
 	LIBMTP_mtpdevice_t *mtp_device;
@@ -92,6 +93,7 @@ garmin_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *ios
 	// Set the default values.
 	device->iostream = iostream;
 	memset(device->fingerprint, 0, sizeof(device->fingerprint));
+	device->model = model;
 
 #ifdef HAVE_LIBMTP
 	// for a Descent Mk2/Mk2i, we have to use MTP to access its storage;
@@ -564,7 +566,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		data = dc_buffer_get_data(file);
 		size = dc_buffer_get_size(file);
 
-		is_dive = garmin_parser_is_dive(parser, data, size, devinfo_p);
+		is_dive = !device->model || garmin_parser_is_dive(parser, data, size, devinfo_p);
 		if (devinfo_p) {
 			// first time we came through here, let's emit the
 			// devinfo and vendor events

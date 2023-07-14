@@ -465,6 +465,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* for the Mk2 we are using the model of the global model - the APAC model is 3702 */
 	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
 	{"Garmin", "Descent Mk2/Mk2i", DC_FAMILY_GARMIN, 3258, DC_TRANSPORT_USBSTORAGE, dc_filter_garmin},
+	{"FIT", "File import", DC_FAMILY_GARMIN, 0, DC_TRANSPORT_USBSTORAGE, NULL },
 };
 
 static int
