@@ -49,11 +49,6 @@ garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigne
 // special fixed header in the parser data too.
 #define FIT_NAME_SIZE 24
 
-struct fit_file {
-	char name[FIT_NAME_SIZE + 1];
-	unsigned int mtp_id;
-};
-
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

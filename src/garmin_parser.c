@@ -1409,7 +1409,7 @@ traverse_data(struct garmin_parser_t *garmin)
 	if (len < FIT_NAME_SIZE)
 		return DC_STATUS_IO;
 
-	DEBUG(garmin->base.context, "file %s", data);
+	DEBUG(garmin->base.context, "file %.*s", FIT_NAME_SIZE, data);
 
 	data += FIT_NAME_SIZE;
 	len -= FIT_NAME_SIZE;

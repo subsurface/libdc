@@ -138,6 +138,17 @@ garmin_device_close (dc_device_t *abstract)
 	return DC_STATUS_SUCCESS;
 }
 
+/*
+ * NOTE! The fingerprint is only the 24 first bytes of this,
+ * aka FIT_NAME_SIZE.
+ */
+#define FILE_NAME_SIZE 64
+
+struct fit_file {
+	char name[FILE_NAME_SIZE + 1];
+	unsigned int mtp_id;
+};
+
 struct file_list {
 	int nr, allocated;
 	struct fit_file *array;
@@ -175,8 +186,8 @@ static int name_cmp(const void *_a, const void *_b)
 	const char *a_name = a->name;
 	const char *b_name = b->name;
 
-	char a_buffer[FIT_NAME_SIZE];
-	char b_buffer[FIT_NAME_SIZE];
+	char a_buffer[FILE_NAME_SIZE];
+	char b_buffer[FILE_NAME_SIZE];
 
 	if (strlen(a_name) == 12) {
 		parse_short_name(a_name, a_buffer);
@@ -202,19 +213,16 @@ static int
 check_filename(dc_device_t *abstract, const char *name)
 {
 	int len = strlen(name);
-	const char *explain = NULL;
-
-	DEBUG(abstract->context, "  %s", name);
 
 	if (len < 5)
-		explain = "name too short";
-	if (len >= FIT_NAME_SIZE)
-		explain = "name too long";
+		return 0;
+	if (len >= FILE_NAME_SIZE)
+		return 0;
 	if (strncasecmp(name + len - 4, ".FIT", 4))
-		explain = "name lacks FIT suffix";
+		return 0;
 
-	DEBUG(abstract->context, "  %s - %s", name, explain ? explain : "adding to list");
-	return explain == NULL;
+	DEBUG(abstract->context, "  %s - adding to list", name);
+	return 1;
 }
 
 static dc_status_t
@@ -245,8 +253,8 @@ add_name(struct file_list *files, const char *name, unsigned int mtp_id)
 	 * will zero-pad the end of the result buffer.
 	 */
 	struct fit_file *entry = files->array + files->nr++;
-	strncpy(entry->name, name, FIT_NAME_SIZE);
-	entry->name[FIT_NAME_SIZE] = 0; // ensure it's null-terminated
+	strncpy(entry->name, name, FILE_NAME_SIZE);
+	entry->name[FILE_NAME_SIZE] = 0; // ensure it's null-terminated
 	entry->mtp_id = mtp_id;
 }
 
@@ -409,7 +417,7 @@ read_file(char *pathname, int pathlen, const char *name, dc_buffer_t *file)
 	int fd, rc;
 
 	pathname[pathlen] = '/';
-	memcpy(pathname+pathlen+1, name, FIT_NAME_SIZE);
+	memcpy(pathname+pathlen+1, name, FILE_NAME_SIZE);
 	fd = open(pathname, O_RDONLY | O_BINARY);
 
 	if (fd < 0)
@@ -468,7 +476,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	// The actual dives are under the "Garmin/Activity/" directory
 	// as FIT files, with names like "2018-08-20-10-23-30.fit".
 	// Make sure our buffer is big enough.
-	if (pathlen + strlen("/Garmin/Activity/") + FIT_NAME_SIZE + 2 > PATH_MAX) {
+	if (pathlen + strlen("/Garmin/Activity/") + FILE_NAME_SIZE + 2 > PATH_MAX) {
 		ERROR (abstract->context, "Invalid Garmin base directory '%s'", pathname_input);
 		return DC_STATUS_IO;
 	}
