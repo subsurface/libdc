@@ -635,6 +635,15 @@ DECLARE_FIELD(DEVICE_INFO, firmware, UINT16)
 	garmin->record_data.pending |= RECORD_DEVICE_INFO;
 }
 
+// ACTIVITY
+DECLARE_FIELD(ACTIVITY, total_timer_time, UINT32) { }
+DECLARE_FIELD(ACTIVITY, num_sessions, UINT16) { }
+DECLARE_FIELD(ACTIVITY, type, ENUM) { }
+DECLARE_FIELD(ACTIVITY, event, ENUM) { }
+DECLARE_FIELD(ACTIVITY, event_type, ENUM) { }
+DECLARE_FIELD(ACTIVITY, local_timestamp, UINT32) { }
+DECLARE_FIELD(ACTIVITY, event_group, UINT8) { }
+
 // SPORT
 DECLARE_FIELD(SPORT, sub_sport, ENUM) {
 	garmin->dive.sub_sport = (ENUM) data;
@@ -999,7 +1008,19 @@ DECLARE_MESG(DEVICE_INFO) = {
 	}
 };
 
-DECLARE_MESG(ACTIVITY) = { };
+DECLARE_MESG(ACTIVITY) = {
+	.maxfield = 7,
+	.field = {
+		SET_FIELD(ACTIVITY, 0, total_timer_time, UINT32),
+		SET_FIELD(ACTIVITY, 1, num_sessions, UINT16),
+		SET_FIELD(ACTIVITY, 2, type, ENUM),
+		SET_FIELD(ACTIVITY, 3, event, ENUM),
+		SET_FIELD(ACTIVITY, 4, event_type, ENUM),
+		SET_FIELD(ACTIVITY, 5, local_timestamp, UINT32),
+		SET_FIELD(ACTIVITY, 6, event_group, UINT8),
+	}
+};
+
 DECLARE_MESG(FILE_CREATOR) = { };
 
 DECLARE_MESG(DIVE_SETTINGS) = {
