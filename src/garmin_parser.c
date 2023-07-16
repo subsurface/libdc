@@ -868,6 +868,17 @@ DECLARE_FIELD(EVENT, tank_pressure_reserve, UINT32Z) { }	// sensor ID
 DECLARE_FIELD(EVENT, tank_pressure_critical, UINT32Z) { }	// sensor ID
 DECLARE_FIELD(EVENT, tank_pressure_lost, UINT32Z) { }		// sensor ID
 
+// "Field description" (for developer fields)
+DECLARE_FIELD(FIELD_DESCRIPTION, data_index, UINT8) { }
+DECLARE_FIELD(FIELD_DESCRIPTION, field_definition, UINT8) { }
+DECLARE_FIELD(FIELD_DESCRIPTION, base_type, UINT8) { }
+DECLARE_FIELD(FIELD_DESCRIPTION, name, STRING) { } 		// "Depth"
+DECLARE_FIELD(FIELD_DESCRIPTION, scale, UINT8) { }
+DECLARE_FIELD(FIELD_DESCRIPTION, offset, SINT8) { }
+DECLARE_FIELD(FIELD_DESCRIPTION, unit, STRING) { }		// "feet"
+DECLARE_FIELD(FIELD_DESCRIPTION, original_mesg, UINT16) { }
+DECLARE_FIELD(FIELD_DESCRIPTION, original_field, UINT8) { }
+
 struct msg_desc {
 	unsigned char maxfield;
 	const struct field_desc *field[];
@@ -1104,6 +1115,22 @@ DECLARE_MESG(TANK_SUMMARY) = {
 	}
 };
 
+DECLARE_MESG(FIELD_DESCRIPTION) = {
+	.maxfield = 16,
+	.field = {
+		SET_FIELD(FIELD_DESCRIPTION, 0, data_index, UINT8),
+		SET_FIELD(FIELD_DESCRIPTION, 1, field_definition, UINT8),
+		SET_FIELD(FIELD_DESCRIPTION, 2, base_type, UINT8),
+		SET_FIELD(FIELD_DESCRIPTION, 3, name, STRING),		// "Depth"
+		SET_FIELD(FIELD_DESCRIPTION, 6, scale, UINT8),
+		SET_FIELD(FIELD_DESCRIPTION, 7, offset, SINT8),
+		SET_FIELD(FIELD_DESCRIPTION, 8, unit, STRING),		// "feet"
+		// Some kind of pointer to original field?
+		SET_FIELD(FIELD_DESCRIPTION, 14, original_mesg, UINT16),
+		SET_FIELD(FIELD_DESCRIPTION, 15, original_field, UINT8),
+	}
+};
+
 // Unknown global message ID's..
 DECLARE_MESG(WTF_13) = { };
 DECLARE_MESG(WTF_22) = { };
@@ -1144,6 +1171,8 @@ static const struct {
 	SET_MESG(141, WTF_141),
 
 	SET_MESG(147, SENSOR_PROFILE),
+
+	SET_MESG(206, FIELD_DESCRIPTION),
 
 	SET_MESG(216, WTF_216),
 	SET_MESG(233, WTF_233),
