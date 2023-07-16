@@ -1388,7 +1388,6 @@ static int traverse_definition(struct garmin_parser_t *garmin,
 		devfields = data[0];
 		DEBUG(garmin->base.context, "Developer field (rec=%02x len=%d, devfields=%d)",
 			record, len, devfields);
-		HEXDUMP (garmin->base.context, DC_LOGLEVEL_DEBUG, "data", data, 40);
 
 		/*
 		 * one byte of dev field numbers, each three bytes in size
@@ -1477,14 +1476,12 @@ traverse_data(struct garmin_parser_t *garmin)
 			// Compressed records are like normal records
 			// with that added relative timestamp
 			DEBUG(garmin->base.context, "Compressed record for type %d", type);
-			HEXDUMP(garmin->base.context, DC_LOGLEVEL_DEBUG, "data", data, 40);
 			parse_ANY_timestamp(garmin, time);
 			len = traverse_regular(garmin, data, datasize, type, &time);
 		} else if (record & 0x40) {	// Definition record?
 			len = traverse_definition(garmin, data, datasize, record);
 		} else {			// Normal data record
 			DEBUG(garmin->base.context, "Regular record for type %d", record);
-			HEXDUMP(garmin->base.context, DC_LOGLEVEL_DEBUG, "data", data, 40);
 			len = traverse_regular(garmin, data, datasize, record, &time);
 		}
 		if (len <= 0 || len > datasize)
