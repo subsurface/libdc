@@ -523,6 +523,7 @@ DECLARE_FIELD(FILE, serial, UINT32Z) { }
 DECLARE_FIELD(FILE, creation_time, UINT32) { }
 DECLARE_FIELD(FILE, number, UINT16) { }
 DECLARE_FIELD(FILE, other_time, UINT32) { }
+DECLARE_FIELD(FILE, product_name, STRING) { }
 
 // SESSION msg
 DECLARE_FIELD(SESSION, start_time, UINT32)	{ garmin->dive.time = data; }
@@ -897,7 +898,7 @@ struct msg_desc {
 	static const struct msg_desc name##_msg_desc
 
 DECLARE_MESG(FILE) = {
-	.maxfield = 8,
+	.maxfield = 9,
 	.field = {
 		SET_FIELD(FILE, 0, file_type, ENUM),
 		SET_FIELD(FILE, 1, manufacturer, UINT16),
@@ -906,6 +907,7 @@ DECLARE_MESG(FILE) = {
 		SET_FIELD(FILE, 4, creation_time, UINT32),
 		SET_FIELD(FILE, 5, number, UINT16),
 		SET_FIELD(FILE, 7, other_time, UINT32),
+		SET_FIELD(FILE, 8, product_name, STRING),
 	}
 };
 
@@ -1633,9 +1635,11 @@ garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsign
 	traverse_data(garmin);
 
 	// Device information
-	dc_field_add_string_fmt(&garmin->cache, "Serial", "%u", garmin->dive.serial);
-	dc_field_add_string_fmt(&garmin->cache, "Firmware", "%u.%02u",
-		garmin->dive.firmware / 100, garmin->dive.firmware % 100);
+	if (garmin->dive.serial)
+		dc_field_add_string_fmt(&garmin->cache, "Serial", "%u", garmin->dive.serial);
+	if (garmin->dive.firmware)
+		dc_field_add_string_fmt(&garmin->cache, "Firmware", "%u.%02u",
+			garmin->dive.firmware / 100, garmin->dive.firmware % 100);
 
 	// These seem to be the "real" GPS dive coordinates
 	add_gps_string(garmin, "GPS1", &garmin->gps.SESSION.entry);
