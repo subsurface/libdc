@@ -556,7 +556,10 @@ DECLARE_FIELD(RECORD, heart_rate, UINT8)		// bpm
 		garmin->callback(DC_SAMPLE_HEARTBEAT, sample, garmin->userdata);
 	}
 }
+DECLARE_FIELD(RECORD, cadence, UINT8) { }		// cadence
+DECLARE_FIELD(RECORD, fract_cadence, UINT8) { }		// fractional cadence
 DECLARE_FIELD(RECORD, distance, UINT32) { }		// Distance in 100 * m? WTF?
+DECLARE_FIELD(RECORD, speed, UINT16) { }		// Speed (m/s?)
 DECLARE_FIELD(RECORD, temperature, SINT8)		// degrees C
 {
 	if (garmin->callback) {
@@ -944,8 +947,11 @@ DECLARE_MESG(RECORD) = {
 		SET_FIELD(RECORD, 1, position_long, SINT32),	// 180 deg / 2**31
 		SET_FIELD(RECORD, 2, altitude, UINT16),		// 5 *m + 500 ?
 		SET_FIELD(RECORD, 3, heart_rate, UINT8),	// bpm
+		SET_FIELD(RECORD, 4, cadence, UINT8),		// cadence
 		SET_FIELD(RECORD, 5, distance, UINT32),		// Distance in 100 * m? WTF?
+		SET_FIELD(RECORD, 6, speed, UINT16),		// m/s? Who knows..
 		SET_FIELD(RECORD, 13, temperature, SINT8),	// degrees C
+		SET_FIELD(RECORD, 53, fract_cadence, UINT8),	// fractional cadence
 		SET_FIELD(RECORD, 91, abs_pressure, UINT32),	// Pascal
 		SET_FIELD(RECORD, 92, depth, UINT32),		// mm
 		SET_FIELD(RECORD, 93, next_stop_depth, UINT32),	// mm
