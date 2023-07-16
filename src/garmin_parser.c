@@ -386,28 +386,51 @@ garmin_parser_create (dc_parser_t **out, dc_context_t *context)
 	return DC_STATUS_SUCCESS;
 }
 
-#define DECLARE_FIT_TYPE(name, ctype, inval) \
+/*
+ * We really shouldn't use array_uint_be/le, since they
+ * can't deal with 64-bit types.
+ *
+ * But we've not actually seen any yet, so..
+ */
+static inline unsigned long long garmin_value(struct garmin_parser_t *g, const unsigned char *p, unsigned int type_size)
+{
+	if (g->is_big_endian)
+		return array_uint_be(p, type_size);
+	else
+		return array_uint_le(p, type_size);
+}
+
+#define FMTSIZE 64
+
+#define DECLARE_FIT_TYPE(name, ctype, inval, fmt) \
 	typedef ctype name;	\
-	static const name name##_INVAL = inval
+	static const name name##_INVAL = inval; \
+	static name name##_VALUE(garmin_parser_t *g, const void *p) \
+	{ return (name) garmin_value(g, p, sizeof(name)); } \
+	static void name##_FORMAT(name val, char *buf) \
+	{ snprintf(buf, FMTSIZE, fmt, val); }
 
-DECLARE_FIT_TYPE(ENUM, unsigned char, 0xff);
-DECLARE_FIT_TYPE(UINT8, unsigned char, 0xff);
-DECLARE_FIT_TYPE(UINT16, unsigned short, 0xffff);
-DECLARE_FIT_TYPE(UINT32, unsigned int, 0xffffffff);
-DECLARE_FIT_TYPE(UINT64, unsigned long long, 0xffffffffffffffffull);
+DECLARE_FIT_TYPE(ENUM, unsigned char, 0xff, "%u");
+DECLARE_FIT_TYPE(UINT8, unsigned char, 0xff, "%u");
+DECLARE_FIT_TYPE(UINT16, unsigned short, 0xffff, "%u");
+DECLARE_FIT_TYPE(UINT32, unsigned int, 0xffffffff, "%u");
+DECLARE_FIT_TYPE(UINT64, unsigned long long, 0xffffffffffffffffull, "%llu");
 
-DECLARE_FIT_TYPE(UINT8Z, unsigned char, 0);
-DECLARE_FIT_TYPE(UINT16Z, unsigned short, 0);
-DECLARE_FIT_TYPE(UINT32Z, unsigned int, 0);
+DECLARE_FIT_TYPE(UINT8Z, unsigned char, 0, "%u");
+DECLARE_FIT_TYPE(UINT16Z, unsigned short, 0, "%u");
+DECLARE_FIT_TYPE(UINT32Z, unsigned int, 0, "%u");
 
-DECLARE_FIT_TYPE(SINT8, signed char, 0x7f);
-DECLARE_FIT_TYPE(SINT16, signed short, 0x7fff);
-DECLARE_FIT_TYPE(SINT32, signed int, 0x7fffffff);
-DECLARE_FIT_TYPE(SINT64, signed long long, 0x7fffffffffffffffll);
+DECLARE_FIT_TYPE(SINT8, signed char, 0x7f, "%d");
+DECLARE_FIT_TYPE(SINT16, signed short, 0x7fff, "%d");
+DECLARE_FIT_TYPE(SINT32, signed int, 0x7fffffff, "%d");
+DECLARE_FIT_TYPE(SINT64, signed long long, 0x7fffffffffffffffll, "%lld");
 
-DECLARE_FIT_TYPE(FLOAT, unsigned int, 0xffffffff);
-DECLARE_FIT_TYPE(DOUBLE, unsigned long long, 0xffffffffffffffffll);
-DECLARE_FIT_TYPE(STRING, char *, NULL);
+DECLARE_FIT_TYPE(FLOAT, unsigned int, 0xffffffff, "%u");
+DECLARE_FIT_TYPE(DOUBLE, unsigned long long, 0xffffffffffffffffll, "%llu");
+DECLARE_FIT_TYPE(STRING, char *, NULL, "\"%s\"");
+
+// Override string value function - it's the pointer itself
+#define STRING_VALUE(g, p) ((char *)(p))
 
 static const struct {
 	const char *type_name;
@@ -447,33 +470,18 @@ struct field_desc {
 	void (*parse)(struct garmin_parser_t *, unsigned char base_type, const unsigned char *data);
 };
 
-static inline int base_type_is_integer(unsigned char base_type)
-{
-	return !memcmp(base_type_info[base_type].type_name + 1, "INT", 3);
-}
-
-static inline unsigned long array_uint_endian(const unsigned char *p, unsigned int type_size, unsigned char bigendian)
-{
-	if (bigendian)
-		return array_uint_be(p, type_size);
-	else
-		return array_uint_le(p, type_size);
-}
-
 #define DECLARE_FIELD(msg, name, type) __DECLARE_FIELD(msg##_##name, type)
 #define __DECLARE_FIELD(name, type) \
 	static void parse_##name(struct garmin_parser_t *, const type); \
 	static void parse_##name##_##type(struct garmin_parser_t *g, unsigned char base_type, const unsigned char *p) \
 	{ \
+		char fmtbuf[FMTSIZE]; \
 		if (strcmp(#type, base_type_info[base_type].type_name)) \
 			fprintf(stderr, "%s: %s should be %s\n", #name, #type, base_type_info[base_type].type_name); \
-		type val; \
-		if (base_type_info[base_type].type_size > 1 && base_type_is_integer(base_type)) \
-			val = (type)array_uint_endian(p, base_type_info[base_type].type_size, g->is_big_endian); \
-		else \
-			val = *(type *)p; \
+		type val = type##_VALUE(g, p); \
 		if (val == type##_INVAL) return; \
-		DEBUG(g->base.context, "%s (%s): %lld", #name, #type, (long long)val); \
+		type##_FORMAT(val, fmtbuf); \
+		DEBUG(g->base.context, "%s (%s): %s", #name, #type, fmtbuf); \
 		parse_##name(g, val); \
 	} \
 	static const struct field_desc name##_field_##type = { #name, parse_##name##_##type }; \
@@ -780,7 +788,7 @@ DECLARE_FIELD(SENSOR_PROFILE, ant_channel_id, UINT32Z)
 {
 	current_sensor(garmin)->sensor_id = data;
 }
-DECLARE_FIELD(SENSOR_PROFILE, name, STRING) { } // We don't pass in string types correctly
+DECLARE_FIELD(SENSOR_PROFILE, name, STRING) { }
 DECLARE_FIELD(SENSOR_PROFILE, enabled, ENUM)
 {
 	current_sensor(garmin)->sensor_enabled = data;
@@ -1362,7 +1370,7 @@ static int traverse_definition(struct garmin_parser_t *garmin,
 
 	// data[1] tells us if this is big or little endian
 	garmin->is_big_endian = data[1] != 0;
-	msg = array_uint_endian(data + 2, 2, garmin->is_big_endian);
+	msg = garmin_value(garmin, data + 2, 2);
 	desc->msg_desc = lookup_msg_desc(msg, type, &desc->msg_name);
 	fields = data[4];
 	DEBUG(garmin->base.context, "Define local type %d: %02x %s %04x %02x %s",
