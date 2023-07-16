@@ -65,6 +65,7 @@ struct garmin_sensor {
 struct record_data {
 	unsigned int pending;
 	unsigned int time;
+	unsigned int timestamp;
 
 	// RECORD_DECO
 	int stop_time;
@@ -492,6 +493,7 @@ struct field_desc {
 // Convert to "standard epoch time" by adding 631065600.
 DECLARE_FIELD(ANY, timestamp, UINT32)
 {
+	garmin->record_data.timestamp = data;
 	if (garmin->callback) {
 		dc_sample_value_t sample = {0};
 
@@ -652,7 +654,11 @@ DECLARE_FIELD(ACTIVITY, num_sessions, UINT16) { }
 DECLARE_FIELD(ACTIVITY, type, ENUM) { }
 DECLARE_FIELD(ACTIVITY, event, ENUM) { }
 DECLARE_FIELD(ACTIVITY, event_type, ENUM) { }
-DECLARE_FIELD(ACTIVITY, local_timestamp, UINT32) { }
+DECLARE_FIELD(ACTIVITY, local_timestamp, UINT32)
+{
+	int time_offset = data - garmin->record_data.timestamp;
+	garmin->dive.time_offset = time_offset;
+}
 DECLARE_FIELD(ACTIVITY, event_group, UINT8) { }
 
 // SPORT
@@ -1693,10 +1699,22 @@ garmin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 {
 	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
 	dc_ticks_t time = 631065600 + (dc_ticks_t) garmin->dive.time;
+	int timezone = DC_TIMEZONE_NONE;
 
 	// Show local time (time_offset)
 	dc_datetime_gmtime(datetime, time + garmin->dive.time_offset);
-	datetime->timezone = DC_TIMEZONE_NONE;
+
+	/* See if we might have a valid timezone offset */
+	if (garmin->dive.time_offset || garmin->dive.utc_offset) {
+		int offset = garmin->dive.time_offset - garmin->dive.utc_offset;
+
+		/* 15-minute (900-second) offsets are real */
+		if ((offset % 900) == 0 &&
+		    offset >= -12*60*60 &&
+		    offset <= 14*60*60)
+			timezone = offset;
+	}
+	datetime->timezone = timezone;
 
 	return DC_STATUS_SUCCESS;
 }
