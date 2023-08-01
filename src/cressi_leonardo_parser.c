@@ -229,8 +229,13 @@ cressi_leonardo_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			if (ascent) {
 				sample.event.type = SAMPLE_EVENT_ASCENT;
 				sample.event.time = 0;
-				sample.event.flags = 0;
+				if (ascent < 3)
+					// Turn the overly sensitive ascent warnings of this dive computer into info events
+					sample.event.flags = SAMPLE_FLAGS_SEVERITY_INFO;
+				else
+					sample.event.flags = 0;
 				sample.event.value = ascent;
+
 				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
 			}
 
