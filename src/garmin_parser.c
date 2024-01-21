@@ -30,7 +30,7 @@
 #include "array.h"
 #include "field-cache.h"
 
-#define MAXFIELDS 128
+#define MAXFIELDS 160
 
 struct msg_desc;
 
