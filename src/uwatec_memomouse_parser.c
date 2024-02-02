@@ -189,7 +189,7 @@ uwatec_memomouse_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			}
 			tank->endpressure = 0.0;
 			tank->gasmix = 0;
-			tank->usage = DC_USAGE_NONE;
+			tank->usage = DC_TANK_USAGE_NONE;
 			break;
 		case DC_FIELD_TEMPERATURE_MINIMUM:
 			*((double *) value) = (signed char) data[15] / 4.0;

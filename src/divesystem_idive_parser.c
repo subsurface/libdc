@@ -304,7 +304,7 @@ divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			tank->beginpressure = parser->tank[flags].beginpressure;
 			tank->endpressure   = parser->tank[flags].endpressure;
 			tank->gasmix = DC_GASMIX_UNKNOWN;
-			tank->usage = DC_USAGE_NONE;
+			tank->usage = DC_TANK_USAGE_NONE;
 			break;
 		case DC_FIELD_ATMOSPHERIC:
 			if (ISIX3M(parser->model)) {

@@ -72,7 +72,7 @@ struct record_data {
 	double ceiling;
 
 	// RECORD_GASMIX
-	int index, gas_status, gas_type;
+	int index, gas_status;
 	dc_gasmix_t gasmix;
 
 	// RECORD_EVENT
@@ -129,7 +129,7 @@ typedef struct garmin_parser_t {
 		unsigned int setpoint_low_cbar, setpoint_high_cbar;
 		unsigned int setpoint_low_switch_depth_mm, setpoint_high_switch_depth_mm;
 		unsigned int setpoint_low_switch_mode, setpoint_high_switch_mode;
-		dc_tankinfo_t *current_tankinfo;
+		dc_gasmix_t *current_gasmix;
 	} dive;
 
 	// I count nine (!) different GPS fields Hmm.
@@ -239,11 +239,11 @@ static void garmin_event(struct garmin_parser_t *garmin,
 		sample.gasmix = data;
 		garmin->callback(DC_SAMPLE_GASMIX, &sample, garmin->userdata);
 
-		dc_tankinfo_t *tankinfo = &garmin->cache.tankinfo[data];
-		if (!garmin->dive.current_tankinfo || (*tankinfo & DC_TANKINFO_CC_DILUENT) != (*garmin->dive.current_tankinfo & DC_TANKINFO_CC_DILUENT)) {
+		dc_gasmix_t *gasmix = &garmin->cache.GASMIX[data];
+		if (!garmin->dive.current_gasmix || gasmix->usage != garmin->dive.current_gasmix->usage) {
 			dc_sample_value_t sample2 = {0};
 			sample2.event.type = SAMPLE_EVENT_STRING;
-			if (*tankinfo & DC_TANKINFO_CC_DILUENT) {
+			if (gasmix->usage == DC_USAGE_DILUENT) {
 				sample2.event.name = "Switched to closed circuit";
 			} else {
 				sample2.event.name = "Switched to open circuit bailout";
@@ -252,7 +252,7 @@ static void garmin_event(struct garmin_parser_t *garmin,
 
 			garmin->callback(DC_SAMPLE_EVENT, &sample2, garmin->userdata);
 
-			garmin->dive.current_tankinfo = tankinfo;
+			garmin->dive.current_gasmix = gasmix;
 		}
 
 		return;
@@ -279,17 +279,7 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 			int index = record->index;
 			if (enabled && index < MAXGASES) {
 				DC_ASSIGN_IDX(garmin->cache, GASMIX, index, record->gasmix);
-				if (index + 1 > garmin->cache.GASMIX_COUNT) {
-					DC_ASSIGN_FIELD(garmin->cache, GASMIX_COUNT, index + 1);
-					garmin->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
-				}
-
-				dc_tankinfo_t tankinfo = DC_TANKINFO_METRIC;
-				if (record->gas_type == 1) {
-					tankinfo |= DC_TANKINFO_CC_DILUENT;
-				}
-				garmin->cache.tankinfo[index] = tankinfo;
-				garmin->cache.initialized |= 1 << DC_FIELD_TANK;
+				DC_ASSIGN_FIELD(garmin->cache, GASMIX_COUNT, index + 1);
 			}
 		}
 		if (pending & RECORD_DEVICE_INFO && record->device_index == 0) {
@@ -699,7 +689,10 @@ DECLARE_FIELD(DIVE_GAS, status, ENUM)
 DECLARE_FIELD(DIVE_GAS, type, ENUM)
 {
 	// 0 - open circuit, 1 - CCR diluent
-	garmin->record_data.gas_type = data;
+	if (data == 1)
+		garmin->record_data.gasmix.usage = DC_USAGE_DILUENT;
+	else
+		garmin->record_data.gasmix.usage = DC_USAGE_OPEN_CIRCUIT;
 	garmin->record_data.pending |= RECORD_GASMIX;
 }
 
@@ -1663,10 +1656,8 @@ garmin_parser_set_data (garmin_parser_t *garmin, const unsigned char *data, unsi
 	//
 	// There's no way to match them up unless they are an identity
 	// mapping, so having two different ones doesn't actually work.
-	if (garmin->dive.nr_sensor > garmin->cache.GASMIX_COUNT) {
+	if (garmin->dive.nr_sensor > garmin->cache.GASMIX_COUNT)
 		DC_ASSIGN_FIELD(garmin->cache, GASMIX_COUNT, garmin->dive.nr_sensor);
-		garmin->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
-	}
 
 	for (int i = 0; i < garmin->dive.nr_sensor; i++) {
 		static const char *name[] = { "Sensor 1", "Sensor 2", "Sensor 3", "Sensor 4", "Sensor 5" };

@@ -207,6 +207,8 @@ AX_APPEND_COMPILE_FLAGS([ \
 	-Wno-unused-but-set-variable \
 	-Wno-pointer-sign \
 	-Wno-shadow \
+	-Wenum-conversion \
+	-Werror=enum-conversion \
 	-fmacro-prefix-map='$(top_srcdir)/'= \
 ],,[$ERROR_CFLAGS])
 

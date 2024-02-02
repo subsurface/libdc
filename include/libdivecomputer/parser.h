@@ -174,10 +174,10 @@ typedef struct dc_salinity_t {
 } dc_salinity_t;
 
 typedef enum dc_usage_t {
-	DC_USAGE_NONE,
+	DC_USAGE_NONE, // Usage not specified
 	DC_USAGE_OXYGEN,
 	DC_USAGE_DILUENT,
-	DC_USAGE_SIDEMOUNT,
+	DC_USAGE_OPEN_CIRCUIT,
 } dc_usage_t;
 
 typedef struct dc_gasmix_t {
@@ -193,8 +193,6 @@ typedef struct dc_gasmix_t {
 typedef unsigned int dc_tankinfo_t;
 #define DC_TANKINFO_METRIC	1
 #define DC_TANKINFO_IMPERIAL	2
-#define DC_TANKINFO_CC_DILUENT	4
-#define DC_TANKINFO_CC_O2	8
 
 // For backwards compatibility
 #define DC_TANKVOLUME_NONE	0
@@ -224,6 +222,11 @@ typedef unsigned int dc_tankinfo_t;
  * divide by 1 ATM (Vair = Vwater * Pwork / Patm).
  */
 
+typedef enum dc_tank_usage_t {
+	DC_TANK_USAGE_NONE,
+	DC_TANK_USAGE_SIDEMOUNT,
+} dc_tank_usage_t;
+
 typedef struct dc_tank_t {
     unsigned int gasmix;  /* Gas mix index, or DC_GASMIX_UNKNOWN */
     dc_tankinfo_t type;   /* Tank type - metric/imperial and oc/cc */
@@ -231,7 +234,7 @@ typedef struct dc_tank_t {
     double workpressure;  /* Work pressure (bar) */
     double beginpressure; /* Begin pressure (bar) */
     double endpressure;   /* End pressure (bar) */
-    dc_usage_t usage;
+    dc_tank_usage_t usage;
 } dc_tank_t;
 
 typedef enum dc_decomodel_type_t {

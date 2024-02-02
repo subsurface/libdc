@@ -985,15 +985,6 @@ static int traverse_samples(unsigned short type, const struct type_desc *desc, c
 		used += bytes;
 	}
 
-	if (info->ndl < 0 && info->ceiling) {
-		dc_sample_value_t sample = {0};
-
-		sample.deco.type = DC_DECO_DECOSTOP;
-		sample.deco.time = 0;
-		sample.deco.depth = info->ceiling;
-		if (info->callback) info->callback(DC_SAMPLE_DECO, &sample, info->userdata);
-	}
-
 	// Warn if there are left-over bytes for something we did use part of
 	if (used && len)
 		ERROR(eon->base.context, "Entry for '%s' had %d bytes, only used %d", desc->desc, len+used, used);
@@ -1136,9 +1127,11 @@ static dc_status_t add_gas_type(suunto_eonsteel_parser_t *eon, const struct type
 		tankinfo = DC_TANKVOLUME_NONE;
 	else if (strcasecmp(name, "Primary"))
 		DEBUG(eon->base.context, "Unknown gas type %u (%s)", type, name);
+	if (name && strcasecmp(name, "Diluent") && strcasecmp(name, "Oxygen"))
+	    usage = DC_USAGE_OPEN_CIRCUIT;
 
 	eon->cache.tankinfo[idx] = tankinfo;
-	eon->cache.tankusage[idx] = usage;
+	eon->cache.tankusage[idx] = DC_TANK_USAGE_NONE;
 	eon->cache.GASMIX[idx].usage = usage;
 
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX_COUNT;

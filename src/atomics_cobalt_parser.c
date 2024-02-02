@@ -191,7 +191,7 @@ atomics_cobalt_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, un
 			tank->gasmix = flags;
 			tank->beginpressure = array_uint16_le(p + 6) * PSI / BAR;
 			tank->endpressure = array_uint16_le(p + 14) * PSI / BAR;
-			tank->usage = DC_USAGE_NONE;
+			tank->usage = DC_TANK_USAGE_NONE;
 			break;
 		case DC_FIELD_DIVEMODE:
 			switch(p[0x24]) {

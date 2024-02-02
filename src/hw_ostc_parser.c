@@ -575,14 +575,10 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			}
 
 			gasmix->usage = parser->gasmix[flags].diluent ?
-				DC_USAGE_DILUENT : DC_USAGE_NONE;
+				DC_USAGE_DILUENT : DC_USAGE_OPEN_CIRCUIT;
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
-			if (!parser->gasmix[flags].enabled) {
-				// Indicate that this gasmix is not active
-				return DC_STATUS_UNSUPPORTED;
-			}
 
 			break;
 		case DC_FIELD_TANK:
@@ -595,7 +591,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			tank->volume = 0.0;
 			tank->gasmix = flags;
 			tank->workpressure = 0.0;
-			tank->type = DC_TANKINFO_METRIC | (parser->gasmix[flags].diluent ? DC_TANKINFO_CC_DILUENT : 0);
+			tank->type = DC_TANKINFO_METRIC;
 
 			break;
 		case DC_FIELD_SALINITY:

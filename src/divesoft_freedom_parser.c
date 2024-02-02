@@ -797,7 +797,7 @@ divesoft_freedom_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			} else if (parser->gasmix[flags].type == DILUENT) {
 				gasmix->usage = DC_USAGE_DILUENT;
 			} else {
-				gasmix->usage = DC_USAGE_NONE;
+				gasmix->usage = DC_USAGE_OPEN_CIRCUIT;
 			}
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
@@ -820,7 +820,7 @@ divesoft_freedom_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			tank->beginpressure = parser->tank[flags].beginpressure * 2.0;
 			tank->endpressure   = parser->tank[flags].endpressure   * 2.0;
 			tank->gasmix = flags;
-			tank->usage = DC_USAGE_NONE;
+			tank->usage = DC_TANK_USAGE_NONE;
 			break;
 		case DC_FIELD_DECOMODEL:
 			if (parser->vpm) {

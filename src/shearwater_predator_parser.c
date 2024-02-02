@@ -123,7 +123,7 @@ typedef struct shearwater_predator_tank_t {
 	unsigned int serial;
 	char name[2];
 	unsigned int battery;
-	dc_usage_t usage;
+	dc_tank_usage_t usage;
 } shearwater_predator_tank_t;
 
 struct shearwater_predator_parser_t {
@@ -271,7 +271,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, const
 		parser->tank[i].serial = 0;
 		memset (parser->tank[i].name, 0, sizeof (parser->tank[i].name));
 		parser->tank[i].battery = 0;
-		parser->tank[i].usage = DC_USAGE_NONE;
+		parser->tank[i].usage = DC_TANK_USAGE_NONE;
 		parser->tankidx[i] = i;
 	}
 	parser->aimode = AI_OFF;
@@ -603,7 +603,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 							tank[id].enabled = 1;
 							tank[id].beginpressure = pressure;
 							tank[id].endpressure = pressure;
-							tank[id].usage = i == 0 ? DC_USAGE_DILUENT : DC_USAGE_OXYGEN;
+							//tank[id].usage = i == 0 ? DC_USAGE_DILUENT : DC_USAGE_OXYGEN; //TODO: Link this tank to the correct gasmix
 							hpccr = 1;
 						}
 						tank[id].endpressure = pressure;
@@ -648,7 +648,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 						if (aimode == AI_HPCCR) {
 							for (unsigned int i = 0; i < 2; ++i) {
 								tank[4 + i].enabled = 1;
-								tank[4 + i].usage = i == 0 ? DC_USAGE_DILUENT : DC_USAGE_OXYGEN;
+								//tank[4 + i].usage = i == 0 ? DC_USAGE_DILUENT : DC_USAGE_OXYGEN; //TODO: Link this tank to the correct gasmix
 							}
 							hpccr = 1;
 						}
@@ -665,7 +665,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 				if (popcount(gtrmode) >= 2) {
 					for (unsigned int i = 0; i < 4; ++i) {
 						if (gtrmode & (1 << i)) {
-							tank[i].usage = DC_USAGE_SIDEMOUNT;
+							tank[i].usage = DC_TANK_USAGE_SIDEMOUNT;
 						}
 					}
 				}
@@ -895,7 +895,7 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			*((unsigned int *) value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
-			gasmix->usage = parser->gasmix[flags].diluent ? DC_USAGE_DILUENT : DC_USAGE_NONE;
+			gasmix->usage = parser->gasmix[flags].diluent ? DC_USAGE_DILUENT : DC_USAGE_OPEN_CIRCUIT;
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -910,21 +910,7 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			tank->beginpressure = parser->tank[flags].beginpressure * 2 * PSI / BAR;
 			tank->endpressure   = parser->tank[flags].endpressure   * 2 * PSI / BAR;
 			tank->gasmix = DC_GASMIX_UNKNOWN;
-			if (shearwater_predator_is_ccr (parser->divemode) && !parser->hpccr) {
-				switch (parser->tank[flags].name[0]) {
-				case 'O':
-					tank->usage = DC_USAGE_OXYGEN;
-					break;
-				case 'D':
-					tank->usage = DC_USAGE_DILUENT;
-					break;
-				default:
-					tank->usage = DC_USAGE_NONE;
-					break;
-				}
-			} else {
-				tank->usage = parser->tank[flags].usage;
-			}
+			tank->usage = parser->tank[flags].usage;
 			break;
 		case DC_FIELD_SALINITY:
 			if (parser->density == 1000)

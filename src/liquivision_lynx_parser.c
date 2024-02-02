@@ -305,7 +305,7 @@ liquivision_lynx_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			tank->beginpressure = parser->tank[flags].beginpressure / 100.0;
 			tank->endpressure   = parser->tank[flags].endpressure / 100.0;
 			tank->gasmix = DC_GASMIX_UNKNOWN;
-			tank->usage = DC_USAGE_NONE;
+			tank->usage = DC_TANK_USAGE_NONE;
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
