@@ -448,7 +448,6 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	garmin_device_t *device = (garmin_device_t *) abstract;
-	dc_parser_t *parser;
 	char pathname[PATH_MAX];
 	char pathname_input[PATH_MAX];
 	size_t pathlen;
@@ -539,16 +538,12 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		free(files.array);
 		return DC_STATUS_NOMEMORY;
 	}
-	if ((rc = garmin_parser_create(&parser, abstract->context) != DC_STATUS_SUCCESS)) {
-		ERROR (abstract->context, "Failed to create parser for dive verification.");
-		free(files.array);
-		return rc;
-	}
 
 	dc_event_devinfo_t devinfo;
 	dc_event_devinfo_t *devinfo_p = &devinfo;
 	for (int i = 0; i < files.nr; i++) {
 		const char *name = files.array[i].name;
+		dc_parser_t *parser;
 		const unsigned char *data;
 		unsigned int size;
 		short is_dive = 0;
@@ -574,7 +569,14 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		data = dc_buffer_get_data(file);
 		size = dc_buffer_get_size(file);
 
-		is_dive = !device->model || garmin_parser_is_dive(parser, data, size, devinfo_p);
+		status = garmin_parser_create(&parser, abstract->context, data, size);
+		if (status != DC_STATUS_SUCCESS) {
+			ERROR (abstract->context, "Failed to create parser for dive verification.");
+			free(files.array);
+			return rc;
+		}
+
+		is_dive = !device->model || garmin_parser_is_dive(parser, devinfo_p);
 		if (devinfo_p) {
 			// first time we came through here, let's emit the
 			// devinfo and vendor events
@@ -583,6 +585,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		}
 		if (!is_dive) {
 			DEBUG(abstract->context, "decided %s isn't a dive.", name);
+			dc_parser_destroy(parser);
 			continue;
 		}
 
@@ -591,10 +594,10 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 
 		progress.current++;
 		device_event_emit(abstract, DC_EVENT_PROGRESS, &progress);
+		dc_parser_destroy(parser);
 	}
 
 	free(files.array);
-	dc_parser_destroy(parser);
 	dc_buffer_free(file);
 	return status;
 }

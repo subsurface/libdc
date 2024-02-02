@@ -232,12 +232,12 @@ static void garmin_event(struct garmin_parser_t *garmin,
 
 		if (!sample.event.name)
 			return;
-		garmin->callback(DC_SAMPLE_EVENT, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_EVENT, &sample, garmin->userdata);
 		return;
 
 	case 57:
 		sample.gasmix = data;
-		garmin->callback(DC_SAMPLE_GASMIX, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_GASMIX, &sample, garmin->userdata);
 
 		dc_tankinfo_t *tankinfo = &garmin->cache.tankinfo[data];
 		if (!garmin->dive.current_tankinfo || (*tankinfo & DC_TANKINFO_CC_DILUENT) != (*garmin->dive.current_tankinfo & DC_TANKINFO_CC_DILUENT)) {
@@ -250,7 +250,7 @@ static void garmin_event(struct garmin_parser_t *garmin,
 			}
 			sample2.event.flags = 2 << SAMPLE_FLAGS_SEVERITY_SHIFT;
 
-			garmin->callback(DC_SAMPLE_EVENT, sample2, garmin->userdata);
+			garmin->callback(DC_SAMPLE_EVENT, &sample2, garmin->userdata);
 
 			garmin->dive.current_tankinfo = tankinfo;
 		}
@@ -324,7 +324,7 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 		sample.deco.type = DC_DECO_DECOSTOP;
 		sample.deco.time = record->stop_time;
 		sample.deco.depth = record->ceiling;
-		garmin->callback(DC_SAMPLE_DECO, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_DECO, &sample, garmin->userdata);
 	}
 
 	if (pending & RECORD_EVENT) {
@@ -337,19 +337,19 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 
 		sample.pressure.tank = find_tank_index(garmin, record->sensor);
 		sample.pressure.value = record->pressure / 100.0;
-		garmin->callback(DC_SAMPLE_PRESSURE, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_PRESSURE, &sample, garmin->userdata);
 	}
 
 	if (pending & RECORD_SETPOINT_CHANGE) {
 		dc_sample_value_t sample = {0};
 
 		sample.setpoint = record->setpoint_actual_cbar / 100.0;
-		garmin->callback(DC_SAMPLE_SETPOINT, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_SETPOINT, &sample, garmin->userdata);
 	}
 }
 
 
-static dc_status_t garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
+static dc_status_t garmin_parser_set_data (garmin_parser_t *garmin, const unsigned char *data, unsigned int size);
 static dc_status_t garmin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t garmin_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -357,7 +357,6 @@ static dc_status_t garmin_parser_samples_foreach (dc_parser_t *abstract, dc_samp
 static const dc_parser_vtable_t garmin_parser_vtable = {
 	sizeof(garmin_parser_t),
 	DC_FAMILY_GARMIN,
-	garmin_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -368,7 +367,7 @@ static const dc_parser_vtable_t garmin_parser_vtable = {
 };
 
 dc_status_t
-garmin_parser_create (dc_parser_t **out, dc_context_t *context)
+garmin_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size)
 {
 	garmin_parser_t *parser = NULL;
 
@@ -376,11 +375,13 @@ garmin_parser_create (dc_parser_t **out, dc_context_t *context)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (garmin_parser_t *) dc_parser_allocate (context, &garmin_parser_vtable);
+	parser = (garmin_parser_t *) dc_parser_allocate (context, &garmin_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
+
+	garmin_parser_set_data(parser, data, size);
 
 	*out = (dc_parser_t *) parser;
 
@@ -508,8 +509,8 @@ DECLARE_FIELD(ANY, timestamp, UINT32)
 
 		// Now we're ready to actually update the sample times
 		garmin->record_data.time = data+1;
-		sample.time = data;
-		garmin->callback(DC_SAMPLE_TIME, sample, garmin->userdata);
+		sample.time = data * 1000;
+		garmin->callback(DC_SAMPLE_TIME, &sample, garmin->userdata);
 	}
 }
 DECLARE_FIELD(ANY, message_index, UINT16)	{ garmin->record_data.index = data; }
@@ -556,7 +557,7 @@ DECLARE_FIELD(RECORD, heart_rate, UINT8)		// bpm
 	if (garmin->callback) {
 		dc_sample_value_t sample = {0};
 		sample.heartbeat = data;
-		garmin->callback(DC_SAMPLE_HEARTBEAT, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_HEARTBEAT, &sample, garmin->userdata);
 	}
 }
 DECLARE_FIELD(RECORD, cadence, UINT8) { }		// cadence
@@ -568,7 +569,7 @@ DECLARE_FIELD(RECORD, temperature, SINT8)		// degrees C
 	if (garmin->callback) {
 		dc_sample_value_t sample = {0};
 		sample.temperature = data;
-		garmin->callback(DC_SAMPLE_TEMPERATURE, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_TEMPERATURE, &sample, garmin->userdata);
 	}
 }
 DECLARE_FIELD(RECORD, abs_pressure, UINT32) {}		// Pascal
@@ -577,7 +578,7 @@ DECLARE_FIELD(RECORD, depth, UINT32)			// mm
 	if (garmin->callback) {
 		dc_sample_value_t sample = {0};
 		sample.depth = data / 1000.0;
-		garmin->callback(DC_SAMPLE_DEPTH, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_DEPTH, &sample, garmin->userdata);
 	}
 }
 DECLARE_FIELD(RECORD, next_stop_depth, UINT32)		// mm
@@ -595,7 +596,7 @@ DECLARE_FIELD(RECORD, tts, UINT32)
 	if (garmin->callback) {
 		dc_sample_value_t sample = {0};
 		sample.time = data;
-		garmin->callback(DC_SAMPLE_TTS, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_TTS, &sample, garmin->userdata);
 	}
 }
 DECLARE_FIELD(RECORD, ndl, UINT32)			// s
@@ -604,7 +605,7 @@ DECLARE_FIELD(RECORD, ndl, UINT32)			// s
 		dc_sample_value_t sample = {0};
 		sample.deco.type = DC_DECO_NDL;
 		sample.deco.time = data;
-		garmin->callback(DC_SAMPLE_DECO, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_DECO, &sample, garmin->userdata);
 	}
 }
 DECLARE_FIELD(RECORD, cns_load, UINT8)
@@ -612,7 +613,7 @@ DECLARE_FIELD(RECORD, cns_load, UINT8)
 	if (garmin->callback) {
 		dc_sample_value_t sample = {0};
 		sample.cns = data / 100.0;
-		garmin->callback(DC_SAMPLE_CNS, sample, garmin->userdata);
+		garmin->callback(DC_SAMPLE_CNS, &sample, garmin->userdata);
 	}
 }
 DECLARE_FIELD(RECORD, n2_load, UINT16) { }		// percent
@@ -1586,10 +1587,8 @@ static void add_gps_string(garmin_parser_t *garmin, const char *desc, struct pos
 }
 
 int
-garmin_parser_is_dive (dc_parser_t *abstract, const unsigned char *data, unsigned int size, dc_event_devinfo_t *devinfo_p)
+garmin_parser_is_dive (dc_parser_t *abstract, dc_event_devinfo_t *devinfo_p)
 {
-	// set up the parser and extract data
-	dc_parser_set_data(abstract, data, size);
 	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
 
 	if (devinfo_p) {
@@ -1621,10 +1620,8 @@ static void add_sensor_string(garmin_parser_t *garmin, const char *desc, const s
 }
 
 static dc_status_t
-garmin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
+garmin_parser_set_data (garmin_parser_t *garmin, const unsigned char *data, unsigned int size)
 {
-	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
-
 	/* Walk the data once without a callback to set up the core fields */
 	garmin->callback = NULL;
 	garmin->userdata = NULL;

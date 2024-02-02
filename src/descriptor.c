@@ -61,7 +61,7 @@ static int dc_filter_oceans (dc_descriptor_t *descriptor, dc_transport_t transpo
 static int dc_filter_divesoft (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
 // Not merged upstream yet
-static int dc_filter_garmin (dc_transport_t transport, const void *userdata, void *params);
+static int dc_filter_garmin (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
@@ -858,7 +858,8 @@ dc_filter_divesoft (dc_descriptor_t *descriptor, dc_transport_t transport, const
 }
 
 // Not merged upstream yet
-static int dc_filter_garmin (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_garmin (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const dc_usb_desc_t usbhid[] = {
 		{0x091e, 0x2b2b}, // Garmin Descent Mk1

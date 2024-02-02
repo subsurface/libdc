@@ -212,7 +212,7 @@ dc_parser_new_internal (dc_parser_t **out, dc_context_t *context, const unsigned
 
 	// Not merged upstream yet
 	case DC_FAMILY_GARMIN:
-		rc = garmin_parser_create (&parser, context);
+		rc = garmin_parser_create (&parser, context, data, size);
 		break;
 	}
 

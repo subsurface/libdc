@@ -114,7 +114,11 @@ LOCAL_SRC_FILES := \
 	src/uwatec_smart.c \
 	src/uwatec_smart_parser.c \
 	src/version.c \
-	src/zeagle_n2ition3.c
+	src/zeagle_n2ition3.c \
+	src/field-cache.c \
+	src/usb_storage.c \
+	src/garmin.c \
+	src/garmin_parser.c
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
