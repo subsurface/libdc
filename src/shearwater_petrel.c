@@ -45,80 +45,9 @@ typedef struct shearwater_petrel_device_t {
 } shearwater_petrel_device_t;
 
 
-static dc_status_t shearwater_petrel_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
-{
-	shearwater_common_device_t *device = (shearwater_common_device_t *)abstract;
-
-	unsigned int model = 0;
-	shearwater_common_read_model(device, &model);
-	if (model == TERIC) {
-		dc_ticks_t unix_timestamp = dc_datetime_mktime(datetime);
-		if (unix_timestamp == -1) {
-			ERROR(abstract->context, "Invalid date/time value specified.");
-
-			return DC_STATUS_INVALIDARGS;
-		}
-
-		dc_buffer_t *buffer = dc_buffer_new(WDBI_TIME_PACKET_SIZE);
-		if (buffer == NULL) {
-			ERROR(abstract->context, "Insufficient buffer space available.");
-			dc_buffer_free(buffer);
-
-			return DC_STATUS_NOMEMORY;
-		}
-
-		char shearwater_timestamp[] = {
-			(unix_timestamp >> 24) & 0xFF,
-			(unix_timestamp >> 16) & 0xFF,
-			(unix_timestamp >> 8) & 0xFF,
-			unix_timestamp & 0xFF,
-		};
-		dc_buffer_append(buffer, shearwater_timestamp, 4);
-
-		dc_status_t rc = shearwater_common_can_wdbi(device, buffer, ID_UTC_TIME);
-		if (rc != DC_STATUS_SUCCESS) {
-			ERROR(abstract->context, "Failed to write the dive computer UTC time.");
-		}
-
-		dc_buffer_clear(buffer);
-
-		int local_time_offset_minutes = datetime->timezone / 60;
-		char shearwater_local_time_offset[] = {
-			(local_time_offset_minutes >> 24) & 0xFF,
-			(local_time_offset_minutes >> 16) & 0xFF,
-			(local_time_offset_minutes >> 8) & 0xFF,
-			local_time_offset_minutes & 0xFF,
-		};
-		dc_buffer_append(buffer, shearwater_local_time_offset, 4);
-
-		rc = shearwater_common_can_wdbi(device, buffer, ID_LOCAL_TIME_OFFSET);
-		if (rc != DC_STATUS_SUCCESS) {
-			ERROR(abstract->context, "Failed to write the dive computer local time offset.");
-		}
-
-		dc_buffer_clear(buffer);
-
-		// We don't have a way to determine the daylight savings time setting,
-		// but the required offset is already factored into ID_LOCAL_TIME_OFFSET
-		char shearwater_local_time_dst[] = { 0, 0, 0, 0 };
-		dc_buffer_append(buffer, shearwater_local_time_dst, 4);
-
-		rc = shearwater_common_can_wdbi(device, buffer, ID_LOCAL_TIME_DST);
-		if (rc != DC_STATUS_SUCCESS) {
-			ERROR(abstract->context, "Failed to write the dive computer DST setting.");
-		}
-
-		dc_buffer_free(buffer);
-
-		return rc;
-	}
-
-	return shearwater_common_device_timesync(abstract, datetime);
-}
-
-
 static dc_status_t shearwater_petrel_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
 static dc_status_t shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
+static dc_status_t shearwater_petrel_device_timesync (dc_device_t *abstract, const dc_datetime_t *datetime);
 static dc_status_t shearwater_petrel_device_close (dc_device_t *abstract);
 
 static const dc_device_vtable_t shearwater_petrel_device_vtable = {
@@ -225,55 +154,43 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	shearwater_petrel_device_t *device = (shearwater_petrel_device_t *) abstract;
 	dc_status_t rc = DC_STATUS_SUCCESS;
 
-	// Allocate memory buffers for the manifests.
-	dc_buffer_t *buffer = dc_buffer_new (MANIFEST_SIZE);
-	dc_buffer_t *manifests = dc_buffer_new (MANIFEST_SIZE);
-	if (buffer == NULL || manifests == NULL) {
-		ERROR (abstract->context, "Insufficient buffer space available.");
-		dc_buffer_free (buffer);
-		dc_buffer_free (manifests);
-		return DC_STATUS_NOMEMORY;
-	}
-
 	// Enable progress notifications.
 	unsigned int current = 0, maximum = 0;
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
 	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
 	// Read the serial number.
-	rc = shearwater_common_identifier (&device->base, buffer, ID_SERIAL);
+	unsigned char rsp_serial[8] = {0};
+	rc = shearwater_common_rdbi (&device->base, ID_SERIAL, rsp_serial, sizeof(rsp_serial));
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to read the serial number.");
-		dc_buffer_free (buffer);
-		dc_buffer_free (manifests);
 		return rc;
 	}
 
 	// Convert to a number.
 	unsigned char serial[4] = {0};
-	if (array_convert_hex2bin (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer),
-		serial, sizeof (serial)) != 0 ) {
+	if (array_convert_hex2bin (rsp_serial, sizeof(rsp_serial), serial, sizeof (serial)) != 0 ) {
 		ERROR (abstract->context, "Failed to convert the serial number.");
-		dc_buffer_free (buffer);
-		dc_buffer_free (manifests);
 		return DC_STATUS_DATAFORMAT;
-
 	}
 
 	// Read the firmware version.
-	rc = shearwater_common_identifier (&device->base, buffer, ID_FIRMWARE);
+	unsigned char rsp_firmware[11] = {0};
+	rc = shearwater_common_rdbi (&device->base, ID_FIRMWARE, rsp_firmware, sizeof(rsp_firmware));
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to read the firmware version.");
-		dc_buffer_free (buffer);
-		dc_buffer_free (manifests);
 		return rc;
 	}
 
 	// Convert to a number.
-	unsigned int firmware = str2num (dc_buffer_get_data (buffer), dc_buffer_get_size (buffer), 1);
+	unsigned int firmware = str2num (rsp_firmware, sizeof(rsp_firmware), 1);
 
 	unsigned int model = 0;
-	shearwater_common_read_model((shearwater_common_device_t *)device, &model);
+	rc = shearwater_common_get_model (&device->base, &model);
+	if (rc != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to read the hardware type.");
+		return rc;
+	}
 
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
@@ -283,22 +200,14 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the logbook type
-	rc = shearwater_common_identifier (&device->base, buffer, ID_LOGUPLOAD);
+	unsigned char rsp_logupload[9] = {0};
+	rc = shearwater_common_rdbi (&device->base, ID_LOGUPLOAD, rsp_logupload, sizeof(rsp_logupload));
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to read the logbook type.");
-		dc_buffer_free (buffer);
-		dc_buffer_free (manifests);
 		return rc;
 	}
 
-	if (dc_buffer_get_size (buffer) != 9) {
-		ERROR (abstract->context, "Unexpected packet size (" DC_PRINTF_SIZE " bytes).", dc_buffer_get_size(buffer));
-		dc_buffer_free (buffer);
-		dc_buffer_free (manifests);
-		return DC_STATUS_DATAFORMAT;
-	}
-
-	unsigned int base_addr = array_uint32_be (dc_buffer_get_data (buffer) + 1);
+	unsigned int base_addr = array_uint32_be (rsp_logupload + 1);
 	switch (base_addr) {
 	case 0xDD000000: // Predator - we shouldn't get here, we could give up or we can try 0xC0000000
 	case 0xC0000000: // Predator-Like Format (what we used to call the Petrel format)
@@ -311,9 +220,17 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		break;
 	default: // unknown format
 		ERROR (abstract->context, "Unknown logbook format %08x", base_addr);
+		return DC_STATUS_DATAFORMAT;
+	}
+
+	// Allocate memory buffers for the manifests.
+	dc_buffer_t *buffer = dc_buffer_new (MANIFEST_SIZE);
+	dc_buffer_t *manifests = dc_buffer_new (MANIFEST_SIZE);
+	if (buffer == NULL || manifests == NULL) {
+		ERROR (abstract->context, "Insufficient buffer space available.");
 		dc_buffer_free (buffer);
 		dc_buffer_free (manifests);
-		return DC_STATUS_DATAFORMAT;
+		return DC_STATUS_NOMEMORY;
 	}
 
 	// Read the manifest pages
@@ -429,4 +346,24 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	dc_buffer_free (buffer);
 
 	return rc;
+}
+
+static dc_status_t
+shearwater_petrel_device_timesync (dc_device_t *abstract, const dc_datetime_t *datetime)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+	shearwater_common_device_t *device = (shearwater_common_device_t *) abstract;
+
+	unsigned int model = 0;
+	status = shearwater_common_get_model (&device->base, &model);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to read the hardware type.");
+		return status;
+	}
+
+	if (model == TERIC) {
+		return shearwater_common_timesync_utc (device, datetime);
+	} else {
+		return shearwater_common_timesync_local (device, datetime);
+	}
 }

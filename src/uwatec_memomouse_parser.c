@@ -38,7 +38,6 @@ struct uwatec_memomouse_parser_t {
 	dc_ticks_t systime;
 };
 
-static dc_status_t uwatec_memomouse_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t uwatec_memomouse_parser_set_clock (dc_parser_t *abstract, unsigned int devtime, dc_ticks_t systime);
 static dc_status_t uwatec_memomouse_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t uwatec_memomouse_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
@@ -47,7 +46,6 @@ static dc_status_t uwatec_memomouse_parser_samples_foreach (dc_parser_t *abstrac
 static const dc_parser_vtable_t uwatec_memomouse_parser_vtable = {
 	sizeof(uwatec_memomouse_parser_t),
 	DC_FAMILY_UWATEC_MEMOMOUSE,
-	uwatec_memomouse_parser_set_data, /* set_data */
 	uwatec_memomouse_parser_set_clock, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -59,7 +57,7 @@ static const dc_parser_vtable_t uwatec_memomouse_parser_vtable = {
 
 
 dc_status_t
-uwatec_memomouse_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int devtime, dc_ticks_t systime)
+uwatec_memomouse_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size)
 {
 	uwatec_memomouse_parser_t *parser = NULL;
 
@@ -67,25 +65,18 @@ uwatec_memomouse_parser_create (dc_parser_t **out, dc_context_t *context, unsign
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (uwatec_memomouse_parser_t *) dc_parser_allocate (context, &uwatec_memomouse_parser_vtable);
+	parser = (uwatec_memomouse_parser_t *) dc_parser_allocate (context, &uwatec_memomouse_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
 
 	// Set the default values.
-	parser->devtime = devtime;
-	parser->systime = systime;
+	parser->devtime = 0;
+	parser->systime = 0;
 
 	*out = (dc_parser_t*) parser;
 
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-uwatec_memomouse_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
 	return DC_STATUS_SUCCESS;
 }
 
@@ -166,6 +157,7 @@ uwatec_memomouse_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			*((unsigned int *) value) = 1;
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = 0.0;
 			if (size >= header + 18) {
 				if (is_oxygen)
@@ -197,6 +189,7 @@ uwatec_memomouse_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			}
 			tank->endpressure = 0.0;
 			tank->gasmix = 0;
+			tank->usage = DC_USAGE_NONE;
 			break;
 		case DC_FIELD_TEMPERATURE_MINIMUM:
 			*((double *) value) = (signed char) data[15] / 4.0;
@@ -250,17 +243,17 @@ uwatec_memomouse_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		offset += 2;
 
 		// Time (seconds)
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 		// Depth (meters)
 		sample.depth = depth * 10.0 / 64.0;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 		// Gas change.
 		if (gasmix != gasmix_previous) {
 			sample.gasmix = gasmix;
-			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+			if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 			gasmix_previous = gasmix;
 		}
 
@@ -272,7 +265,8 @@ uwatec_memomouse_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		}
 		sample.deco.time = 0;
 		sample.deco.depth = 0.0;
-		if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+		sample.deco.tts = 0;
+		if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 
 		// Warnings
 		for (unsigned int i = 0; i < 6; ++i) {
@@ -301,7 +295,7 @@ uwatec_memomouse_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 					break;
 				}
 				if (sample.event.type != SAMPLE_EVENT_NONE) {
-					if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+					if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 				}
 			}
 		}
@@ -325,7 +319,7 @@ uwatec_memomouse_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 				offset++;
 			}
 
-			if (callback) callback (DC_SAMPLE_VENDOR, sample, userdata);
+			if (callback) callback (DC_SAMPLE_VENDOR, &sample, userdata);
 		}
 
 		time += 20;

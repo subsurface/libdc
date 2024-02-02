@@ -254,7 +254,6 @@ typedef struct divesoft_freedom_parser_t {
 	unsigned int calibrated;
 } divesoft_freedom_parser_t;
 
-static dc_status_t divesoft_freedom_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t divesoft_freedom_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t divesoft_freedom_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t divesoft_freedom_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -262,7 +261,6 @@ static dc_status_t divesoft_freedom_parser_samples_foreach (dc_parser_t *abstrac
 static const dc_parser_vtable_t divesoft_freedom_parser_vtable = {
 	sizeof(divesoft_freedom_parser_t),
 	DC_FAMILY_DIVESOFT_FREEDOM,
-	divesoft_freedom_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -643,7 +641,7 @@ divesoft_freedom_cache (divesoft_freedom_parser_t *parser)
 }
 
 dc_status_t
-divesoft_freedom_parser_create (dc_parser_t **out, dc_context_t *context)
+divesoft_freedom_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size)
 {
 	divesoft_freedom_parser_t *parser = NULL;
 
@@ -651,7 +649,7 @@ divesoft_freedom_parser_create (dc_parser_t **out, dc_context_t *context)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (divesoft_freedom_parser_t *) dc_parser_allocate (context, &divesoft_freedom_parser_vtable);
+	parser = (divesoft_freedom_parser_t *) dc_parser_allocate (context, &divesoft_freedom_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -694,50 +692,6 @@ divesoft_freedom_parser_create (dc_parser_t **out, dc_context_t *context)
 	parser->calibrated = 0;
 
 	*out = (dc_parser_t *) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-static dc_status_t
-divesoft_freedom_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	divesoft_freedom_parser_t *parser = (divesoft_freedom_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->version = 0;
-	parser->headersize = 0;
-	parser->divetime = 0;
-	parser->divemode = 0;
-	parser->temperature_min = 0;
-	parser->maxdepth = 0;
-	parser->atmospheric = 0;
-	parser->avgdepth = 0;
-	parser->ngasmixes = 0;
-	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->gasmix[i].oxygen = 0;
-		parser->gasmix[i].helium = 0;
-		parser->gasmix[i].type = 0;
-		parser->gasmix[i].id = 0;
-	}
-	parser->diluent = UNDEFINED;
-	parser->ntanks = 0;
-	for (unsigned int i = 0; i < NTANKS; ++i) {
-		parser->tank[i].volume = 0;
-		parser->tank[i].workpressure = 0;
-		parser->tank[i].beginpressure = 0;
-		parser->tank[i].endpressure = 0;
-		parser->tank[i].transmitter = 0;
-		parser->tank[i].active = 0;
-	}
-	parser->vpm = 0;
-	parser->gf_lo = 0;
-	parser->gf_hi = 0;
-	parser->seawater = 0;
-	for (unsigned int i = 0; i < NSENSORS; ++i) {
-		parser->calibration[i] = 0;
-	}
-	parser->calibrated = 0;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -838,6 +792,13 @@ divesoft_freedom_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			*((unsigned int *) value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
+			if (parser->gasmix[flags].type == OXYGEN) {
+				gasmix->usage = DC_USAGE_OXYGEN;
+			} else if (parser->gasmix[flags].type == DILUENT) {
+				gasmix->usage = DC_USAGE_DILUENT;
+			} else {
+				gasmix->usage = DC_USAGE_NONE;
+			}
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -859,6 +820,7 @@ divesoft_freedom_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			tank->beginpressure = parser->tank[flags].beginpressure * 2.0;
 			tank->endpressure   = parser->tank[flags].endpressure   * 2.0;
 			tank->gasmix = flags;
+			tank->usage = DC_USAGE_NONE;
 			break;
 		case DC_FIELD_DECOMODEL:
 			if (parser->vpm) {
@@ -924,15 +886,15 @@ divesoft_freedom_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 				continue;
 			}
 			time = timestamp;
-			sample.time = time;
-			if (callback) callback(DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback(DC_SAMPLE_TIME, &sample, userdata);
 		}
 
 		// Initial diluent.
 		if (!initial) {
 			if (parser->diluent != UNDEFINED) {
 				sample.gasmix = parser->diluent;
-				if (callback) callback(DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback(DC_SAMPLE_GASMIX, &sample, userdata);
 			}
 			initial = 1;
 		}
@@ -943,18 +905,19 @@ divesoft_freedom_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 			unsigned int ppo2  = array_uint16_le (data + offset + 6);
 
 			sample.depth = depth / 100.0;
-			if (callback) callback(DC_SAMPLE_DEPTH, sample, userdata);
+			if (callback) callback(DC_SAMPLE_DEPTH, &sample, userdata);
 
 			if (ppo2) {
-				sample.ppo2 = ppo2 * 10.0 / BAR;
-				if (callback) callback(DC_SAMPLE_PPO2, sample, userdata);
+				sample.ppo2.sensor = DC_SENSOR_NONE;
+				sample.ppo2.value = ppo2 * 10.0 / BAR;
+				if (callback) callback(DC_SAMPLE_PPO2, &sample, userdata);
 			}
 
 			if (id == POINT_2) {
 				unsigned int orientation = array_uint32_le (data + offset + 8);
 				unsigned int heading = orientation & 0x1FF;
 				sample.bearing = heading;
-				if (callback) callback (DC_SAMPLE_BEARING, sample, userdata);
+				if (callback) callback (DC_SAMPLE_BEARING, &sample, userdata);
 			} else if (id == POINT_1 || id == POINT_1_OLD) {
 				unsigned int misc = array_uint32_le (data + offset + 8);
 				unsigned int ceiling = array_uint16_le (data + offset + 12);
@@ -965,7 +928,7 @@ divesoft_freedom_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 
 				// Temperature
 				sample.temperature = (signed int) signextend (temp, 10) / 10.0;
-				if (callback) callback(DC_SAMPLE_TEMPERATURE, sample, userdata);
+				if (callback) callback(DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 				// Deco / NDL
 				if (ceiling) {
@@ -977,12 +940,13 @@ divesoft_freedom_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 					sample.deco.time = ndl * 60;
 					sample.deco.depth = 0.0;
 				}
-				if (callback) callback(DC_SAMPLE_DECO, sample, userdata);
+				sample.deco.tts = tts * 60;
+				if (callback) callback(DC_SAMPLE_DECO, &sample, userdata);
 
 				// Setpoint
 				if (setpoint) {
 					sample.setpoint = setpoint / 100.0;
-					if (callback) callback(DC_SAMPLE_SETPOINT, sample, userdata);
+					if (callback) callback(DC_SAMPLE_SETPOINT, &sample, userdata);
 				}
 			}
 		} else if ((type >= LREC_MANIPULATION && type <= LREC_ACTIVITY) || type == LREC_INFO) {
@@ -994,7 +958,7 @@ divesoft_freedom_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 				sample.event.time = 0;
 				sample.event.flags = 0;
 				sample.event.value = 0;
-				if (callback) callback(DC_SAMPLE_EVENT, sample, userdata);
+				if (callback) callback(DC_SAMPLE_EVENT, &sample, userdata);
 			} else if (event == EVENT_MIX_CHANGED || event == EVENT_DILUENT || event == EVENT_CHANGE_MODE) {
 				unsigned int o2 = data[offset + 6];
 				unsigned int he = data[offset + 7];
@@ -1014,13 +978,13 @@ divesoft_freedom_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 					return DC_STATUS_DATAFORMAT;
 				}
 				sample.gasmix = idx;
-				if (callback) callback(DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback(DC_SAMPLE_GASMIX, &sample, userdata);
 			} else if (event == EVENT_CNS) {
 				sample.cns = array_uint16_le (data + offset + 6) / 100.0;
-				if (callback) callback(DC_SAMPLE_CNS, sample, userdata);
+				if (callback) callback(DC_SAMPLE_CNS, &sample, userdata);
 			} else if (event == EVENT_SETPOINT_MANUAL || event == EVENT_SETPOINT_AUTO) {
 				sample.setpoint = data[6] / 100.0;
-				if (callback) callback(DC_SAMPLE_SETPOINT, sample, userdata);
+				if (callback) callback(DC_SAMPLE_SETPOINT, &sample, userdata);
 			}
 		} else if (type == LREC_MEASURE) {
 			// Measurement record.
@@ -1038,25 +1002,27 @@ divesoft_freedom_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 
 					sample.pressure.tank = idx;
 					sample.pressure.value = pressure * 2.0;
-					if (callback) callback(DC_SAMPLE_PRESSURE, sample, userdata);
+					if (callback) callback(DC_SAMPLE_PRESSURE, &sample, userdata);
 				}
 			} else if (id == MEASURE_ID_OXYGEN) {
 				for (unsigned int i = 0; i < NSENSORS; ++i) {
 					unsigned int ppo2 = array_uint16_le (data + offset + 4 + i * 2);
 					if (ppo2 == 0 || ppo2 == 0xFFFF)
 						continue;
-					sample.ppo2 = ppo2 * 10.0 / BAR;
-					if (callback) callback(DC_SAMPLE_PPO2, sample, userdata);
+					sample.ppo2.sensor = i;
+					sample.ppo2.value = ppo2 * 10.0 / BAR;
+					if (callback) callback(DC_SAMPLE_PPO2, &sample, userdata);
 				}
 			} else if (id == MEASURE_ID_OXYGEN_MV) {
 				for (unsigned int i = 0; i < NSENSORS; ++i) {
 					unsigned int value = array_uint16_le (data + offset + 4 + i * 2);
 					unsigned int state = data[offset + 12 + i];
-					if (!parser->calibrated || state == SENSTAT_UNCALIBRATED ||
-						state == SENSTAT_NOT_EXIST)
+					if (!parser->calibrated || parser->calibration[i] == 0 ||
+						state == SENSTAT_UNCALIBRATED || state == SENSTAT_NOT_EXIST)
 						continue;
-					sample.ppo2 = value / 100.0 * parser->calibration[i] / BAR;
-					if (callback) callback(DC_SAMPLE_PPO2, sample, userdata);
+					sample.ppo2.sensor = i;
+					sample.ppo2.value = value / 100.0 * parser->calibration[i] / BAR;
+					if (callback) callback(DC_SAMPLE_PPO2, &sample, userdata);
 				}
 			}
 		} else if (type == LREC_STATE) {

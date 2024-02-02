@@ -36,10 +36,13 @@
 #define ESC_END   0xDC
 #define ESC_ESC   0xDD
 
-// SIDs for CAN WDBI (Write Data By Identifier) as defined by ISO 14229-1
-// (the RDBI command is implemented in shearwater_common_identifier)
-#define CAN_WDBI_REQUEST_SID 0x2E
-#define CAN_WDBI_RESPONSE_SID 0x6E
+#define RDBI_REQUEST  0x22
+#define RDBI_RESPONSE 0x62
+
+#define WDBI_REQUEST  0x2E
+#define WDBI_RESPONSE 0x6E
+
+#define NAK 0x7F
 
 dc_status_t
 shearwater_common_setup (shearwater_common_device_t *device, dc_context_t *context, dc_iostream_t *iostream)
@@ -90,7 +93,7 @@ shearwater_common_decompress_lre (unsigned char *data, unsigned int size, dc_buf
 
 		// The 9th bit indicates whether the remaining 8 bits represent
 		// a run of zero bytes or not. If the bit is set, the value is
-		// not a run and doesn’t need expansion. If the bit is not set,
+		// not a run and doesn't need expansion. If the bit is not set,
 		// the value contains the number of zero bytes in the run. A
 		// zero-length run indicates the end of the compressed stream.
 		if (value & 0x100) {
@@ -517,195 +520,237 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
 
 
 dc_status_t
-shearwater_common_identifier (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id)
+shearwater_common_rdbi (shearwater_common_device_t *device, unsigned int id, unsigned char data[], unsigned int size)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
-	dc_status_t rc = DC_STATUS_SUCCESS;
-
-	// Erase the buffer.
-	if (!dc_buffer_clear (buffer)) {
-		ERROR (abstract->context, "Insufficient buffer space available.");
-		return DC_STATUS_NOMEMORY;
-	}
 
 	// Transfer the request.
 	unsigned int n = 0;
-	unsigned char request[] = {0x22,
+	unsigned char request[] = {
+		RDBI_REQUEST,
 		(id >> 8) & 0xFF,
 		(id     ) & 0xFF};
 	unsigned char response[SZ_PACKET];
-	rc = shearwater_common_transfer (device, request, sizeof (request), response, sizeof (response), &n);
-	if (rc != DC_STATUS_SUCCESS) {
-		return rc;
+	status = shearwater_common_transfer (device, request, sizeof (request), response, sizeof (response), &n);
+	if (status != DC_STATUS_SUCCESS) {
+		return status;
 	}
 
 	// Verify the response.
-	if (n < 3 || response[0] != 0x62 || response[1] != request[1] || response[2] != request[2]) {
+	if (n < 3 || response[0] != RDBI_RESPONSE || response[1] != request[1] || response[2] != request[2]) {
+		if (n == 3 && response[0] == NAK && response[1] == RDBI_REQUEST) {
+			ERROR (abstract->context, "Received NAK packet with error code 0x%02x.", response[2]);
+			return DC_STATUS_UNSUPPORTED;
+		}
 		ERROR (abstract->context, "Unexpected response packet.");
 		return DC_STATUS_PROTOCOL;
 	}
 
-	// Append the packet to the output buffer.
-	if (!dc_buffer_append (buffer, response + 3, n - 3)) {
-		ERROR (abstract->context, "Insufficient buffer space available.");
-		return DC_STATUS_NOMEMORY;
-	}
+	unsigned int length = n - 3;
 
-	return rc;
-}
-
-
-dc_status_t shearwater_common_can_wdbi (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id)
-{
-	dc_device_t *abstract = (dc_device_t *)device;
-
-	unsigned n = 0;
-	char request_header[] = {
-		CAN_WDBI_REQUEST_SID,
-		(id >> 8) & 0xFF,
-		id & 0xFF
-	};
-	if (!dc_buffer_prepend(buffer, request_header, sizeof(request_header))) {
-		ERROR(abstract->context, "Insufficient buffer space available.");
-		return DC_STATUS_NOMEMORY;
-	}
-
-	char response[SZ_PACKET];
-	dc_status_t rc = shearwater_common_transfer(device, dc_buffer_get_data(buffer), dc_buffer_get_size(buffer), response, sizeof(response), &n);
-	if (rc != DC_STATUS_SUCCESS) {
-		return rc;
-	}
-
-	// Verify the response.
-	if (n < 3 || response[0] != CAN_WDBI_RESPONSE_SID || response[1] != request_header[1] || response[2] != request_header[2]) {
-		ERROR(abstract->context, "Unexpected response packet.");
-
+	if (length != size) {
+		ERROR (abstract->context, "Unexpected packet size (%u bytes).", length);
 		return DC_STATUS_PROTOCOL;
 	}
 
-	return rc;
+	if (length) {
+		memcpy (data, response + 3, length);
+	}
+
+	return status;
 }
 
-
-dc_status_t shearwater_common_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime)
+dc_status_t
+shearwater_common_wdbi (shearwater_common_device_t *device, unsigned int id, const unsigned char data[], unsigned int size)
 {
-	shearwater_common_device_t *device = (shearwater_common_device_t *)abstract;
+	dc_status_t status = DC_STATUS_SUCCESS;
+	dc_device_t *abstract = (dc_device_t *) device;
 
-	dc_datetime_t local_time;
-	memcpy(&local_time, datetime, sizeof(local_time));
-
-	// We need to supply a unix timestamp in _local_ time
-	local_time.timezone = DC_TIMEZONE_NONE;
-
-	dc_ticks_t unix_timestamp = dc_datetime_mktime(&local_time);
-	if (unix_timestamp == -1) {
-		ERROR(abstract->context, "Invalid date/time value specified.");
-
+	if (size + 3 > SZ_PACKET) {
 		return DC_STATUS_INVALIDARGS;
 	}
 
-	dc_buffer_t *buffer = dc_buffer_new(WDBI_TIME_PACKET_SIZE);
-	if (buffer == NULL) {
-		ERROR(abstract->context, "Insufficient buffer space available.");
-		dc_buffer_free(buffer);
-
-		return DC_STATUS_NOMEMORY;
+	// Transfer the request.
+	unsigned int n = 0;
+	unsigned char request[SZ_PACKET] = {
+		WDBI_REQUEST,
+		(id >> 8) & 0xFF,
+		(id     ) & 0xFF};
+	if (size) {
+		memcpy (request + 3, data, size);
+	}
+	unsigned char response[SZ_PACKET];
+	status = shearwater_common_transfer (device, request, size + 3, response, sizeof (response), &n);
+	if (status != DC_STATUS_SUCCESS) {
+		return status;
 	}
 
-	char shearwater_timestamp[] = {
-		(unix_timestamp >> 24) & 0xFF,
-		(unix_timestamp >> 16) & 0xFF,
-		(unix_timestamp >> 8) & 0xFF,
-		unix_timestamp & 0xFF,
-	};
-	dc_buffer_append(buffer, shearwater_timestamp, 4);
-
-	dc_status_t rc = shearwater_common_can_wdbi(device, buffer, ID_LOCAL_TIME);
-	if (rc != DC_STATUS_SUCCESS) {
-		ERROR(abstract->context, "Failed to write the dive computer time.");
+	// Verify the response.
+	if (n < 3 || response[0] != WDBI_RESPONSE || response[1] != request[1] || response[2] != request[2]) {
+		if (n == 3 && response[0] == NAK && response[1] == WDBI_REQUEST) {
+			ERROR (abstract->context, "Received NAK packet with error code 0x%02x.", response[2]);
+			return DC_STATUS_UNSUPPORTED;
+		}
+		ERROR (abstract->context, "Unexpected response packet.");
+		return DC_STATUS_PROTOCOL;
 	}
 
-	dc_buffer_free(buffer);
-
-	return rc;
+	return status;
 }
 
-dc_status_t shearwater_common_read_model(shearwater_common_device_t *device, unsigned int *model)
+dc_status_t
+shearwater_common_timesync_local (shearwater_common_device_t *device, const dc_datetime_t *datetime)
 {
-	dc_buffer_t *buffer = dc_buffer_new(SZ_PACKET);
-	if (buffer == NULL) {
-		ERROR(device->base.context, "Insufficient buffer space available.");
-		return DC_STATUS_NOMEMORY;
+	dc_status_t status = DC_STATUS_SUCCESS;
+	dc_device_t *abstract = (dc_device_t *) device;
+
+	// Convert to local time.
+	dc_datetime_t local = *datetime;
+	local.timezone = DC_TIMEZONE_NONE;
+
+	dc_ticks_t ticks = dc_datetime_mktime (&local);
+	if (ticks == -1) {
+		ERROR (abstract->context, "Invalid date/time value specified.");
+		return DC_STATUS_INVALIDARGS;
 	}
 
-	// Read the hardware type.
-	dc_status_t rc = shearwater_common_identifier(device, buffer, ID_HARDWARE);
-	if (rc != DC_STATUS_SUCCESS) {
-		ERROR(device->base.context, "Failed to read the hardware type.");
-		dc_buffer_free(buffer);
+	const unsigned char timestamp[] = {
+		(ticks >> 24) & 0xFF,
+		(ticks >> 16) & 0xFF,
+		(ticks >>  8) & 0xFF,
+		(ticks      ) & 0xFF,
+	};
 
-		return rc;
+	status = shearwater_common_wdbi (device, ID_TIME_LOCAL, timestamp, sizeof(timestamp));
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to write the dive computer local time.");
+		return status;
+	}
+
+	return status;
+}
+
+dc_status_t
+shearwater_common_timesync_utc (shearwater_common_device_t *device, const dc_datetime_t *datetime)
+{
+	dc_status_t status = DC_STATUS_SUCCESS;
+	dc_device_t *abstract = (dc_device_t *) device;
+
+	// Convert to UTC time.
+	dc_ticks_t ticks = dc_datetime_mktime (datetime);
+	if (ticks == -1) {
+		ERROR (abstract->context, "Invalid date/time value specified.");
+		return DC_STATUS_INVALIDARGS;
+	}
+
+	const unsigned char timestamp[] = {
+		(ticks >> 24) & 0xFF,
+		(ticks >> 16) & 0xFF,
+		(ticks >>  8) & 0xFF,
+		(ticks      ) & 0xFF,
+	};
+
+	status = shearwater_common_wdbi (device, ID_TIME_UTC, timestamp, sizeof(timestamp));
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to write the dive computer UTC time.");
+		return status;
+	}
+
+	int timezone = datetime->timezone / 60;
+	const unsigned char offset[] = {
+		(timezone >> 24) & 0xFF,
+		(timezone >> 16) & 0xFF,
+		(timezone >>  8) & 0xFF,
+		(timezone      ) & 0xFF,
+	};
+
+	status = shearwater_common_wdbi (device, ID_TIME_OFFSET, offset, sizeof (offset));
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to write the dive computer timezone offset.");
+		return status;
+	}
+
+	// We don't have a way to determine the daylight savings time setting,
+	// but the required offset is already factored into the timezone offset.
+	const unsigned char dst[] = {0, 0, 0, 0};
+
+	status = shearwater_common_wdbi (device, ID_TIME_DST, dst, sizeof (dst));
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to write the dive computer DST setting.");
+		return status;
+	}
+
+	return status;
+}
+
+dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsigned int *model)
+{
+	// Read the hardware type.
+	unsigned char rsp_hardware[2] = {0};
+	status = shearwater_common_rdbi (device, ID_HARDWARE, rsp_hardware, sizeof(rsp_hardware));
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to read the hardware type.");
+		return status;
 	}
 
 	// Convert and map to the model number.
-	unsigned int hardware = array_uint_be(dc_buffer_get_data(buffer), dc_buffer_get_size(buffer));
+	unsigned int hardware = array_uint16_be (rsp_hardware);
 	switch (hardware) {
 	case 0x0101:
 	case 0x0202:
-		*model = PREDATOR;
-		break;
-	case 0x0606:
-	case 0x0A0A: // Nerd 1
-		*model = NERD;
-		break;
-	case 0x7E2D:
-	case 0x0E0D: // Nerd 2
-		*model = NERD2;
+		model = PREDATOR;
 		break;
 	case 0x0404:
-case 0x0909: // Petrel 1
-		*model = PETREL;
+	case 0x0909:
+		model = PETREL;
 		break;
 	case 0x0505:
 	case 0x0808:
 	case 0x0838:
 	case 0x08A5:
+	case 0x0B0B:
 	case 0x7828:
 	case 0x7B2C:
-	case 0x8838: // Petrel 2
-	case 0x0B0B: // current docs (June 2023) imply this is a Petrel 2
-		*model = PETREL;
+	case 0x8838:
+		model = PETREL2;
 		break;
-	case 0xB407: // Petrel 3
-		*model = PETREL3;
+	case 0xB407:
+		model = PETREL3;
 		break;
-	case 0x0707: // Perdix
-		*model = PERDIX;
+	case 0x0606:
+	case 0x0A0A:
+		model = NERD;
 		break;
-case 0x0C0C: // current docs (June 2023) imply this is not a valid hardware ID
-	case 0x0C0D: // current docs (June 2023) show this as Perdix AI
-	case 0x0D0D: // current docs (June 2023) imply this is not a valid hardware ID
-	case 0x7C2D: // Perdix AI
+	case 0x0E0D:
+	case 0x7E2D:
+		model = NERD2;
+		break;
+	case 0x0707:
+		model = PERDIX;
+		break;
+	case 0x0C0D:
+	case 0x7C2D:
 	case 0x8D6C:
-		*model = PERDIXAI;
+		model = PERDIXAI;
 		break;
-	case 0xC407: // Perdix 2
-		*model = PERDIX2;
+	case 0xC407:
+		model = PERDIX2;
 		break;
 	case 0x0F0F:
 	case 0x1F0A:
 	case 0x1F0F:
-		*model = TERIC;
+		model = TERIC;
 		break;
-case 0x1512:
-		*model = PEREGRINE;
+	case 0x1512:
+		model = PEREGRINE;
+		break;
+	case 0xC0E0:
+		model = TERN;
 		break;
 	default:
-		// return a model of 0 which is unknown
-		WARNING(device->base.context, "Unknown hardware type %04x. Assuming Petrel.", hardware);
+		WARNING (device->base.context, "Unknown hardware type 0x%04x.", hardware);
 	}
 
-	dc_buffer_free(buffer);
-
-	return rc;
+	return model;
 }

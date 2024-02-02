@@ -58,6 +58,9 @@
 #define IX3M2_ZHL16C   2
 #define IX3M2_VPM      3
 
+#define REC_SAMPLE 0
+#define REC_INFO   1
+
 typedef struct divesystem_idive_parser_t divesystem_idive_parser_t;
 
 typedef struct divesystem_idive_gasmix_t {
@@ -89,7 +92,6 @@ struct divesystem_idive_parser_t {
 	unsigned int gf_high;
 };
 
-static dc_status_t divesystem_idive_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t divesystem_idive_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -97,7 +99,6 @@ static dc_status_t divesystem_idive_parser_samples_foreach (dc_parser_t *abstrac
 static const dc_parser_vtable_t divesystem_idive_parser_vtable = {
 	sizeof(divesystem_idive_parser_t),
 	DC_FAMILY_DIVESYSTEM_IDIVE,
-	divesystem_idive_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -109,7 +110,7 @@ static const dc_parser_vtable_t divesystem_idive_parser_vtable = {
 
 
 dc_status_t
-divesystem_idive_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+divesystem_idive_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model)
 {
 	divesystem_idive_parser_t *parser = NULL;
 
@@ -117,7 +118,7 @@ divesystem_idive_parser_create (dc_parser_t **out, dc_context_t *context, unsign
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (divesystem_idive_parser_t *) dc_parser_allocate (context, &divesystem_idive_parser_vtable);
+	parser = (divesystem_idive_parser_t *) dc_parser_allocate (context, &divesystem_idive_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -151,35 +152,6 @@ divesystem_idive_parser_create (dc_parser_t **out, dc_context_t *context, unsign
 
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-divesystem_idive_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	divesystem_idive_parser_t *parser = (divesystem_idive_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->divemode = INVALID;
-	parser->divetime = 0;
-	parser->maxdepth = 0;
-	parser->ngasmixes = 0;
-	parser->ntanks = 0;
-	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->gasmix[i].oxygen = 0;
-		parser->gasmix[i].helium = 0;
-	}
-	for (unsigned int i = 0; i < NTANKS; ++i) {
-		parser->tank[i].id = 0;
-		parser->tank[i].beginpressure = 0;
-		parser->tank[i].endpressure = 0;
-	}
-	parser->algorithm = INVALID;
-	parser->gf_low = INVALID;
-	parser->gf_high = INVALID;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -317,6 +289,7 @@ divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			*((unsigned int *) value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -331,6 +304,7 @@ divesystem_idive_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			tank->beginpressure = parser->tank[flags].beginpressure;
 			tank->endpressure   = parser->tank[flags].endpressure;
 			tank->gasmix = DC_GASMIX_UNKNOWN;
+			tank->usage = DC_USAGE_NONE;
 			break;
 		case DC_FIELD_ATMOSPHERIC:
 			if (ISIX3M(parser->model)) {
@@ -439,6 +413,7 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 	unsigned int algorithm_previous = INVALID;
 	unsigned int gf_low = INVALID;
 	unsigned int gf_high = INVALID;
+	unsigned int have_bearing = 0;
 
 	unsigned int firmware = 0;
 	unsigned int apos4 = 0;
@@ -467,27 +442,37 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 	while (offset + samplesize <= size) {
 		dc_sample_value_t sample = {0};
 
+		// Get the record type.
+		unsigned int type = ISIX3M(parser->model) ?
+			array_uint16_le (data + offset + 52) :
+			REC_SAMPLE;
+		if (type != REC_SAMPLE) {
+			// Skip non-sample records.
+			offset += samplesize;
+			continue;
+		}
+
 		// Time (seconds).
 		unsigned int timestamp = array_uint32_le (data + offset + 2);
-		if (timestamp <= time) {
-			ERROR (abstract->context, "Timestamp moved backwards.");
+		if (timestamp <= time && time != 0) {
+			ERROR (abstract->context, "Timestamp moved backwards (%u %u).", timestamp, time);
 			return DC_STATUS_DATAFORMAT;
 		}
 		time = timestamp;
-		sample.time = timestamp;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = timestamp * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 		// Depth (1/10 m).
 		unsigned int depth = array_uint16_le (data + offset + 6);
 		if (maxdepth < depth)
 			maxdepth = depth;
 		sample.depth = depth / 10.0;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 		// Temperature (Celsius).
 		signed int temperature = (signed short) array_uint16_le (data + offset + 8);
 		sample.temperature = temperature / 10.0;
-		if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+		if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 		// Dive mode
 		unsigned int mode = data[offset + 18];
@@ -521,7 +506,7 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		if (mode == SCR || mode == CCR) {
 			unsigned int setpoint = array_uint16_le (data + offset + 19);
 			sample.setpoint = setpoint / 1000.0;
-			if (callback) callback (DC_SAMPLE_SETPOINT, sample, userdata);
+			if (callback) callback (DC_SAMPLE_SETPOINT, &sample, userdata);
 		}
 
 		// Gaschange.
@@ -548,7 +533,7 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 			}
 
 			sample.gasmix = i;
-			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+			if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 			o2_previous = o2;
 			he_previous = he;
 		}
@@ -566,18 +551,20 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		if (decostop) {
 			sample.deco.type = DC_DECO_DECOSTOP;
 			sample.deco.depth = decostop / 10.0;
-			sample.deco.time = apos4 ? decotime : tts;
+			sample.deco.time = decotime;
+			sample.deco.tts = tts;
 		} else {
 			sample.deco.type = DC_DECO_NDL;
 			sample.deco.depth = 0.0;
 			sample.deco.time = tts;
+			sample.deco.tts = 0;
 		}
-		if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 
 		// CNS
 		unsigned int cns = array_uint16_le (data + offset + 29);
 		sample.cns = cns / 100.0;
-		if (callback) callback (DC_SAMPLE_CNS, sample, userdata);
+		if (callback) callback (DC_SAMPLE_CNS, &sample, userdata);
 
 		// Tank Pressure
 		if (samplesize == SZ_SAMPLE_IX3M_APOS4) {
@@ -598,7 +585,7 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 				sample.event.time = 0;
 				sample.event.flags = 0;
 				sample.event.value = 0;
-				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 			} else {
 				// Get the index of the tank.
 				if (id != tank_previous) {
@@ -628,9 +615,19 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 				if (tank_idx < ntanks) {
 					sample.pressure.tank = tank_idx;
 					sample.pressure.value = pressure;
-					if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+					if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
 					tank[tank_idx].endpressure = pressure;
 				}
+			}
+
+			// Compass bearing
+			unsigned int bearing = array_uint16_le (data + offset + 50);
+			if (bearing != 0) {
+				have_bearing = 1; // Stop ignoring zero values.
+			}
+			if (have_bearing && bearing != 0xFFFF) {
+				sample.bearing = bearing;
+				if (callback) callback (DC_SAMPLE_BEARING, &sample, userdata);
 			}
 		}
 

@@ -1,6 +1,6 @@
 # Versioning.
 m4_define([dc_version_major],[0])
-m4_define([dc_version_minor],[8])
+m4_define([dc_version_minor],[9])
 m4_define([dc_version_micro],[0])
 m4_define([dc_version_suffix],[devel-Subsurface-NG])
 m4_define([dc_version],dc_version_major.dc_version_minor.dc_version_micro[]m4_ifset([dc_version_suffix],-[dc_version_suffix]))

@@ -54,17 +54,17 @@ parse (dc_buffer_t *buffer, dc_context_t *context, dc_descriptor_t *descriptor, 
 
 	// Create the parser.
 	message ("Creating the parser.\n");
-	rc = dc_parser_new2 (&parser, context, descriptor, devtime, systime);
+	rc = dc_parser_new2 (&parser, context, descriptor, data, size);
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR ("Error creating the parser.");
 		goto cleanup;
 	}
 
-	// Register the data.
-	message ("Registering the data.\n");
-	rc = dc_parser_set_data (parser, data, size);
-	if (rc != DC_STATUS_SUCCESS) {
-		ERROR ("Error registering the data.");
+	// Set the clock.
+	message ("Setting the clock.\n");
+	rc = dc_parser_set_clock (parser, devtime, systime);
+	if (rc != DC_STATUS_SUCCESS && rc != DC_STATUS_UNSUPPORTED) {
+		ERROR ("Error setting the clock.");
 		goto cleanup;
 	}
 

@@ -48,7 +48,6 @@ struct seac_screen_parser_t {
 	unsigned int gf_high;
 };
 
-static dc_status_t seac_screen_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t seac_screen_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t seac_screen_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t seac_screen_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -56,7 +55,6 @@ static dc_status_t seac_screen_parser_samples_foreach (dc_parser_t *abstract, dc
 static const dc_parser_vtable_t seac_screen_parser_vtable = {
 	sizeof(seac_screen_parser_t),
 	DC_FAMILY_SEAC_SCREEN,
-	seac_screen_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -67,7 +65,7 @@ static const dc_parser_vtable_t seac_screen_parser_vtable = {
 };
 
 dc_status_t
-seac_screen_parser_create (dc_parser_t **out, dc_context_t *context)
+seac_screen_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size)
 {
 	seac_screen_parser_t *parser = NULL;
 
@@ -75,7 +73,7 @@ seac_screen_parser_create (dc_parser_t **out, dc_context_t *context)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (seac_screen_parser_t *) dc_parser_allocate (context, &seac_screen_parser_vtable);
+	parser = (seac_screen_parser_t *) dc_parser_allocate (context, &seac_screen_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -91,23 +89,6 @@ seac_screen_parser_create (dc_parser_t **out, dc_context_t *context)
 	parser->gf_high = 0;
 
 	*out = (dc_parser_t *) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-static dc_status_t
-seac_screen_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	seac_screen_parser_t *parser = (seac_screen_parser_t *)abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->ngasmixes = 0;
-	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->oxygen[i] = 0;
-	}
-	parser->gf_low = 0;
-	parser->gf_high = 0;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -239,6 +220,7 @@ seac_screen_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsig
 			*((unsigned int *)value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = 0.0;
 			gasmix->oxygen = parser->oxygen[flags] / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -331,16 +313,16 @@ seac_screen_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t 
 			return DC_STATUS_DATAFORMAT;
 		}
 		time = timestamp;
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 		// Depth (1/100 m).
 		sample.depth = depth / 100.0;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 		// Temperature (1/100 °C).
 		sample.temperature = temperature / 100.0;
-		if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+		if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 		// Gas mix
 		if (o2 != o2_previous) {
@@ -363,7 +345,7 @@ seac_screen_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t 
 			}
 
 			sample.gasmix = idx;
-			if (callback) callback(DC_SAMPLE_GASMIX, sample, userdata);
+			if (callback) callback(DC_SAMPLE_GASMIX, &sample, userdata);
 			o2_previous = o2;
 		}
 
@@ -377,11 +359,12 @@ seac_screen_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t 
 			sample.deco.time = ndl_tts;
 			sample.deco.depth = 0;
 		}
-		if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+		sample.deco.tts = 0;
+		if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 
 		// CNS
 		sample.cns = cns / 100.0;
-		if (callback) callback (DC_SAMPLE_CNS, sample, userdata);
+		if (callback) callback (DC_SAMPLE_CNS, &sample, userdata);
 
 		// Deco model
 		if (gf_low == 0 && gf_high == 0) {

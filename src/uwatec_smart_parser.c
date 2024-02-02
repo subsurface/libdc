@@ -51,7 +51,10 @@
 #define ALADINA2          0x28
 #define G2TEK             0x31
 #define G2                0x32
+#define G3                0x34
 #define G2HUD             0x42
+#define LUNA2AI           0x50
+#define LUNA2             0x51
 
 #define UNSUPPORTED 0xFFFFFFFF
 
@@ -157,7 +160,6 @@ struct uwatec_smart_parser_t {
 	dc_divemode_t divemode;
 };
 
-static dc_status_t uwatec_smart_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t uwatec_smart_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t uwatec_smart_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t uwatec_smart_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -167,7 +169,6 @@ static dc_status_t uwatec_smart_parse (uwatec_smart_parser_t *parser, dc_sample_
 static const dc_parser_vtable_t uwatec_smart_parser_vtable = {
 	sizeof(uwatec_smart_parser_t),
 	DC_FAMILY_UWATEC_SMART,
-	uwatec_smart_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -534,7 +535,8 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 					parser->model == G2 || parser->model == ALADINSPORTMATRIX ||
 					parser->model == ALADINSQUARE || parser->model == G2HUD ||
 					parser->model == ALADINA1 || parser->model == ALADINA2 ||
-					parser->model == G2TEK) {
+					parser->model == G2TEK || parser->model == G3 ||
+					parser->model == LUNA2AI || parser->model == LUNA2) {
 					unsigned int offset = header->tankpressure + 2 * i;
 					endpressure   = array_uint16_le(data + offset);
 					beginpressure = array_uint16_le(data + offset + 2 * header->ngases);
@@ -573,7 +575,7 @@ uwatec_smart_parser_cache (uwatec_smart_parser_t *parser)
 
 
 dc_status_t
-uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	uwatec_smart_parser_t *parser = NULL;
@@ -582,7 +584,7 @@ uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (uwatec_smart_parser_t *) dc_parser_allocate (context, &uwatec_smart_parser_vtable);
+	parser = (uwatec_smart_parser_t *) dc_parser_allocate (context, &uwatec_smart_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -625,9 +627,12 @@ uwatec_smart_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 	case G2:
 	case G2HUD:
 	case G2TEK:
+	case G3:
 	case ALADINSPORTMATRIX:
 	case ALADINA1:
 	case ALADINA2:
+	case LUNA2AI:
+	case LUNA2:
 		parser->headersize = 84;
 		parser->header = &uwatec_smart_trimix_header;
 		parser->samples = uwatec_smart_galileo_samples;
@@ -708,31 +713,6 @@ error_free:
 
 
 static dc_status_t
-uwatec_smart_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	uwatec_smart_parser_t *parser = (uwatec_smart_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->ngasmixes = 0;
-	parser->ntanks = 0;
-	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->gasmix[i].id = 0;
-		parser->gasmix[i].oxygen = 0;
-		parser->gasmix[i].helium = 0;
-		parser->tank[i].id = 0;
-		parser->tank[i].beginpressure = 0;
-		parser->tank[i].endpressure = 0;
-		parser->tank[i].gasmix = 0;
-	}
-	parser->watertype = DC_WATER_FRESH;
-	parser->divemode = DC_DIVEMODE_OC;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
 uwatec_smart_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 {
 	uwatec_smart_parser_t *parser = (uwatec_smart_parser_t *) abstract;
@@ -807,6 +787,7 @@ uwatec_smart_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 			*((unsigned int *) value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -821,6 +802,7 @@ uwatec_smart_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 			tank->beginpressure = parser->tank[flags].beginpressure / 128.0;
 			tank->endpressure   = parser->tank[flags].endpressure   / 128.0;
 			tank->gasmix = parser->tank[flags].gasmix;
+			tank->usage = DC_USAGE_NONE;
 			break;
 		case DC_FIELD_TEMPERATURE_MINIMUM:
 			*((double *) value) = (signed short) array_uint16_le (data + table->temp_minimum) / 10.0;
@@ -953,7 +935,8 @@ uwatec_smart_parse (uwatec_smart_parser_t *parser, dc_sample_callback_t callback
 			parser->model == G2 || parser->model == ALADINSPORTMATRIX ||
 			parser->model == ALADINSQUARE || parser->model == G2HUD ||
 			parser->model == ALADINA1 || parser->model == ALADINA2 ||
-			parser->model == G2TEK) {
+			parser->model == G2TEK || parser->model == G3 ||
+			parser->model == LUNA2AI || parser->model == LUNA2) {
 			// Uwatec Galileo
 			id = uwatec_galileo_identify (data[offset]);
 		} else {
@@ -1162,8 +1145,8 @@ uwatec_smart_parse (uwatec_smart_parser_t *parser, dc_sample_callback_t callback
 		}
 
 		while (complete) {
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 			if (parser->ngasmixes && gasmix != gasmix_previous) {
 				idx = uwatec_smart_find_gasmix (parser, gasmix);
@@ -1172,13 +1155,13 @@ uwatec_smart_parse (uwatec_smart_parser_t *parser, dc_sample_callback_t callback
 					return DC_STATUS_DATAFORMAT;
 				}
 				sample.gasmix = idx;
-				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 				gasmix_previous = gasmix;
 			}
 
 			if (have_temperature) {
 				sample.temperature = temperature / 2.5;
-				if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+				if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 			}
 
 			if (bookmark) {
@@ -1186,12 +1169,12 @@ uwatec_smart_parse (uwatec_smart_parser_t *parser, dc_sample_callback_t callback
 				sample.event.time = 0;
 				sample.event.flags = 0;
 				sample.event.value = 0;
-				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 			}
 
 			if (have_rbt || have_pressure) {
 				sample.rbt = rbt;
-				if (callback) callback (DC_SAMPLE_RBT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_RBT, &sample, userdata);
 			}
 
 			if (have_pressure) {
@@ -1199,24 +1182,24 @@ uwatec_smart_parse (uwatec_smart_parser_t *parser, dc_sample_callback_t callback
 				if (idx < parser->ntanks) {
 					sample.pressure.tank = idx;
 					sample.pressure.value = pressure / 4.0;
-					if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+					if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
 				}
 			}
 
 			if (have_heartrate) {
 				sample.heartbeat = heartrate;
-				if (callback) callback (DC_SAMPLE_HEARTBEAT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_HEARTBEAT, &sample, userdata);
 			}
 
 			if (have_bearing) {
 				sample.bearing = bearing;
-				if (callback) callback (DC_SAMPLE_BEARING, sample, userdata);
+				if (callback) callback (DC_SAMPLE_BEARING, &sample, userdata);
 				have_bearing = 0;
 			}
 
 			if (have_depth) {
 				sample.depth = (signed int)(depth - depth_calibration) * (2.0 * BAR / 1000.0) / (density * 10.0);
-				if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+				if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 			}
 
 			time += interval;

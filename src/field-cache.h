@@ -26,6 +26,7 @@ typedef struct dc_field_cache {
 	//     dc_tank_t TANK[MAXGASES]
 	// but that's for later
 	dc_tankinfo_t tankinfo[MAXGASES];
+	dc_usage_t tankusage[MAXGASES];
 	double tanksize[MAXGASES];
 	double tankworkingpressure[MAXGASES];
 

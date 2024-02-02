@@ -94,7 +94,6 @@ typedef struct sample_info_t {
 	unsigned int divisor;
 } sample_info_t;
 
-static dc_status_t suunto_d9_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t suunto_d9_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t suunto_d9_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -102,7 +101,6 @@ static dc_status_t suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_s
 static const dc_parser_vtable_t suunto_d9_parser_vtable = {
 	sizeof(suunto_d9_parser_t),
 	DC_FAMILY_SUUNTO_D9,
-	suunto_d9_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -253,7 +251,7 @@ suunto_d9_parser_cache (suunto_d9_parser_t *parser)
 }
 
 dc_status_t
-suunto_d9_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model, unsigned int serial)
+suunto_d9_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model, unsigned int serial)
 {
 	suunto_d9_parser_t *parser = NULL;
 
@@ -261,7 +259,7 @@ suunto_d9_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int 
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (suunto_d9_parser_t *) dc_parser_allocate (context, &suunto_d9_parser_vtable);
+	parser = (suunto_d9_parser_t *) dc_parser_allocate (context, &suunto_d9_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -283,28 +281,6 @@ suunto_d9_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int 
 	parser->config = 0;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-suunto_d9_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	suunto_d9_parser_t *parser = (suunto_d9_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->id = 0;
-	parser->mode = AIR;
-	parser->ngasmixes = 0;
-	parser->nccr = 0;
-	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->oxygen[i] = 0;
-		parser->helium[i] = 0;
-	}
-	parser->gasmix = 0;
-	parser->config = 0;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -395,6 +371,7 @@ suunto_d9_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigne
 			*((unsigned int *) value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = parser->helium[flags] / 100.0;
 			gasmix->oxygen = parser->oxygen[flags] / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -539,8 +516,8 @@ suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 		dc_sample_value_t sample = {0};
 
 		// Time (seconds).
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 		// Sample data.
 		for (unsigned int i = 0; i < nparams; ++i) {
@@ -555,19 +532,19 @@ suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 				case 0x64: // Depth
 					value = array_uint16_le (data + offset);
 					sample.depth = value / (double) info[i].divisor;
-					if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+					if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 					break;
 				case 0x68: // Pressure
 					value = array_uint16_le (data + offset);
 					if (value != 0xFFFF) {
 						sample.pressure.tank = 0;
 						sample.pressure.value = value / (double) info[i].divisor;
-						if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+						if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
 					}
 					break;
 				case 0x74: // Temperature
 					sample.temperature = (signed char) data[offset] / (double) info[i].divisor;
-					if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+					if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 					break;
 				default: // Unknown sample type
 					ERROR (abstract->context, "Unknown sample type 0x%02x.", info[i].type);
@@ -585,7 +562,7 @@ suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 				return DC_STATUS_DATAFORMAT;
 			}
 			sample.gasmix = parser->gasmix;
-			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+			if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 		}
 
 		// Events
@@ -625,7 +602,7 @@ suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 					seconds = data[offset + 1];
 					sample.event.type = SAMPLE_EVENT_SURFACE;
 					sample.event.time = seconds;
-					if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+					if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 					offset += 2;
 					break;
 				case 0x03: // Event
@@ -731,7 +708,7 @@ suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 						sample.event.flags = SAMPLE_FLAGS_BEGIN;
 					sample.event.time = seconds;
 					if (sample.event.type != SAMPLE_EVENT_NONE) {
-						if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+						if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 					}
 					offset += 2;
 					break;
@@ -751,7 +728,7 @@ suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 						sample.event.value = heading / 2;
 					}
 					sample.event.time = seconds;
-					if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+					if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 					offset += 4;
 					break;
 				case 0x05: // Gas Change
@@ -767,7 +744,7 @@ suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 						return DC_STATUS_DATAFORMAT;
 					}
 					sample.gasmix = idx;
-					if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+					if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 					offset += 2;
 					break;
 				case 0x06: // Gas Change
@@ -801,10 +778,10 @@ suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 						return DC_STATUS_DATAFORMAT;
 					}
 					sample.gasmix = idx;
-					if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+					if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 					if (type & 0x80) {
 						sample.setpoint = ppo2 / 10.0;
-						if (callback) callback (DC_SAMPLE_SETPOINT, sample, userdata);
+						if (callback) callback (DC_SAMPLE_SETPOINT, &sample, userdata);
 					}
 					offset += length;
 					break;
@@ -829,7 +806,8 @@ suunto_d9_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 		}
 		sample.deco.time = 0;
 		sample.deco.depth = 0.0;
-		if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+		sample.deco.tts = 0;
+		if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 
 		time += interval_sample;
 		nsamples++;

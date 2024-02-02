@@ -41,6 +41,11 @@ extern "C" {
 
 #define WDBI_TIME_PACKET_SIZE 7
 
+#define ID_TIME_LOCAL  0x9030
+#define ID_TIME_UTC    0x9031
+#define ID_TIME_OFFSET 0x9032
+#define ID_TIME_DST    0x9033
+
 #define PREDATOR 2
 #define PETREL   3
 #define PETREL2  PETREL
@@ -52,6 +57,7 @@ extern "C" {
 #define PEREGRINE 9
 #define PETREL3  10
 #define PERDIX2  11
+#define TERN     12
 
 #define NSTEPS    10000
 #define STEP(i,n) ((NSTEPS * (i) + (n) / 2) / (n))
@@ -71,7 +77,19 @@ dc_status_t
 shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int address, unsigned int size, unsigned int compression, dc_event_progress_t *progress);
 
 dc_status_t
-shearwater_common_identifier (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id);
+shearwater_common_rdbi (shearwater_common_device_t *device, unsigned int id, unsigned char data[], unsigned int size);
+
+dc_status_t
+shearwater_common_wdbi (shearwater_common_device_t *device, unsigned int id, const unsigned char data[], unsigned int size);
+
+dc_status_t
+shearwater_common_timesync_local (shearwater_common_device_t *device, const dc_datetime_t *datetime);
+
+dc_status_t
+shearwater_common_timesync_utc (shearwater_common_device_t *device, const dc_datetime_t *datetime);
+
+unsigned int
+shearwater_common_get_model (shearwater_common_device_t *device, unsigned int hardware);
 
 dc_status_t shearwater_common_can_wdbi (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id);
 

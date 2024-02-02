@@ -43,10 +43,6 @@
 
 #define UNDEFINED 0xFFFFFFFF
 
-#define ALL    0
-#define FIXED  1
-#define MANUAL 2
-
 #define HEADER  1
 #define PROFILE 2
 
@@ -117,10 +113,12 @@ typedef struct hw_ostc_layout_t {
 } hw_ostc_layout_t;
 
 typedef struct hw_ostc_gasmix_t {
+	unsigned int id;
 	unsigned int oxygen;
 	unsigned int helium;
 	unsigned int type;
 	unsigned int enabled;
+	unsigned int active;
 	unsigned int diluent;
 } hw_ostc_gasmix_t;
 
@@ -136,6 +134,7 @@ typedef struct hw_ostc_parser_t {
 	const hw_ostc_layout_t *layout;
 	unsigned int ngasmixes;
 	unsigned int nfixed;
+	unsigned int ndisabled;
 	unsigned int initial;
 	unsigned int initial_setpoint;
 	unsigned int initial_cns;
@@ -143,15 +142,15 @@ typedef struct hw_ostc_parser_t {
 	unsigned int current_divemode_ccr;
 } hw_ostc_parser_t;
 
-static dc_status_t hw_ostc_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t hw_ostc_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
 
+static dc_status_t hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t callback, void *userdata);
+
 static const dc_parser_vtable_t hw_ostc_parser_vtable = {
 	sizeof(hw_ostc_parser_t),
 	DC_FAMILY_HW_OSTC,
-	hw_ostc_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -216,19 +215,30 @@ static const hw_ostc_layout_t hw_ostc_layout_ostc3 = {
 };
 
 static unsigned int
-hw_ostc_find_gasmix (hw_ostc_parser_t *parser, unsigned int o2, unsigned int he, unsigned int dil, unsigned int type)
+hw_ostc_find_gasmix_manual (hw_ostc_parser_t *parser, unsigned int o2, unsigned int he, unsigned int dil)
 {
-	unsigned int offset = 0;
+	unsigned int offset = parser->nfixed - parser->ndisabled;
 	unsigned int count = parser->ngasmixes;
-	if (type == FIXED) {
-		count = parser->nfixed;
-	} else if (type == MANUAL) {
-		offset = parser->nfixed;
-	}
 
 	unsigned int i = offset;
 	while (i < count) {
 		if (o2 == parser->gasmix[i].oxygen && he == parser->gasmix[i].helium && dil == parser->gasmix[i].diluent)
+			break;
+		i++;
+	}
+
+	return i;
+}
+
+static unsigned int
+hw_ostc_find_gasmix_fixed (hw_ostc_parser_t *parser, unsigned int id)
+{
+	unsigned int offset = 0;
+	unsigned int count = parser->nfixed - parser->ndisabled;
+
+	unsigned int i = offset;
+	while (i < count) {
+		if (id == parser->gasmix[i].id)
 			break;
 		i++;
 	}
@@ -317,19 +327,23 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 			initial = data[31];
 		}
 		for (unsigned int i = 0; i < ngasmixes; ++i) {
+			gasmix[i].id = i + 1;
 			gasmix[i].oxygen = data[25 + 2 * i];
 			gasmix[i].helium = 0;
 			gasmix[i].type = 0;
 			gasmix[i].enabled = 1;
+			gasmix[i].active = 0;
 			gasmix[i].diluent = 0;
 		}
 	} else if (version == 0x23 || version == 0x24) {
 		ngasmixes = 5;
 		for (unsigned int i = 0; i < ngasmixes; ++i) {
+			gasmix[i].id = i + 1;
 			gasmix[i].oxygen = data[28 + 4 * i + 0];
 			gasmix[i].helium = data[28 + 4 * i + 1];
 			gasmix[i].type   = data[28 + 4 * i + 3];
 			gasmix[i].enabled = gasmix[i].type != 0;
+			gasmix[i].active = 0;
 			gasmix[i].diluent = ccr;
 			// Find the first gas marked as the initial gas.
 			if (initial == UNDEFINED && data[28 + 4 * i + 3] == 1) {
@@ -348,6 +362,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 			initial = data[31];
 		}
 		for (unsigned int i = 0; i < ngasmixes; ++i) {
+			gasmix[i].id = i + 1;
 			gasmix[i].oxygen = data[19 + 2 * i + 0];
 			gasmix[i].helium = data[19 + 2 * i + 1];
 			gasmix[i].type = 0;
@@ -356,6 +371,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 			} else {
 				gasmix[i].enabled = 1;
 			}
+			gasmix[i].active = 0;
 			gasmix[i].diluent = ccr;
 		}
 	}
@@ -364,7 +380,6 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 			ERROR(abstract->context, "Invalid initial gas mix.");
 			return DC_STATUS_DATAFORMAT;
 		}
-		initial--; /* Convert to a zero based index. */
 	} else {
 		WARNING(abstract->context, "No initial gas mix available.");
 	}
@@ -375,6 +390,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 	parser->layout = layout;
 	parser->ngasmixes = ngasmixes;
 	parser->nfixed = ngasmixes;
+	parser->ndisabled = 0;
 	parser->initial = initial;
 	parser->initial_setpoint = initial_setpoint;
 	parser->initial_cns = initial_cns;
@@ -387,7 +403,7 @@ hw_ostc_parser_cache (hw_ostc_parser_t *parser)
 }
 
 static dc_status_t
-hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int hwos, unsigned int model)
+hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int hwos, unsigned int model, unsigned int serial)
 {
 	hw_ostc_parser_t *parser = NULL;
 
@@ -395,7 +411,7 @@ hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsign
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (hw_ostc_parser_t *) dc_parser_allocate (context, &hw_ostc_parser_vtable);
+	parser = (hw_ostc_parser_t *) dc_parser_allocate (context, &hw_ostc_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -410,14 +426,17 @@ hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsign
 	parser->layout = NULL;
 	parser->ngasmixes = 0;
 	parser->nfixed = 0;
+	parser->ndisabled = 0;
 	parser->initial = 0;
 	parser->initial_setpoint = 0;
 	parser->initial_cns = 0;
 	for (unsigned int i = 0; i < NGASMIXES; ++i) {
+		parser->gasmix[i].id = 0;
 		parser->gasmix[i].oxygen = 0;
 		parser->gasmix[i].helium = 0;
 		parser->gasmix[i].type = 0;
 		parser->gasmix[i].enabled = 0;
+		parser->gasmix[i].active = 0;
 		parser->gasmix[i].diluent = 0;
 	}
 	parser->serial = serial;
@@ -429,43 +448,16 @@ hw_ostc_parser_create_internal (dc_parser_t **out, dc_context_t *context, unsign
 
 
 dc_status_t
-hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
+hw_ostc_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int serial)
 {
-	return hw_ostc_parser_create_internal (out, context, serial, 0, 0);
+	return hw_ostc_parser_create_internal (out, context, data, size, 0, 0, serial);
 }
 
 dc_status_t
-hw_ostc3_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial, unsigned int model)
+hw_ostc3_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model, unsigned int serial)
 {
-	return hw_ostc_parser_create_internal (out, context, serial, 1, model);
+	return hw_ostc_parser_create_internal (out, context, data, size, 1, model, serial);
 }
-
-static dc_status_t
-hw_ostc_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	hw_ostc_parser_t *parser = (hw_ostc_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->version = 0;
-	parser->header = 0;
-	parser->layout = NULL;
-	parser->ngasmixes = 0;
-	parser->nfixed = 0;
-	parser->initial = 0;
-	parser->initial_setpoint = 0;
-	parser->initial_cns = 0;
-	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->gasmix[i].oxygen = 0;
-		parser->gasmix[i].helium = 0;
-		parser->gasmix[i].type = 0;
-		parser->gasmix[i].enabled = 0;
-		parser->gasmix[i].diluent = 0;
-	}
-
-	return DC_STATUS_SUCCESS;
-}
-
 
 static dc_status_t
 hw_ostc_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
@@ -542,7 +534,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 
 	// Cache the profile data.
 	if (parser->cached < PROFILE) {
-		rc = hw_ostc_parser_samples_foreach (abstract, NULL, NULL);
+		rc = hw_ostc_parser_internal_foreach (parser, NULL, NULL);
 		if (rc != DC_STATUS_SUCCESS)
 			return rc;
 	}
@@ -582,6 +574,8 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				return DC_STATUS_UNSUPPORTED;
 			}
 
+			gasmix->usage = parser->gasmix[flags].diluent ?
+				DC_USAGE_DILUENT : DC_USAGE_NONE;
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -839,7 +833,7 @@ static void hw_ostc_notify_bailout(hw_ostc_parser_t *parser, const unsigned char
 		}
 
 		if (callback) {
-			callback(DC_SAMPLE_EVENT, sample, userdata);
+			callback(DC_SAMPLE_EVENT, &sample, userdata);
 		}
 
 		parser->current_divemode_ccr = parser->gasmix[index].diluent;
@@ -847,16 +841,11 @@ static void hw_ostc_notify_bailout(hw_ostc_parser_t *parser, const unsigned char
 }
 
 static dc_status_t
-hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
+hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t callback, void *userdata)
 {
-	hw_ostc_parser_t *parser = (hw_ostc_parser_t *) abstract;
+	dc_parser_t *abstract = (dc_parser_t *) parser;
 	const unsigned char *data = abstract->data;
 	unsigned int size = abstract->size;
-
-	// Cache the parser data.
-	dc_status_t rc = hw_ostc_parser_cache (parser);
-	if (rc != DC_STATUS_SUCCESS)
-		return rc;
 
 	unsigned int version = parser->version;
 	unsigned int header = parser->header;
@@ -964,7 +953,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 	unsigned int time = 0;
 	unsigned int nsamples = 0;
-	unsigned int tank = parser->initial != UNDEFINED ? parser->initial : 0;
+	unsigned int tank = parser->initial != UNDEFINED ? parser->initial - 1 : 0;
 
 	unsigned int offset = header;
 	if (version == 0x23 || version == 0x24)
@@ -976,31 +965,33 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 		// Time (seconds).
 		time += samplerate;
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 		// Initial gas mix.
 		if (time == samplerate && parser->initial != UNDEFINED) {
-			sample.gasmix = parser->initial;
-			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+			unsigned int idx = hw_ostc_find_gasmix_fixed (parser, parser->initial);
+			parser->gasmix[idx].active = 1;
+			sample.gasmix = idx;
+			if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 		}
 
 		// Initial setpoint (mbar).
 		if (time == samplerate && parser->initial_setpoint != UNDEFINED) {
 			sample.setpoint = parser->initial_setpoint / 100.0;
-			if (callback) callback (DC_SAMPLE_SETPOINT, sample, userdata);
+			if (callback) callback (DC_SAMPLE_SETPOINT, &sample, userdata);
 		}
 
 		// Initial CNS (%).
 		if (time == samplerate && parser->initial_cns != UNDEFINED) {
 			sample.cns = parser->initial_cns / 100.0;
-			if (callback) callback (DC_SAMPLE_CNS, sample, userdata);
+			if (callback) callback (DC_SAMPLE_CNS, &sample, userdata);
 		}
 
 		// Depth (1/100 m).
 		unsigned int depth = array_uint16_le (data + offset);
 		sample.depth = depth / 100.0;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 		offset += 2;
 
 		// Extended sample info.
@@ -1059,7 +1050,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 			break;
 		}
 		if (sample.event.type && callback)
-			callback (DC_SAMPLE_EVENT, sample, userdata);
+			callback (DC_SAMPLE_EVENT, &sample, userdata);
 
 		// Manual Gas Set & Change
 		if (events & 0x10) {
@@ -1076,22 +1067,24 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				diluent = ccr;
 			}
 			unsigned int he = data[offset + 1];
-			unsigned int idx = hw_ostc_find_gasmix (parser, o2, he, diluent, MANUAL);
+			unsigned int idx = hw_ostc_find_gasmix_manual (parser, o2, he, diluent);
 			if (idx >= parser->ngasmixes) {
 				if (idx >= NGASMIXES) {
 					ERROR (abstract->context, "Maximum number of gas mixes reached.");
 					return DC_STATUS_NOMEMORY;
 				}
+				parser->gasmix[idx].id = 0;
 				parser->gasmix[idx].oxygen = o2;
 				parser->gasmix[idx].helium = he;
 				parser->gasmix[idx].type = 0;
 				parser->gasmix[idx].enabled = 1;
+				parser->gasmix[idx].active = 1;
 				parser->gasmix[idx].diluent = diluent;
 				parser->ngasmixes = idx + 1;
 			}
 
 			sample.gasmix = idx;
-			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+			if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 
 			hw_ostc_notify_bailout(parser, data, idx, callback, userdata);
 
@@ -1105,19 +1098,20 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				ERROR (abstract->context, "Buffer overflow detected!");
 				return DC_STATUS_DATAFORMAT;
 			}
-			unsigned int idx = data[offset];
-			if (idx > parser->nfixed && idx <= parser->nfixed + OSTC4_CC_DILUENT_GAS_OFFSET) {
+			unsigned int id = data[offset];
+			if (id > parser->nfixed && id <= parser->nfixed + OSTC4_CC_DILUENT_GAS_OFFSET) {
 				// OSTC4 reports gas changes to another diluent with an offset
-				idx -= OSTC4_CC_DILUENT_GAS_OFFSET;
+				id -= OSTC4_CC_DILUENT_GAS_OFFSET;
 			}
-			if (idx < 1 || idx > parser->nfixed) {
-				ERROR(abstract->context, "Invalid gas mix (%u).", idx);
+			if (id < 1 || id > parser->nfixed) {
+				ERROR(abstract->context, "Invalid gas mix (%u).", id);
 				return DC_STATUS_DATAFORMAT;
 			}
-			idx--; /* Convert to a zero based index. */
+			unsigned int idx = hw_ostc_find_gasmix_fixed (parser, id);
+			parser->gasmix[idx].active = 1;
 			sample.gasmix = idx;
-			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
-			tank = idx;
+			if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
+			tank = id - 1;
 
 			hw_ostc_notify_bailout(parser, data, idx, callback, userdata);
 
@@ -1133,7 +1127,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 					return DC_STATUS_DATAFORMAT;
 				}
 				sample.setpoint = data[offset] / 100.0;
-				if (callback) callback (DC_SAMPLE_SETPOINT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_SETPOINT, &sample, userdata);
 				offset++;
 				length--;
 			}
@@ -1147,22 +1141,24 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 				unsigned int o2 = data[offset];
 				unsigned int he = data[offset + 1];
-				unsigned int idx = hw_ostc_find_gasmix (parser, o2, he, 0, MANUAL);
+				unsigned int idx = hw_ostc_find_gasmix_manual (parser, o2, he, 0);
 				if (idx >= parser->ngasmixes) {
 					if (idx >= NGASMIXES) {
 						ERROR (abstract->context, "Maximum number of gas mixes reached.");
 						return DC_STATUS_NOMEMORY;
 					}
+					parser->gasmix[idx].id = 0;
 					parser->gasmix[idx].oxygen = o2;
 					parser->gasmix[idx].helium = he;
 					parser->gasmix[idx].type = 0;
 					parser->gasmix[idx].enabled = 1;
+					parser->gasmix[idx].active = 1;
 					parser->gasmix[idx].diluent = 0;
 					parser->ngasmixes = idx + 1;
 				}
 
 				sample.gasmix = idx;
-				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 
 				hw_ostc_notify_bailout(parser, data, idx, callback, userdata);
 
@@ -1197,7 +1193,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 				case TEMPERATURE:
 					value = array_uint16_le (data + offset);
 					sample.temperature = value / 10.0;
-					if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+					if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 					break;
 				case DECO:
 					// Due to a firmware bug, the deco/ndl info is incorrect for
@@ -1212,7 +1208,8 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 						sample.deco.depth = 0.0;
 					}
 					sample.deco.time = data[offset + 1] * 60;
-					if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+					sample.deco.tts = 0;
+					if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 					break;
 				case PPO2:
 					for (unsigned int j = 0; j < 3; ++j) {
@@ -1226,8 +1223,9 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 					}
 					if (count) {
 						for (unsigned int j = 0; j < 3; ++j) {
-							sample.ppo2 = ppo2[j] / 100.0;
-							if (callback) callback (DC_SAMPLE_PPO2, sample, userdata);
+							sample.ppo2.sensor = i;
+							sample.ppo2.value = ppo2[j] / 100.0;
+							if (callback) callback (DC_SAMPLE_PPO2, &sample, userdata);
 						}
 					}
 					break;
@@ -1236,7 +1234,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 						sample.cns = array_uint16_le (data + offset) / 100.0;
 					else
 						sample.cns = data[offset] / 100.0;
-					if (callback) callback (DC_SAMPLE_CNS, sample, userdata);
+					if (callback) callback (DC_SAMPLE_CNS, &sample, userdata);
 					break;
 				case TANK:
 					value = array_uint16_le (data + offset);
@@ -1249,7 +1247,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 							(firmware >= OSTC3FW(10,40) && firmware <= OSTC3FW(10,50))) {
 							sample.pressure.value /= 10.0;
 						}
-						if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+						if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
 					}
 					break;
 				default: // Not yet used.
@@ -1269,7 +1267,7 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 					return DC_STATUS_DATAFORMAT;
 				}
 				sample.setpoint = data[offset] / 100.0;
-				if (callback) callback (DC_SAMPLE_SETPOINT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_SETPOINT, &sample, userdata);
 				offset++;
 				length--;
 			}
@@ -1283,22 +1281,24 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 
 				unsigned int o2 = data[offset];
 				unsigned int he = data[offset + 1];
-				unsigned int idx = hw_ostc_find_gasmix (parser, o2, he, 0, MANUAL);
+				unsigned int idx = hw_ostc_find_gasmix_manual (parser, o2, he, 0);
 				if (idx >= parser->ngasmixes) {
 					if (idx >= NGASMIXES) {
 						ERROR (abstract->context, "Maximum number of gas mixes reached.");
 						return DC_STATUS_NOMEMORY;
 					}
+					parser->gasmix[idx].id = 0;
 					parser->gasmix[idx].oxygen = o2;
 					parser->gasmix[idx].helium = he;
 					parser->gasmix[idx].type = 0;
 					parser->gasmix[idx].enabled = 1;
+					parser->gasmix[idx].active = 1;
 					parser->gasmix[idx].diluent = 0;
 					parser->ngasmixes = idx + 1;
 				}
 
 				sample.gasmix = idx;
-				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 
 				hw_ostc_notify_bailout(parser, data, idx, callback, userdata);
 
@@ -1319,7 +1319,50 @@ hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t call
 		return DC_STATUS_DATAFORMAT;
 	}
 
+	// Remove the disabled gas mixes from the fixed gas mixes.
+	unsigned int ndisabled = 0, nenabled = 0;
+	unsigned int count = parser->nfixed - parser->ndisabled;
+	for (unsigned int i = 0; i < count; ++i) {
+		if (parser->gasmix[i].enabled || parser->gasmix[i].active) {
+			// Move the fixed gas mix.
+			parser->gasmix[nenabled] = parser->gasmix[i];
+			nenabled++;
+		} else {
+			ndisabled++;
+		}
+	}
+
+	// Move all the manual gas mixes.
+	memmove (parser->gasmix + nenabled, parser->gasmix + count,
+		(parser->ngasmixes - count) * sizeof (hw_ostc_gasmix_t));
+	memset (parser->gasmix + parser->ngasmixes - ndisabled, 0,
+		ndisabled * sizeof (hw_ostc_gasmix_t));
+
+	// Adjust the counts.
+	parser->ngasmixes -= ndisabled;
+	parser->ndisabled += ndisabled;
+
 	parser->cached = PROFILE;
 
 	return DC_STATUS_SUCCESS;
+}
+
+static dc_status_t
+hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
+{
+	hw_ostc_parser_t *parser = (hw_ostc_parser_t *) abstract;
+
+	// Cache the header data.
+	dc_status_t rc = hw_ostc_parser_cache (parser);
+	if (rc != DC_STATUS_SUCCESS)
+		return rc;
+
+	// Cache the profile data.
+	if (parser->cached < PROFILE) {
+		rc = hw_ostc_parser_internal_foreach (parser, NULL, NULL);
+		if (rc != DC_STATUS_SUCCESS)
+			return rc;
+	}
+
+	return hw_ostc_parser_internal_foreach (parser, callback, userdata);
 }

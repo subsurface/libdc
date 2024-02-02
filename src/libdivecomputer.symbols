@@ -34,6 +34,7 @@ dc_descriptor_get_product
 dc_descriptor_get_type
 dc_descriptor_get_model
 dc_descriptor_get_transports
+dc_descriptor_filter
 
 dc_iostream_get_transport
 dc_iostream_set_timeout
@@ -93,16 +94,10 @@ dc_parser_set_clock
 dc_parser_set_atmospheric
 dc_parser_set_density
 dc_parser_get_type
-dc_parser_set_data
 dc_parser_get_datetime
 dc_parser_get_field
 dc_parser_samples_foreach
 dc_parser_destroy
-
-reefnet_sensus_parser_set_calibration
-reefnet_sensuspro_parser_set_calibration
-reefnet_sensusultra_parser_set_calibration
-atomics_cobalt_parser_set_calibration
 
 dc_device_open
 dc_device_close

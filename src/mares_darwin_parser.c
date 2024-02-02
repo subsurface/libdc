@@ -47,7 +47,6 @@ struct mares_darwin_parser_t {
 	unsigned int samplesize;
 };
 
-static dc_status_t mares_darwin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t mares_darwin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t mares_darwin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t mares_darwin_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -55,7 +54,6 @@ static dc_status_t mares_darwin_parser_samples_foreach (dc_parser_t *abstract, d
 static const dc_parser_vtable_t mares_darwin_parser_vtable = {
 	sizeof(mares_darwin_parser_t),
 	DC_FAMILY_MARES_DARWIN,
-	mares_darwin_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -67,7 +65,7 @@ static const dc_parser_vtable_t mares_darwin_parser_vtable = {
 
 
 dc_status_t
-mares_darwin_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+mares_darwin_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model)
 {
 	mares_darwin_parser_t *parser = NULL;
 
@@ -75,7 +73,7 @@ mares_darwin_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (mares_darwin_parser_t *) dc_parser_allocate (context, &mares_darwin_parser_vtable);
+	parser = (mares_darwin_parser_t *) dc_parser_allocate (context, &mares_darwin_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -93,13 +91,6 @@ mares_darwin_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 
 	*out = (dc_parser_t *) parser;
 
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-mares_darwin_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
 	return DC_STATUS_SUCCESS;
 }
 
@@ -159,6 +150,7 @@ mares_darwin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 			}
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = 0.0;
 			if (mode == NITROX) {
 				gasmix->oxygen = p[0x0E] / 100.0;
@@ -185,6 +177,7 @@ mares_darwin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 				tank->gasmix = 0;
 				tank->beginpressure = array_uint16_be (p + 0x17);
 				tank->endpressure = array_uint16_be (p + 0x19);
+				tank->usage = DC_USAGE_NONE;
 			} else {
 				return DC_STATUS_UNSUPPORTED;
 			}
@@ -242,17 +235,17 @@ mares_darwin_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 
 			// Surface Time (seconds).
 			time += 20;
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 			// Depth (1/10 m).
 			sample.depth = depth / 10.0;
-			if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+			if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 			// Gas change.
 			if (gasmix != gasmix_previous) {
 				sample.gasmix = gasmix;
-				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 				gasmix_previous = gasmix;
 			}
 
@@ -262,7 +255,7 @@ mares_darwin_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 				sample.event.time = 0;
 				sample.event.flags = 0;
 				sample.event.value = ascent;
-				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 			}
 
 			// Deco violation
@@ -271,7 +264,7 @@ mares_darwin_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 				sample.event.time = 0;
 				sample.event.flags = 0;
 				sample.event.value = 0;
-				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 			}
 
 			// Deco stop
@@ -282,7 +275,8 @@ mares_darwin_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 			}
 			sample.deco.time = 0;
 			sample.deco.depth = 0.0;
-			if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+			sample.deco.tts = 0;
+			if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 
 			if (parser->samplesize == 3) {
 				unsigned int type = (time / 20 + 2) % 3;
@@ -291,7 +285,7 @@ mares_darwin_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 					pressure -= abstract->data[offset + 2];
 					sample.pressure.tank = 0;
 					sample.pressure.value = pressure;
-					if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+					if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
 				}
 			}
 

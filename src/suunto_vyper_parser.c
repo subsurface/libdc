@@ -47,7 +47,6 @@ struct suunto_vyper_parser_t {
 	unsigned int oxygen[NGASMIXES];
 };
 
-static dc_status_t suunto_vyper_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t suunto_vyper_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t suunto_vyper_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -55,7 +54,6 @@ static dc_status_t suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, d
 static const dc_parser_vtable_t suunto_vyper_parser_vtable = {
 	sizeof(suunto_vyper_parser_t),
 	DC_FAMILY_SUUNTO_VYPER,
-	suunto_vyper_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -165,7 +163,7 @@ suunto_vyper_parser_cache (suunto_vyper_parser_t *parser)
 
 
 dc_status_t
-suunto_vyper_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int serial)
+suunto_vyper_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int serial)
 {
 	suunto_vyper_parser_t *parser = NULL;
 
@@ -173,7 +171,7 @@ suunto_vyper_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (suunto_vyper_parser_t *) dc_parser_allocate (context, &suunto_vyper_parser_vtable);
+	parser = (suunto_vyper_parser_t *) dc_parser_allocate (context, &suunto_vyper_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -191,25 +189,6 @@ suunto_vyper_parser_create (dc_parser_t **out, dc_context_t *context, unsigned i
 	}
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-suunto_vyper_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	suunto_vyper_parser_t *parser = (suunto_vyper_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->divetime = 0;
-	parser->maxdepth = 0;
-	parser->marker = 0;
-	parser->ngasmixes = 0;
-	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->oxygen[i] = 0;
-	}
 
 	return DC_STATUS_SUCCESS;
 }
@@ -274,6 +253,7 @@ suunto_vyper_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 				*((unsigned int *) value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
+			gas->usage = DC_USAGE_NONE;
 			gas->helium = 0.0;
 			gas->oxygen = parser->oxygen[flags] / 100.0;
 			gas->nitrogen = 1.0 - gas->oxygen - gas->helium;
@@ -294,6 +274,7 @@ suunto_vyper_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsi
 				tank->gasmix = 0;
 			tank->beginpressure = beginpressure;
 			tank->endpressure = endpressure;
+			tank->usage = DC_USAGE_NONE;
 			break;
 		case DC_FIELD_TEMPERATURE_SURFACE:
 			*((double *) value) = (signed char) data[8];
@@ -348,16 +329,16 @@ suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 
 	// Time
 	sample.time = 0;
-	if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+	if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 	// Depth (0 ft)
 	sample.depth = 0;
-	if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+	if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 	// Initial gas mix
 	if (!gauge) {
 		sample.gasmix = 0;
-		if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+		if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 	}
 
 	unsigned int depth = 0;
@@ -371,8 +352,8 @@ suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 		if (complete) {
 			// Time (seconds).
 			time += interval;
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 			complete = 0;
 		}
 
@@ -382,7 +363,7 @@ suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 
 			// Depth (ft).
 			sample.depth = depth * FEET;
-			if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+			if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 			complete = 1;
 		} else {
@@ -426,7 +407,7 @@ suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 				}
 
 				sample.gasmix = idx;
-				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 				sample.event.type = SAMPLE_EVENT_NONE;
 				break;
 			default: // Unknown
@@ -435,7 +416,7 @@ suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 			}
 
 			if (sample.event.type != SAMPLE_EVENT_NONE) {
-				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 			}
 		}
 	}
@@ -443,13 +424,13 @@ suunto_vyper_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t
 	// Time
 	if (complete) {
 		time += interval;
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 	}
 
 	// Depth (0 ft)
 	sample.depth = 0;
-	if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+	if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 	return DC_STATUS_SUCCESS;
 }

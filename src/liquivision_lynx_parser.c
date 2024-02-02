@@ -117,7 +117,6 @@ struct liquivision_lynx_parser_t {
 	liquivision_lynx_tank_t tank[NTANKS];
 };
 
-static dc_status_t liquivision_lynx_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t liquivision_lynx_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t liquivision_lynx_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t liquivision_lynx_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -125,7 +124,6 @@ static dc_status_t liquivision_lynx_parser_samples_foreach (dc_parser_t *abstrac
 static const dc_parser_vtable_t liquivision_lynx_parser_vtable = {
 	sizeof(liquivision_lynx_parser_t),
 	DC_FAMILY_LIQUIVISION_LYNX,
-	liquivision_lynx_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -137,7 +135,7 @@ static const dc_parser_vtable_t liquivision_lynx_parser_vtable = {
 
 
 dc_status_t
-liquivision_lynx_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+liquivision_lynx_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model)
 {
 	liquivision_lynx_parser_t *parser = NULL;
 
@@ -145,7 +143,7 @@ liquivision_lynx_parser_create (dc_parser_t **out, dc_context_t *context, unsign
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (liquivision_lynx_parser_t *) dc_parser_allocate (context, &liquivision_lynx_parser_vtable);
+	parser = (liquivision_lynx_parser_t *) dc_parser_allocate (context, &liquivision_lynx_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -168,29 +166,6 @@ liquivision_lynx_parser_create (dc_parser_t **out, dc_context_t *context, unsign
 	}
 
 	*out = (dc_parser_t *) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-liquivision_lynx_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	liquivision_lynx_parser_t *parser = (liquivision_lynx_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->ngasmixes = 0;
-	parser->ntanks = 0;
-	for (unsigned int i = 0; i < NGASMIXES; ++i) {
-		parser->gasmix[i].oxygen = 0;
-		parser->gasmix[i].helium = 0;
-	}
-	for (unsigned int i = 0; i < NTANKS; ++i) {
-		parser->tank[i].id = 0;
-		parser->tank[i].beginpressure = 0;
-		parser->tank[i].endpressure = 0;
-	}
 
 	return DC_STATUS_SUCCESS;
 }
@@ -315,6 +290,7 @@ liquivision_lynx_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			*((unsigned int *) value) = parser->ngasmixes;
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -329,6 +305,7 @@ liquivision_lynx_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, 
 			tank->beginpressure = parser->tank[flags].beginpressure / 100.0;
 			tank->endpressure   = parser->tank[flags].endpressure / 100.0;
 			tank->gasmix = DC_GASMIX_UNKNOWN;
+			tank->usage = DC_USAGE_NONE;
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
@@ -545,29 +522,29 @@ liquivision_lynx_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 
 			// Time (seconds).
 			time += interval;
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 			// Depth (1/100 m).
 			sample.depth = value / 100.0;
-			if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+			if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 			// Temperature (1/10 °C).
 			int temperature = (signed short) array_uint16_le (data + offset);
 			sample.temperature = temperature / 10.0;
-			if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+			if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 			// Gas mix
 			if (have_gasmix) {
 				sample.gasmix = gasmix_idx;
-				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 				have_gasmix = 0;
 			}
 
 			// Setpoint (1/10 bar).
 			if (have_setpoint) {
 				sample.setpoint = setpoint / 10.0;
-				if (callback) callback (DC_SAMPLE_SETPOINT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_SETPOINT, &sample, userdata);
 				have_setpoint = 0;
 			}
 
@@ -577,7 +554,7 @@ liquivision_lynx_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 					if (have_pressure & (1 << i)) {
 						sample.pressure.tank = i;
 						sample.pressure.value = pressure[i] / 100.0;
-						if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+						if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
 					}
 				}
 				have_pressure = 0;
@@ -593,7 +570,8 @@ liquivision_lynx_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 					sample.deco.depth = 0.0;
 				}
 				sample.deco.time = 0;
-				if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+				sample.deco.tts = 0;
+				if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 				have_deco = 0;
 			}
 

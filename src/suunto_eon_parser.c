@@ -43,7 +43,6 @@ struct suunto_eon_parser_t {
 	unsigned int nitrox;
 };
 
-static dc_status_t suunto_eon_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t suunto_eon_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t suunto_eon_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t suunto_eon_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -51,7 +50,6 @@ static dc_status_t suunto_eon_parser_samples_foreach (dc_parser_t *abstract, dc_
 static const dc_parser_vtable_t suunto_eon_parser_vtable = {
 	sizeof(suunto_eon_parser_t),
 	DC_FAMILY_SUUNTO_EON,
-	suunto_eon_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -112,7 +110,7 @@ suunto_eon_parser_cache (suunto_eon_parser_t *parser)
 }
 
 dc_status_t
-suunto_eon_parser_create (dc_parser_t **out, dc_context_t *context, int spyder)
+suunto_eon_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, int spyder)
 {
 	suunto_eon_parser_t *parser = NULL;
 
@@ -120,7 +118,7 @@ suunto_eon_parser_create (dc_parser_t **out, dc_context_t *context, int spyder)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (suunto_eon_parser_t *) dc_parser_allocate (context, &suunto_eon_parser_vtable);
+	parser = (suunto_eon_parser_t *) dc_parser_allocate (context, &suunto_eon_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -135,22 +133,6 @@ suunto_eon_parser_create (dc_parser_t **out, dc_context_t *context, int spyder)
 	parser->nitrox = 0;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-suunto_eon_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	suunto_eon_parser_t *parser = (suunto_eon_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->divetime = 0;
-	parser->maxdepth = 0;
-	parser->marker = 0;
-	parser->nitrox = 0;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -225,6 +207,7 @@ suunto_eon_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsign
 			*((unsigned int *) value) = 1;
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = 0.0;
 			gasmix->oxygen = oxygen / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -242,6 +225,7 @@ suunto_eon_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsign
 			tank->gasmix = 0;
 			tank->beginpressure = beginpressure;
 			tank->endpressure = endpressure;
+			tank->usage = DC_USAGE_NONE;
 			break;
 		case DC_FIELD_TEMPERATURE_MINIMUM:
 			if (parser->spyder)
@@ -273,15 +257,15 @@ suunto_eon_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 
 	// Time
 	sample.time = 0;
-	if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+	if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 	// Depth (0 ft)
 	sample.depth = 0;
-	if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+	if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 	// Initial gas mix.
 	sample.gasmix = 0;
-	if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+	if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 
 	unsigned int depth = 0;
 	unsigned int time = 0;
@@ -294,8 +278,8 @@ suunto_eon_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 		if (complete) {
 			// Time (seconds).
 			time += interval;
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 			complete = 0;
 		}
 
@@ -305,7 +289,7 @@ suunto_eon_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 
 			// Depth (ft).
 			sample.depth = depth * FEET;
-			if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+			if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 			complete = 1;
 		} else {
@@ -333,7 +317,7 @@ suunto_eon_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 			}
 
 			if (sample.event.type != SAMPLE_EVENT_NONE) {
-				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 			}
 		}
 	}
@@ -341,13 +325,13 @@ suunto_eon_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 	// Time
 	if (complete) {
 		time += interval;
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 	}
 
 	// Depth (0 ft)
 	sample.depth = 0;
-	if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+	if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 	return DC_STATUS_SUCCESS;
 }

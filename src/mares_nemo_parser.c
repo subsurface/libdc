@@ -59,7 +59,6 @@ struct mares_nemo_parser_t {
 	unsigned int extra;
 };
 
-static dc_status_t mares_nemo_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t mares_nemo_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t mares_nemo_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t mares_nemo_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -67,7 +66,6 @@ static dc_status_t mares_nemo_parser_samples_foreach (dc_parser_t *abstract, dc_
 static const dc_parser_vtable_t mares_nemo_parser_vtable = {
 	sizeof(mares_nemo_parser_t),
 	DC_FAMILY_MARES_NEMO,
-	mares_nemo_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -79,15 +77,16 @@ static const dc_parser_vtable_t mares_nemo_parser_vtable = {
 
 
 dc_status_t
-mares_nemo_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+mares_nemo_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model)
 {
+	dc_status_t status = DC_STATUS_SUCCESS;
 	mares_nemo_parser_t *parser = NULL;
 
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (mares_nemo_parser_t *) dc_parser_allocate (context, &mares_nemo_parser_vtable);
+	parser = (mares_nemo_parser_t *) dc_parser_allocate (context, &mares_nemo_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -98,70 +97,42 @@ mares_nemo_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int
 	if (model == NEMOWIDE || model == NEMOAIR || model == PUCK || model == PUCKAIR)
 		freedive = GAUGE;
 
-	// Set the default values.
-	parser->model = model;
-	parser->freedive = freedive;
-	parser->mode = AIR;
-	parser->length = 0;
-	parser->sample_count = 0;
-	parser->sample_size = 0;
-	parser->header = 0;
-	parser->extra = 0;
-
-	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-mares_nemo_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	mares_nemo_parser_t *parser = (mares_nemo_parser_t *) abstract;
-
-	// Clear the previous state.
-	parser->base.data = NULL;
-	parser->base.size = 0;
-	parser->mode = AIR;
-	parser->length = 0;
-	parser->sample_count = 0;
-	parser->sample_size = 0;
-	parser->header = 0;
-	parser->extra = 0;
-
-	if (size == 0)
-		return DC_STATUS_SUCCESS;
-
-	if (size < 2 + 3)
-		return DC_STATUS_DATAFORMAT;
+	if (size < 2 + 3) {
+		status = DC_STATUS_DATAFORMAT;
+		goto error_free;
+	}
 
 	unsigned int length = array_uint16_le (data);
-	if (length > size)
-		return DC_STATUS_DATAFORMAT;
+	if (length > size) {
+		status = DC_STATUS_DATAFORMAT;
+		goto error_free;
+	}
 
 	unsigned int extra = 0;
 	const unsigned char marker[3] = {0xAA, 0xBB, 0xCC};
 	if (memcmp (data + length - 3, marker, sizeof (marker)) == 0) {
-		if (parser->model == PUCKAIR)
+		if (model == PUCKAIR)
 			extra = 7;
 		else
 			extra = 12;
 	}
 
-	if (length < 2 + extra + 3)
-		return DC_STATUS_DATAFORMAT;
+	if (length < 2 + extra + 3) {
+		status = DC_STATUS_DATAFORMAT;
+		goto error_free;
+	}
 
 	unsigned int mode = data[length - extra - 1];
 
 	unsigned int header_size = 53;
 	unsigned int sample_size = 2;
 	if (extra) {
-		if (parser->model == PUCKAIR)
+		if (model == PUCKAIR)
 			sample_size = 3;
 		else
 			sample_size = 5;
 	}
-	if (mode == parser->freedive) {
+	if (mode == freedive) {
 		header_size = 28;
 		sample_size = 6;
 	}
@@ -169,12 +140,14 @@ mares_nemo_parser_set_data (dc_parser_t *abstract, const unsigned char *data, un
 	unsigned int nsamples = array_uint16_le (data + length - extra - 3);
 
 	unsigned int nbytes = 2 + nsamples * sample_size + header_size + extra;
-	if (length != nbytes)
-		return DC_STATUS_DATAFORMAT;
+	if (length != nbytes) {
+		status = DC_STATUS_DATAFORMAT;
+		goto error_free;
+	}
 
-	// Store the new state.
-	parser->base.data = data;
-	parser->base.size = size;
+	// Set the default values.
+	parser->model = model;
+	parser->freedive = freedive;
 	parser->mode = mode;
 	parser->length = length;
 	parser->sample_count = nsamples;
@@ -182,7 +155,13 @@ mares_nemo_parser_set_data (dc_parser_t *abstract, const unsigned char *data, un
 	parser->header = header_size;
 	parser->extra = extra;
 
+	*out = (dc_parser_t*) parser;
+
 	return DC_STATUS_SUCCESS;
+
+error_free:
+	dc_parser_deallocate ((dc_parser_t *) parser);
+	return status;
 }
 
 
@@ -251,6 +230,7 @@ mares_nemo_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsign
 				}
 				gasmix->helium = 0.0;
 				gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
+				gasmix->usage = DC_USAGE_NONE;
 				break;
 			case DC_FIELD_TANK_COUNT:
 				if (parser->extra)
@@ -290,6 +270,7 @@ mares_nemo_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsign
 				} else {
 					tank->gasmix = DC_GASMIX_UNKNOWN;
 				}
+				tank->usage = DC_USAGE_NONE;
 				break;
 			case DC_FIELD_TEMPERATURE_MINIMUM:
 				*((double *) value) = (signed char) p[53 - 11];
@@ -382,17 +363,17 @@ mares_nemo_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 
 			// Time (seconds).
 			time += 20;
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 			// Depth (1/10 m).
 			sample.depth = depth / 10.0;
-			if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+			if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 			// Gas change.
 			if (gasmix != gasmix_previous) {
 				sample.gasmix = gasmix;
-				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 				gasmix_previous = gasmix;
 			}
 
@@ -402,7 +383,7 @@ mares_nemo_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 				sample.event.time = 0;
 				sample.event.flags = 0;
 				sample.event.value = ascent;
-				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 			}
 
 			// Deco violation
@@ -411,7 +392,7 @@ mares_nemo_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 				sample.event.time = 0;
 				sample.event.flags = 0;
 				sample.event.value = 0;
-				if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+				if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 			}
 
 			// Deco stop
@@ -422,20 +403,21 @@ mares_nemo_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 			}
 			sample.deco.time = 0;
 			sample.deco.depth = 0.0;
-			if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+			sample.deco.tts = 0;
+			if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 
 			// Pressure (1 bar).
 			if (parser->sample_size == 3) {
 				sample.pressure.tank = 0;
 				sample.pressure.value = data[idx + 2];
-				if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+				if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
 			} else if (parser->sample_size == 5) {
 				unsigned int type = (time / 20) % 3;
 				if (type == 0) {
 					pressure -= data[idx + 2] * 100;
 					sample.pressure.tank = 0;
 					sample.pressure.value = pressure / 100.0;
-					if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+					if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
 				}
 			}
 		}
@@ -459,12 +441,12 @@ mares_nemo_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 
 			// Surface Time (seconds).
 			time += surftime;
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 			// Surface Depth (0 m).
 			sample.depth = 0.0;
-			if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+			if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 			if (profiles) {
 				// Get the freedive sample interval for this model.
@@ -500,12 +482,12 @@ mares_nemo_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 					time += interval;
 					if (time > maxtime)
 						time = maxtime; // Adjust the last sample.
-					sample.time = time;
-					if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+					sample.time = time * 1000;
+					if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 					// Depth (1/10 m).
 					sample.depth = depth / 10.0;
-					if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+					if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 				}
 
 				// Verify that the number of samples in the profile data
@@ -519,12 +501,12 @@ mares_nemo_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 			} else {
 				// Dive Time (seconds).
 				time += divetime;
-				sample.time = time;
-				if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+				sample.time = time * 1000;
+				if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 				// Maximum Depth (1/10 m).
 				sample.depth = maxdepth / 10.0;
-				if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+				if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 			}
 		}
 	}

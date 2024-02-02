@@ -49,7 +49,6 @@ struct atomics_cobalt_parser_t {
 	double hydrostatic;
 };
 
-static dc_status_t atomics_cobalt_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t atomics_cobalt_parser_set_density (dc_parser_t *abstract, double density);
 static dc_status_t atomics_cobalt_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t atomics_cobalt_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
@@ -58,7 +57,6 @@ static dc_status_t atomics_cobalt_parser_samples_foreach (dc_parser_t *abstract,
 static const dc_parser_vtable_t atomics_cobalt_parser_vtable = {
 	sizeof(atomics_cobalt_parser_t),
 	DC_FAMILY_ATOMICS_COBALT,
-	atomics_cobalt_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	atomics_cobalt_parser_set_density, /* set_density */
@@ -70,7 +68,7 @@ static const dc_parser_vtable_t atomics_cobalt_parser_vtable = {
 
 
 dc_status_t
-atomics_cobalt_parser_create (dc_parser_t **out, dc_context_t *context)
+atomics_cobalt_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size)
 {
 	atomics_cobalt_parser_t *parser = NULL;
 
@@ -78,7 +76,7 @@ atomics_cobalt_parser_create (dc_parser_t **out, dc_context_t *context)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (atomics_cobalt_parser_t *) dc_parser_allocate (context, &atomics_cobalt_parser_vtable);
+	parser = (atomics_cobalt_parser_t *) dc_parser_allocate (context, &atomics_cobalt_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -88,27 +86,6 @@ atomics_cobalt_parser_create (dc_parser_t **out, dc_context_t *context)
 	parser->hydrostatic = DEF_DENSITY_SALT * GRAVITY;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-atomics_cobalt_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	return DC_STATUS_SUCCESS;
-}
-
-
-dc_status_t
-atomics_cobalt_parser_set_calibration (dc_parser_t *abstract, double atmospheric, double hydrostatic)
-{
-	atomics_cobalt_parser_t *parser = (atomics_cobalt_parser_t*) abstract;
-
-	if (!ISINSTANCE (abstract))
-		return DC_STATUS_INVALIDARGS;
-
-	parser->hydrostatic = hydrostatic;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -182,6 +159,7 @@ atomics_cobalt_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, un
 			*((unsigned int *) value) = p[0x2a];
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = p[SZ_HEADER + SZ_GASMIX * flags + 5] / 100.0;
 			gasmix->oxygen = p[SZ_HEADER + SZ_GASMIX * flags + 4] / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -213,6 +191,7 @@ atomics_cobalt_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, un
 			tank->gasmix = flags;
 			tank->beginpressure = array_uint16_le(p + 6) * PSI / BAR;
 			tank->endpressure = array_uint16_le(p + 14) * PSI / BAR;
+			tank->usage = DC_USAGE_NONE;
 			break;
 		case DC_FIELD_DIVEMODE:
 			switch(p[0x24]) {
@@ -310,19 +289,19 @@ atomics_cobalt_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
 
 		// Time (seconds).
 		time += interval;
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 		// Depth (1/1000 bar).
 		unsigned int depth = array_uint16_le (data + offset + 0);
 		sample.depth = (signed int)(depth - atmospheric) * (BAR / 1000.0) / parser->hydrostatic;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 		// Pressure (1 psi).
 		unsigned int pressure = array_uint16_le (data + offset + 2);
 		sample.pressure.tank = tank;
 		sample.pressure.value = pressure * PSI / BAR;
-		if (callback) callback (DC_SAMPLE_PRESSURE, sample, userdata);
+		if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
 
 		// Current gas mix
 		unsigned int gasmix = data[offset + 4];
@@ -338,14 +317,14 @@ atomics_cobalt_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
 				return DC_STATUS_DATAFORMAT;
 			}
 			sample.gasmix = idx;
-			if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+			if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 			gasmix_previous = gasmix;
 		}
 
 		// Temperature (1 °F).
 		unsigned int temperature = data[offset + 8];
 		sample.temperature = (temperature - 32.0) * (5.0 / 9.0);
-		if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+		if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 		// violation status
 		sample.event.type = 0;
@@ -355,15 +334,15 @@ atomics_cobalt_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
 		unsigned int violation = data[offset + 11];
 		if (violation & 0x01) {
 			sample.event.type = SAMPLE_EVENT_ASCENT;
-			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+			if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 		}
 		if (violation & 0x04) {
 			sample.event.type = SAMPLE_EVENT_CEILING;
-			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+			if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 		}
 		if (violation & 0x08) {
 			sample.event.type = SAMPLE_EVENT_PO2;
-			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+			if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 		}
 
 		// NDL & deco
@@ -378,7 +357,8 @@ atomics_cobalt_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback
 			sample.deco.type = DC_DECO_NDL;
 		sample.deco.time = ndl;
 		sample.deco.depth = 0.0;
-		if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+		sample.deco.tts = 0;
+		if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 
 		offset += SZ_SEGMENT;
 	}

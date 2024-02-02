@@ -42,7 +42,6 @@ struct oceanic_vtpro_parser_t {
 	double maxdepth;
 };
 
-static dc_status_t oceanic_vtpro_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t oceanic_vtpro_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t oceanic_vtpro_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -50,7 +49,6 @@ static dc_status_t oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, 
 static const dc_parser_vtable_t oceanic_vtpro_parser_vtable = {
 	sizeof(oceanic_vtpro_parser_t),
 	DC_FAMILY_OCEANIC_VTPRO,
-	oceanic_vtpro_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -62,7 +60,7 @@ static const dc_parser_vtable_t oceanic_vtpro_parser_vtable = {
 
 
 dc_status_t
-oceanic_vtpro_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+oceanic_vtpro_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model)
 {
 	oceanic_vtpro_parser_t *parser = NULL;
 
@@ -70,7 +68,7 @@ oceanic_vtpro_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (oceanic_vtpro_parser_t *) dc_parser_allocate (context, &oceanic_vtpro_parser_vtable);
+	parser = (oceanic_vtpro_parser_t *) dc_parser_allocate (context, &oceanic_vtpro_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -83,20 +81,6 @@ oceanic_vtpro_parser_create (dc_parser_t **out, dc_context_t *context, unsigned 
 	parser->maxdepth = 0.0;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-oceanic_vtpro_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	oceanic_vtpro_parser_t *parser = (oceanic_vtpro_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->divetime = 0;
-	parser->maxdepth = 0.0;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -200,6 +184,7 @@ oceanic_vtpro_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 			*((unsigned int *) value) = 1;
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = 0.0;
 			if (oxygen)
 				gasmix->oxygen = oxygen / 100.0;
@@ -220,6 +205,7 @@ oceanic_vtpro_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 			tank->gasmix = flags;
 			tank->beginpressure = beginpressure * 2 * PSI / BAR;
 			tank->endpressure = endpressure * 2 * PSI / BAR;
+			tank->usage = DC_USAGE_NONE;
 			break;
 		default:
 			return DC_STATUS_UNSUPPORTED;
@@ -331,14 +317,14 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			time = timestamp * 60 + (i + 1) * interval;
 		else
 			time = timestamp * 60 + (i + 1) * 60.0 / count + 0.5;
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 		// Vendor specific data
 		sample.vendor.type = SAMPLE_VENDOR_OCEANIC_VTPRO;
 		sample.vendor.size = PAGESIZE / 2;
 		sample.vendor.data = data + offset;
-		if (callback) callback (DC_SAMPLE_VENDOR, sample, userdata);
+		if (callback) callback (DC_SAMPLE_VENDOR, &sample, userdata);
 
 		// Depth (ft)
 		unsigned int depth = 0;
@@ -348,7 +334,7 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			depth = data[offset + 3];
 		}
 		sample.depth = depth * FEET;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 		// Temperature (°F)
 		unsigned int temperature = 0;
@@ -358,7 +344,7 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 			temperature = data[offset + 6];
 		}
 		sample.temperature = (temperature - 32.0) * (5.0 / 9.0);
-		if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+		if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 		// NDL / Deco
 		if (parser->model != AERIS500AI) {
@@ -372,7 +358,8 @@ oceanic_vtpro_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_
 				sample.deco.depth = 0.0;
 			}
 			sample.deco.time = decotime * 60;
-			if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+			sample.deco.tts = 0;
+			if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 		}
 
 		offset += PAGESIZE / 2;
