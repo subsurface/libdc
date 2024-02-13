@@ -88,8 +88,7 @@ shearwater_common_timesync_local (shearwater_common_device_t *device, const dc_d
 dc_status_t
 shearwater_common_timesync_utc (shearwater_common_device_t *device, const dc_datetime_t *datetime);
 
-unsigned int
-shearwater_common_get_model (shearwater_common_device_t *device, unsigned int hardware);
+dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsigned int *model);
 
 dc_status_t shearwater_common_can_wdbi (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id);
 

@@ -688,9 +688,9 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 {
 	// Read the hardware type.
 	unsigned char rsp_hardware[2] = {0};
-	status = shearwater_common_rdbi (device, ID_HARDWARE, rsp_hardware, sizeof(rsp_hardware));
+	dc_status_t status = shearwater_common_rdbi (device, ID_HARDWARE, rsp_hardware, sizeof(rsp_hardware));
 	if (status != DC_STATUS_SUCCESS) {
-		ERROR (abstract->context, "Failed to read the hardware type.");
+		ERROR (device->base.context, "Failed to read the hardware type.");
 		return status;
 	}
 
@@ -699,11 +699,11 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 	switch (hardware) {
 	case 0x0101:
 	case 0x0202:
-		model = PREDATOR;
+		*model = PREDATOR;
 		break;
 	case 0x0404:
 	case 0x0909:
-		model = PETREL;
+		*model = PETREL;
 		break;
 	case 0x0505:
 	case 0x0808:
@@ -713,44 +713,44 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 	case 0x7828:
 	case 0x7B2C:
 	case 0x8838:
-		model = PETREL2;
+		*model = PETREL2;
 		break;
 	case 0xB407:
-		model = PETREL3;
+		*model = PETREL3;
 		break;
 	case 0x0606:
 	case 0x0A0A:
-		model = NERD;
+		*model = NERD;
 		break;
 	case 0x0E0D:
 	case 0x7E2D:
-		model = NERD2;
+		*model = NERD2;
 		break;
 	case 0x0707:
-		model = PERDIX;
+		*model = PERDIX;
 		break;
 	case 0x0C0D:
 	case 0x7C2D:
 	case 0x8D6C:
-		model = PERDIXAI;
+		*model = PERDIXAI;
 		break;
 	case 0xC407:
-		model = PERDIX2;
+		*model = PERDIX2;
 		break;
 	case 0x0F0F:
 	case 0x1F0A:
 	case 0x1F0F:
-		model = TERIC;
+		*model = TERIC;
 		break;
 	case 0x1512:
-		model = PEREGRINE;
+		*model = PEREGRINE;
 		break;
 	case 0xC0E0:
-		model = TERN;
+		*model = TERN;
 		break;
 	default:
 		WARNING (device->base.context, "Unknown hardware type 0x%04x.", hardware);
 	}
 
-	return model;
+	return status;
 }

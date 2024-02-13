@@ -355,7 +355,7 @@ shearwater_petrel_device_timesync (dc_device_t *abstract, const dc_datetime_t *d
 	shearwater_common_device_t *device = (shearwater_common_device_t *) abstract;
 
 	unsigned int model = 0;
-	status = shearwater_common_get_model (&device->base, &model);
+	status = shearwater_common_get_model (device, &model);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to read the hardware type.");
 		return status;
