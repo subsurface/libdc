@@ -36,7 +36,6 @@ struct tecdiving_divecomputereu_parser_t {
 	dc_parser_t base;
 };
 
-static dc_status_t tecdiving_divecomputereu_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t tecdiving_divecomputereu_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t tecdiving_divecomputereu_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t tecdiving_divecomputereu_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -44,7 +43,6 @@ static dc_status_t tecdiving_divecomputereu_parser_samples_foreach (dc_parser_t 
 static const dc_parser_vtable_t tecdiving_divecomputereu_parser_vtable = {
 	sizeof(tecdiving_divecomputereu_parser_t),
 	DC_FAMILY_TECDIVING_DIVECOMPUTEREU,
-	tecdiving_divecomputereu_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -56,7 +54,7 @@ static const dc_parser_vtable_t tecdiving_divecomputereu_parser_vtable = {
 
 
 dc_status_t
-tecdiving_divecomputereu_parser_create (dc_parser_t **out, dc_context_t *context)
+tecdiving_divecomputereu_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size)
 {
 	tecdiving_divecomputereu_parser_t *parser = NULL;
 
@@ -64,7 +62,7 @@ tecdiving_divecomputereu_parser_create (dc_parser_t **out, dc_context_t *context
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (tecdiving_divecomputereu_parser_t *) dc_parser_allocate (context, &tecdiving_divecomputereu_parser_vtable);
+	parser = (tecdiving_divecomputereu_parser_t *) dc_parser_allocate (context, &tecdiving_divecomputereu_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -72,13 +70,6 @@ tecdiving_divecomputereu_parser_create (dc_parser_t **out, dc_context_t *context
 
 	*out = (dc_parser_t *) parser;
 
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-tecdiving_divecomputereu_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
 	return DC_STATUS_SUCCESS;
 }
 
@@ -159,28 +150,29 @@ tecdiving_divecomputereu_parser_samples_foreach (dc_parser_t *abstract, dc_sampl
 
 		// Time (seconds).
 		time += interval;
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 		// Depth (1/10 m).
 		unsigned int depth = array_uint16_be (data + offset + 2);
 		sample.depth = depth / 10.0;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 		// Temperature (Celsius).
 		signed int temperature = (signed char) data[offset];
 		sample.temperature = temperature;
-		if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+		if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 		// ppO2
 		unsigned int ppo2 = data[offset + 1];
-		sample.ppo2 = ppo2 / 10.0;
-		if (callback) callback (DC_SAMPLE_PPO2, sample, userdata);
+		sample.ppo2.sensor = DC_SENSOR_NONE;
+		sample.ppo2.value = ppo2 / 10.0;
+		if (callback) callback (DC_SAMPLE_PPO2, &sample, userdata);
 
 		// Setpoint
 		unsigned int setpoint = data[offset + 4];
 		sample.setpoint = setpoint / 10.0;
-		if (callback) callback (DC_SAMPLE_SETPOINT, sample, userdata);
+		if (callback) callback (DC_SAMPLE_SETPOINT, &sample, userdata);
 
 		offset += 8;
 	}

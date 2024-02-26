@@ -23,7 +23,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "descriptor-private.h"
+#include <libdivecomputer/descriptor.h>
+#include <libdivecomputer/usbhid.h>
+#include <libdivecomputer/usb.h>
+
 #include "iterator-private.h"
 #include "platform.h"
 
@@ -36,39 +39,29 @@
 		values, \
 		C_ARRAY_SIZE(values) - isnullterminated, \
 		C_ARRAY_ITEMSIZE(values), \
-		match, \
-		NULL, NULL, 0)
-
-#define DC_FILTER_INTERNAL_WITH_PARAMS(key, values, isnullterminated, match, params_dst, params_src) \
-	dc_filter_internal( \
-		key, \
-		values, \
-		C_ARRAY_SIZE(values) - isnullterminated, \
-		C_ARRAY_ITEMSIZE(values), \
-		match, \
-		params_dst, params_src, sizeof *(params_src))
+		match)
 
 typedef int (*dc_match_t)(const void *, const void *);
 
-typedef int (*dc_filter_t) (dc_transport_t transport, const void *userdata, void *params);
+typedef int (*dc_filter_t) (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
-static int dc_filter_uwatec (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_suunto (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_shearwater (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_hw (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_tecdiving (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_mares (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_divesystem (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_oceanic (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_mclean (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_atomic (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_deepsix (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_deepblu (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_oceans (dc_transport_t transport, const void *userdata, void *params);
-static int dc_filter_divesoft (dc_transport_t transport, const void *userdata, void *params);
+static int dc_filter_uwatec (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_suunto (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_shearwater (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_hw (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_tecdiving (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_mares (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_divesystem (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_oceanic (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_mclean (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_atomic (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_deepsix (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_deepblu (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_oceans (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_divesoft (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
 // Not merged upstream yet
-static int dc_filter_garmin (dc_transport_t transport, const void *userdata, void *params);
+static int dc_filter_garmin (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
@@ -180,7 +173,10 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Scubapro", "G2 TEK",              DC_FAMILY_UWATEC_SMART, 0x31, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
 	{"Scubapro", "G2",                  DC_FAMILY_UWATEC_SMART, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
 	{"Scubapro", "G2 Console",          DC_FAMILY_UWATEC_SMART, 0x32, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
+	{"Scubapro", "G3",                  DC_FAMILY_UWATEC_SMART, 0x34, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
 	{"Scubapro", "G2 HUD",              DC_FAMILY_UWATEC_SMART, 0x42, DC_TRANSPORT_USBHID | DC_TRANSPORT_BLE, dc_filter_uwatec},
+	{"Scubapro", "Luna 2.0 AI",         DC_FAMILY_UWATEC_SMART, 0x50, DC_TRANSPORT_BLE, dc_filter_uwatec},
+	{"Scubapro", "Luna 2.0",            DC_FAMILY_UWATEC_SMART, 0x51, DC_TRANSPORT_BLE, dc_filter_uwatec},
 	/* Reefnet */
 	{"Reefnet", "Sensus",       DC_FAMILY_REEFNET_SENSUS, 1, DC_TRANSPORT_SERIAL, NULL},
 	{"Reefnet", "Sensus Pro",   DC_FAMILY_REEFNET_SENSUSPRO, 2, DC_TRANSPORT_SERIAL, NULL},
@@ -364,6 +360,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Shearwater", "Peregrine", DC_FAMILY_SHEARWATER_PETREL, 9, DC_TRANSPORT_BLE, dc_filter_shearwater},
 	{"Shearwater", "Petrel 3",  DC_FAMILY_SHEARWATER_PETREL, 10, DC_TRANSPORT_BLE, dc_filter_shearwater},
 	{"Shearwater", "Perdix 2",  DC_FAMILY_SHEARWATER_PETREL, 11, DC_TRANSPORT_BLE, dc_filter_shearwater},
+	{"Shearwater", "Tern",      DC_FAMILY_SHEARWATER_PETREL, 12, DC_TRANSPORT_BLE, dc_filter_shearwater},
 	/* Dive Rite NiTek Q */
 	{"Dive Rite", "NiTek Q",   DC_FAMILY_DIVERITE_NITEKQ, 0, DC_TRANSPORT_SERIAL, NULL},
 	/* Citizen Hyper Aqualand */
@@ -417,6 +414,20 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Ratio",      "iX3M 2021 Pro Deep",  DC_FAMILY_DIVESYSTEM_IDIVE, 0x73, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M 2021 Pro Tech+", DC_FAMILY_DIVESYSTEM_IDIVE, 0x74, DC_TRANSPORT_SERIAL, NULL},
 	{"Ratio",      "iX3M 2021 Pro Reb",   DC_FAMILY_DIVESYSTEM_IDIVE, 0x75, DC_TRANSPORT_SERIAL, NULL},
+	{"Ratio",      "iDive 2 Free",        DC_FAMILY_DIVESYSTEM_IDIVE, 0x80, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iDive 2 Fancy",       DC_FAMILY_DIVESYSTEM_IDIVE, 0x81, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iDive 2 Easy",        DC_FAMILY_DIVESYSTEM_IDIVE, 0x82, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iDive 2 Pro",         DC_FAMILY_DIVESYSTEM_IDIVE, 0x83, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iDive 2 Deep",        DC_FAMILY_DIVESYSTEM_IDIVE, 0x84, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iDive 2 Tech",        DC_FAMILY_DIVESYSTEM_IDIVE, 0x85, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iDive 2 Reb",         DC_FAMILY_DIVESYSTEM_IDIVE, 0x86, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2 GPS Gauge",    DC_FAMILY_DIVESYSTEM_IDIVE, 0x90, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2 GPS Easy",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x91, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2 GPS Pro",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x92, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2 GPS Deep",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x93, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2 GPS Tech",     DC_FAMILY_DIVESYSTEM_IDIVE, 0x94, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "iX3M 2 GPS Reb",      DC_FAMILY_DIVESYSTEM_IDIVE, 0x95, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
+	{"Ratio",      "ATOM",                DC_FAMILY_DIVESYSTEM_IDIVE, 0x96, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
 	{"Ratio",      "iX3M 2 Gauge",        DC_FAMILY_DIVESYSTEM_IDIVE, 0x100, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
 	{"Ratio",      "iX3M 2 Easy",         DC_FAMILY_DIVESYSTEM_IDIVE, 0x101, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
 	{"Ratio",      "iX3M 2 Pro",          DC_FAMILY_DIVESYSTEM_IDIVE, 0x102, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_divesystem},
@@ -446,7 +457,6 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Deep Six", "Excursion", DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
 	{"Crest",    "CR-4",      DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
 	{"Genesis",  "Centauri",  DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
-	{"Tusa",     "TC1",       DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
 	{"Scorpena", "Alpha",     DC_FAMILY_DEEPSIX_EXCURSION, 0, DC_TRANSPORT_BLE, dc_filter_deepsix},
 	/* Seac Screen */
 	{"Seac", "Screen", DC_FAMILY_SEAC_SCREEN, 0, DC_TRANSPORT_SERIAL, NULL},
@@ -505,6 +515,15 @@ dc_match_usb (const void *key, const void *value)
 }
 
 static int
+dc_match_usbhid (const void *key, const void *value)
+{
+	const dc_usbhid_desc_t *k = (const dc_usbhid_desc_t *) key;
+	const dc_usbhid_desc_t *v = (const dc_usbhid_desc_t *) value;
+
+	return k->vid == v->vid && k->pid == v->pid;
+}
+
+static int
 dc_match_number_with_prefix (const void *key, const void *value)
 {
 	const char *str = (const char *) key;
@@ -544,16 +563,13 @@ dc_match_oceanic (const void *key, const void *value)
 }
 
 static int
-dc_filter_internal (const void *key, const void *values, size_t count, size_t size, dc_match_t match, void *params_dst, const void *params_src, size_t params_size)
+dc_filter_internal (const void *key, const void *values, size_t count, size_t size, dc_match_t match)
 {
 	if (key == NULL)
 		return 1;
 
 	for (size_t i = 0; i < count; ++i) {
 		if (match (key, (const unsigned char *) values + i * size)) {
-			if (params_src && params_dst) {
-				memcpy (params_dst, params_src, params_size);
-			}
 			return 1;
 		}
 	}
@@ -568,7 +584,8 @@ static const char * const rfcomm[] = {
 	NULL
 };
 
-static int dc_filter_uwatec (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_uwatec (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const irda[] = {
 		"Aladin Smart Com",
@@ -579,7 +596,7 @@ static int dc_filter_uwatec (dc_transport_t transport, const void *userdata, voi
 		"UWATEC Galileo",
 		"UWATEC Galileo Sol",
 	};
-	static const dc_usb_desc_t usbhid[] = {
+	static const dc_usbhid_desc_t usbhid[] = {
 		{0x2e6c, 0x3201}, // G2, G2 TEK
 		{0x2e6c, 0x3211}, // G2 Console
 		{0x2e6c, 0x4201}, // G2 HUD
@@ -592,12 +609,15 @@ static int dc_filter_uwatec (dc_transport_t transport, const void *userdata, voi
 		"A1",
 		"A2",
 		"G2 TEK",
+		"Galileo 3",
+		"Luna 2.0 AI",
+		"Luna 2.0",
 	};
 
 	if (transport == DC_TRANSPORT_IRDA) {
 		return DC_FILTER_INTERNAL (userdata, irda, 0, dc_match_name);
 	} else if (transport == DC_TRANSPORT_USBHID) {
-		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usb);
+		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usbhid);
 	} else if (transport == DC_TRANSPORT_BLE) {
 		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_name);
 	}
@@ -605,9 +625,10 @@ static int dc_filter_uwatec (dc_transport_t transport, const void *userdata, voi
 	return 1;
 }
 
-static int dc_filter_suunto (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_suunto (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
-	static const dc_usb_desc_t usbhid[] = {
+	static const dc_usbhid_desc_t usbhid[] = {
 		{0x1493, 0x0030}, // Eon Steel
 		{0x1493, 0x0033}, // Eon Core
 		{0x1493, 0x0035}, // D5
@@ -621,7 +642,7 @@ static int dc_filter_suunto (dc_transport_t transport, const void *userdata, voi
 	};
 
 	if (transport == DC_TRANSPORT_USBHID) {
-		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usb);
+		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usbhid);
 	} else if (transport == DC_TRANSPORT_BLE) {
 		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_prefix);
 	}
@@ -629,7 +650,8 @@ static int dc_filter_suunto (dc_transport_t transport, const void *userdata, voi
 	return 1;
 }
 
-static int dc_filter_hw (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_hw (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"OSTC",
@@ -645,7 +667,8 @@ static int dc_filter_hw (dc_transport_t transport, const void *userdata, void *p
 	return 1;
 }
 
-static int dc_filter_shearwater (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_shearwater (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"Predator",
@@ -657,6 +680,7 @@ static int dc_filter_shearwater (dc_transport_t transport, const void *userdata,
 		"Perdix 2",
 		"Teric",
 		"Peregrine",
+		"Tern"
 	};
 
 	if (transport == DC_TRANSPORT_BLUETOOTH || transport == DC_TRANSPORT_BLE) {
@@ -668,7 +692,8 @@ static int dc_filter_shearwater (dc_transport_t transport, const void *userdata,
 	return 1;
 }
 
-static int dc_filter_tecdiving (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_tecdiving (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"DiveComputer",
@@ -683,7 +708,8 @@ static int dc_filter_tecdiving (dc_transport_t transport, const void *userdata, 
 	return 1;
 }
 
-static int dc_filter_mares (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_mares (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"Mares bluelink pro",
@@ -697,11 +723,13 @@ static int dc_filter_mares (dc_transport_t transport, const void *userdata, void
 	return 1;
 }
 
-static int dc_filter_divesystem (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_divesystem (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"DS",
 		"IX5M",
+		"RATIO-",
 	};
 
 	if (transport == DC_TRANSPORT_BLUETOOTH || transport == DC_TRANSPORT_BLE) {
@@ -711,7 +739,8 @@ static int dc_filter_divesystem (dc_transport_t transport, const void *userdata,
 	return 1;
 }
 
-static int dc_filter_oceanic (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_oceanic (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const unsigned int model[] = {
 		0x4552, // Oceanic Pro Plus X
@@ -738,7 +767,8 @@ static int dc_filter_oceanic (dc_transport_t transport, const void *userdata, vo
 	return 1;
 }
 
-static int dc_filter_mclean(dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_mclean(dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"McLean Extreme",
@@ -753,30 +783,27 @@ static int dc_filter_mclean(dc_transport_t transport, const void *userdata, void
 	return 1;
 }
 
-static int dc_filter_atomic (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_atomic (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const dc_usb_desc_t usb[] = {
 		{0x0471, 0x0888}, // Atomic Aquatics Cobalt
 	};
 
-	static const dc_usb_params_t usb_params = {
-		0, 0x82, 0x02
-	};
-
 	if (transport == DC_TRANSPORT_USB) {
-		return DC_FILTER_INTERNAL_WITH_PARAMS (userdata, usb, 0, dc_match_usb, params, &usb_params);
+		return DC_FILTER_INTERNAL (userdata, usb, 0, dc_match_usb);
 	}
 
 	return 1;
 }
 
-static int dc_filter_deepsix (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_deepsix (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"EXCURSION",
 		"Crest-CR4",
 		"CENTAURI",
-		"TC1",
 		"ALPHA",
 	};
 
@@ -787,7 +814,8 @@ static int dc_filter_deepsix (dc_transport_t transport, const void *userdata, vo
 	return 1;
 }
 
-static int dc_filter_deepblu (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_deepblu (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"COSMIQ",
@@ -800,7 +828,8 @@ static int dc_filter_deepblu (dc_transport_t transport, const void *userdata, vo
 	return 1;
 }
 
-static int dc_filter_oceans (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_oceans (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"S1",
@@ -813,7 +842,8 @@ static int dc_filter_oceans (dc_transport_t transport, const void *userdata, voi
 	return 1;
 }
 
-static int dc_filter_divesoft (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_divesoft (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const char * const bluetooth[] = {
 		"Freedom",
@@ -828,7 +858,8 @@ static int dc_filter_divesoft (dc_transport_t transport, const void *userdata, v
 }
 
 // Not merged upstream yet
-static int dc_filter_garmin (dc_transport_t transport, const void *userdata, void *params)
+static int
+dc_filter_garmin (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	static const dc_usb_desc_t usbhid[] = {
 		{0x091e, 0x2b2b}, // Garmin Descent Mk1
@@ -933,10 +964,10 @@ dc_descriptor_get_transports (dc_descriptor_t *descriptor)
 }
 
 int
-dc_descriptor_filter (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata, void *params)
+dc_descriptor_filter (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
 {
 	if (descriptor == NULL || descriptor->filter == NULL || userdata == NULL)
 		return 1;
 
-	return descriptor->filter (transport, userdata, params);
+	return descriptor->filter (descriptor, transport, userdata);
 }

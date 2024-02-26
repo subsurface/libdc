@@ -99,7 +99,6 @@ typedef struct cochran_commander_parser_t {
 	unsigned int nevents;
 } cochran_commander_parser_t ;
 
-static dc_status_t cochran_commander_parser_set_data (dc_parser_t *parser, const unsigned char *data, unsigned int size);
 static dc_status_t cochran_commander_parser_get_datetime (dc_parser_t *parser, dc_datetime_t *datetime);
 static dc_status_t cochran_commander_parser_get_field (dc_parser_t *parser, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t cochran_commander_parser_samples_foreach (dc_parser_t *parser, dc_sample_callback_t callback, void *userdata);
@@ -107,7 +106,6 @@ static dc_status_t cochran_commander_parser_samples_foreach (dc_parser_t *parser
 static const dc_parser_vtable_t cochran_commander_parser_vtable = {
 	sizeof(cochran_commander_parser_t),
 	DC_FAMILY_COCHRAN_COMMANDER,
-	cochran_commander_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -315,7 +313,7 @@ cochran_commander_handle_event (cochran_commander_parser_t *parser, unsigned cha
 			sample.event.time = 0;
 			sample.event.value = 0;
 			sample.event.flags = event->flag;
-			if (callback) callback (DC_SAMPLE_EVENT, sample, userdata);
+			if (callback) callback (DC_SAMPLE_EVENT, &sample, userdata);
 		}
 	}
 
@@ -352,7 +350,7 @@ cochran_commander_backparse(cochran_commander_parser_t *parser, const unsigned c
 
 
 dc_status_t
-cochran_commander_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+cochran_commander_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model)
 {
 	cochran_commander_parser_t *parser = NULL;
 	dc_status_t status = DC_STATUS_SUCCESS;
@@ -361,7 +359,7 @@ cochran_commander_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (cochran_commander_parser_t *) dc_parser_allocate (context, &cochran_commander_parser_vtable);
+	parser = (cochran_commander_parser_t *) dc_parser_allocate (context, &cochran_commander_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -404,13 +402,6 @@ cochran_commander_parser_create (dc_parser_t **out, dc_context_t *context, unsig
 error_free:
 	dc_parser_deallocate ((dc_parser_t *) parser);
 	return status;
-}
-
-
-static dc_status_t
-cochran_commander_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	return DC_STATUS_SUCCESS;
 }
 
 
@@ -514,6 +505,7 @@ cochran_commander_parser_get_field (dc_parser_t *abstract, dc_field_type_t type,
 			// Gas percentages are decimal and encoded as
 			// highbyte = integer portion
 			// lowbyte = decimal portion, divide by 256 to get decimal value
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->oxygen = array_uint16_le (data + layout->oxygen + 2 * flags) / 256.0 / 100;
 			if (layout->helium == UNSUPPORTED) {
 				gasmix->helium = 0;
@@ -578,26 +570,26 @@ cochran_commander_parser_samples_foreach_tm (dc_parser_t *abstract, dc_sample_ca
 	unsigned int temp = samples[0];	// Half degrees F
 	unsigned int depth = samples[1];	// Half feet
 
-	last_sample_time = sample.time = time;
-	if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+	last_sample_time = sample.time = time * 1000;
+	if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 	sample.depth = (depth / 2.0) * FEET;
-	if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+	if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 	sample.temperature = (temp / 2.0 - 32.0) / 1.8;
-	if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+	if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 	sample.gasmix = 0;
-	if (callback) callback(DC_SAMPLE_GASMIX, sample, userdata);
+	if (callback) callback(DC_SAMPLE_GASMIX, &sample, userdata);
 
 	while (offset < size) {
 		const unsigned char *s = samples + offset;
 
-		sample.time = time;
+		sample.time = time * 1000;
 		if (last_sample_time != sample.time) {
 			// We haven't issued this time yet.
 			last_sample_time = sample.time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 		}
 
 		if (*s & 0x80) {
@@ -615,7 +607,8 @@ cochran_commander_parser_samples_foreach_tm (dc_parser_t *abstract, dc_sample_ca
 					sample.deco.type = DC_DECO_DECOSTOP;
 					sample.deco.time = 60; // We don't know the duration
 					sample.deco.depth = deco_ceiling * FEET;
-					if (callback) callback(DC_SAMPLE_DECO, sample, userdata);
+					sample.deco.tts = 0;
+					if (callback) callback(DC_SAMPLE_DECO, &sample, userdata);
 					break;
 				case 0xAD:  // Increment ceiling (shallower)
 					deco_ceiling -= 10; // feet
@@ -623,7 +616,8 @@ cochran_commander_parser_samples_foreach_tm (dc_parser_t *abstract, dc_sample_ca
 					sample.deco.type = DC_DECO_DECOSTOP;
 					sample.deco.depth = deco_ceiling * FEET;
 					sample.deco.time = 60; // We don't know the duration
-					if (callback) callback(DC_SAMPLE_DECO, sample, userdata);
+					sample.deco.tts = 0;
+					if (callback) callback(DC_SAMPLE_DECO, &sample, userdata);
 					break;
 				default:
 					cochran_commander_handle_event(parser, s[0], callback, userdata);
@@ -636,7 +630,7 @@ cochran_commander_parser_samples_foreach_tm (dc_parser_t *abstract, dc_sample_ca
 				else
 					temp += (*s & 0x0f);
 				sample.temperature = (temp / 2.0 - 32.0) / 1.8;
-				if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+				if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 			}
 
 			offset++;
@@ -650,7 +644,7 @@ cochran_commander_parser_samples_foreach_tm (dc_parser_t *abstract, dc_sample_ca
 			depth += s[0] & 0x3f;
 
 		sample.depth = (depth / 2.0) * FEET;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 		offset++;
 		time += sample_interval;
@@ -714,27 +708,27 @@ cochran_commander_parser_samples_foreach_emc (dc_parser_t *abstract, dc_sample_c
 		start_depth = array_uint16_le (data + layout->start_depth) / 256.0;
 	}
 
-	last_sample_time = sample.time = time;
-	if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+	last_sample_time = sample.time = time * 1000;
+	if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 	sample.depth = start_depth * FEET;
-	if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+	if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 	sample.temperature = (data[layout->start_temp] - 32.0) / 1.8;
-	if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+	if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 	sample.gasmix = 0;
-	if (callback) callback(DC_SAMPLE_GASMIX, sample, userdata);
+	if (callback) callback(DC_SAMPLE_GASMIX, &sample, userdata);
 	unsigned int last_gasmix = sample.gasmix;
 
 	while (offset < size) {
 		const unsigned char *s = samples + offset;
 
-		sample.time = time;
+		sample.time = time * 1000;
 		if (last_sample_time != sample.time) {
 			// We haven't issued this time yet.
 			last_sample_time = sample.time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 		}
 
 		// If corrupt_dive end before offset
@@ -774,7 +768,8 @@ cochran_commander_parser_samples_foreach_emc (dc_parser_t *abstract, dc_sample_c
 				sample.deco.type = DC_DECO_DECOSTOP;
 				sample.deco.time = (array_uint16_le(s + 3) + 1) * 60;
 				sample.deco.depth = deco_ceiling * FEET;
-				if (callback) callback(DC_SAMPLE_DECO, sample, userdata);
+				sample.deco.tts = 0;
+				if (callback) callback(DC_SAMPLE_DECO, &sample, userdata);
 				break;
 			case 0xAD:  // Increment ceiling (shallower)
 				deco_ceiling -= 10; // feet
@@ -782,7 +777,8 @@ cochran_commander_parser_samples_foreach_emc (dc_parser_t *abstract, dc_sample_c
 				sample.deco.type = DC_DECO_DECOSTOP;
 				sample.deco.depth = deco_ceiling * FEET;
 				sample.deco.time = (array_uint16_le(s + 3) + 1) * 60;
-				if (callback) callback(DC_SAMPLE_DECO, sample, userdata);
+				sample.deco.tts = 0;
+				if (callback) callback(DC_SAMPLE_DECO, &sample, userdata);
 				break;
 			case 0xC0:  // Switched to FO2 21% mode (surface)
 				// Event seen upon surfacing
@@ -791,14 +787,14 @@ cochran_commander_parser_samples_foreach_emc (dc_parser_t *abstract, dc_sample_c
 			case 0xEF:  // Switched to gas blend 2
 				if (last_gasmix != 1) {
 					sample.gasmix = 1;
-					if (callback) callback(DC_SAMPLE_GASMIX, sample, userdata);
+					if (callback) callback(DC_SAMPLE_GASMIX, &sample, userdata);
 					last_gasmix = sample.gasmix;
 				}
 				break;
 			case 0xF3:  // Switched to gas blend 1
 				if (last_gasmix != 0) {
 					sample.gasmix = 0;
-					if (callback) callback(DC_SAMPLE_GASMIX, sample, userdata);
+					if (callback) callback(DC_SAMPLE_GASMIX, &sample, userdata);
 					last_gasmix = sample.gasmix;
 				}
 				break;
@@ -818,7 +814,7 @@ cochran_commander_parser_samples_foreach_emc (dc_parser_t *abstract, dc_sample_c
 			depth += (s[0] & 0x3f);
 
 		sample.depth = (start_depth + depth / 4.0) * FEET;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 		// Ascent rate is logged in the 0th sample, temp in the 1st, repeat.
 		if (time % 2 == 0) {
@@ -834,7 +830,7 @@ cochran_commander_parser_samples_foreach_emc (dc_parser_t *abstract, dc_sample_c
 			double temperature = s[1] / 2.0 + 20.0;
 			sample.temperature = (temperature - 32.0) / 1.8;
 
-			if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+			if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 		}
 
 		// Cochran EMC models store NDL and deco stop time
@@ -855,7 +851,8 @@ cochran_commander_parser_samples_foreach_emc (dc_parser_t *abstract, dc_sample_c
 					sample.deco.type = DC_DECO_NDL;
 					sample.deco.time = deco_time * 60;
 					sample.deco.depth = 0;
-					if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+					sample.deco.tts = 0;
+					if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 				}
 				break;
 			case 23:
@@ -865,7 +862,8 @@ cochran_commander_parser_samples_foreach_emc (dc_parser_t *abstract, dc_sample_c
 					sample.deco.type = DC_DECO_DECOSTOP;
 					sample.deco.depth = deco_ceiling * FEET;
 					sample.deco.time = deco_time * 60;
-					if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+					sample.deco.tts = 0;
+					if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 				}
 				break;
 			}

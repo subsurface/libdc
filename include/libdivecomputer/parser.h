@@ -173,19 +173,26 @@ typedef struct dc_salinity_t {
 	double density;
 } dc_salinity_t;
 
+typedef enum dc_usage_t {
+	DC_USAGE_NONE, // Usage not specified
+	DC_USAGE_OXYGEN,
+	DC_USAGE_DILUENT,
+	DC_USAGE_OPEN_CIRCUIT,
+} dc_usage_t;
+
 typedef struct dc_gasmix_t {
 	double helium;
 	double oxygen;
 	double nitrogen;
+	dc_usage_t usage;
 } dc_gasmix_t;
 
+#define DC_SENSOR_NONE    0xFFFFFFFF
 #define DC_GASMIX_UNKNOWN 0xFFFFFFFF
 
 typedef unsigned int dc_tankinfo_t;
 #define DC_TANKINFO_METRIC	1
 #define DC_TANKINFO_IMPERIAL	2
-#define DC_TANKINFO_CC_DILUENT	4
-#define DC_TANKINFO_CC_O2	8
 
 // For backwards compatibility
 #define DC_TANKVOLUME_NONE	0
@@ -215,6 +222,11 @@ typedef unsigned int dc_tankinfo_t;
  * divide by 1 ATM (Vair = Vwater * Pwork / Patm).
  */
 
+typedef enum dc_tank_usage_t {
+	DC_TANK_USAGE_NONE,
+	DC_TANK_USAGE_SIDEMOUNT,
+} dc_tank_usage_t;
+
 typedef struct dc_tank_t {
     unsigned int gasmix;  /* Gas mix index, or DC_GASMIX_UNKNOWN */
     dc_tankinfo_t type;   /* Tank type - metric/imperial and oc/cc */
@@ -222,6 +234,7 @@ typedef struct dc_tank_t {
     double workpressure;  /* Work pressure (bar) */
     double beginpressure; /* Begin pressure (bar) */
     double endpressure;   /* End pressure (bar) */
+    dc_tank_usage_t usage;
 } dc_tank_t;
 
 typedef enum dc_decomodel_type_t {
@@ -267,7 +280,7 @@ typedef struct dc_field_string_t {
 } dc_field_string_t;
 
 typedef union dc_sample_value_t {
-	unsigned int time;
+	unsigned int time; /* Milliseconds */
 	double depth;
 	struct {
 		unsigned int tank;
@@ -290,25 +303,29 @@ typedef union dc_sample_value_t {
 		const void *data;
 	} vendor;
 	double setpoint;
-	double ppo2;
+	struct {
+		unsigned int sensor;
+		double value;
+	} ppo2;
 	double cns;
 	struct {
 		unsigned int type;
 		unsigned int time;
 		double depth;
+		unsigned int tts;
 	} deco;
 	unsigned int gasmix; /* Gas mix index */
 } dc_sample_value_t;
 
 typedef struct dc_parser_t dc_parser_t;
 
-typedef void (*dc_sample_callback_t) (dc_sample_type_t type, dc_sample_value_t value, void *userdata);
+typedef void (*dc_sample_callback_t) (dc_sample_type_t type, const dc_sample_value_t *value, void *userdata);
 
 dc_status_t
-dc_parser_new (dc_parser_t **parser, dc_device_t *device);
+dc_parser_new (dc_parser_t **parser, dc_device_t *device, const unsigned char data[], size_t size);
 
 dc_status_t
-dc_parser_new2 (dc_parser_t **parser, dc_context_t *context, dc_descriptor_t *descriptor, unsigned int devtime, dc_ticks_t systime);
+dc_parser_new2 (dc_parser_t **parser, dc_context_t *context, dc_descriptor_t *descriptor, const unsigned char data[], size_t size);
 
 dc_family_t
 dc_parser_get_type (dc_parser_t *parser);
@@ -321,9 +338,6 @@ dc_parser_set_atmospheric (dc_parser_t *parser, double atmospheric);
 
 dc_status_t
 dc_parser_set_density (dc_parser_t *parser, double density);
-
-dc_status_t
-dc_parser_set_data (dc_parser_t *parser, const unsigned char *data, unsigned int size);
 
 dc_status_t
 dc_parser_get_datetime (dc_parser_t *parser, dc_datetime_t *datetime);

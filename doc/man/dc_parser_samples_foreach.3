@@ -31,7 +31,7 @@
 .Ft "typedef void"
 .Fo "(*dc_sample_callback_t)"
 .Fa "dc_sample_type_t type"
-.Fa "dc_sample_value_t value"
+.Fa "const dc_sample_value_t *value"
 .Fa "void *userdata"
 .Fc
 .Ft dc_status_t
@@ -42,7 +42,7 @@
 .Fc
 .Sh DESCRIPTION
 Extract the samples taken during a dive as previously initialised with
-.Xr dc_parser_set_data 3 .
+.Xr dc_parser_new 3 .
 Each sample is passed to
 .Fa callback
 with the
@@ -63,7 +63,7 @@ closed.
 The following sample types may be raised:
 .Bl -tag -width Ds
 .It Dv DC_SAMPLE_TIME
-The time of the sample taken in seconds after the dive began.
+The time of the sample taken in milliseconds after the dive began.
 Set in the
 .Fa time
 field.
@@ -184,7 +184,7 @@ Returns
 .Dv DC_STATUS_OK
 on success and another code on failure.
 .Sh SEE ALSO
-.Xr dc_parser_set_data 3
+.Xr dc_parser_new 3
 .Sh AUTHORS
 The
 .Lb libdivecomputer

@@ -445,8 +445,8 @@ static void sample_time(struct sample_data *info, unsigned short time_delta)
 	dc_sample_value_t sample = {0};
 
 	info->time += time_delta;
-	sample.time = info->time / 1000;
-	if (info->callback) info->callback(DC_SAMPLE_TIME, sample, info->userdata);
+	sample.time = info->time;
+	if (info->callback) info->callback(DC_SAMPLE_TIME, &sample, info->userdata);
 }
 
 static void sample_depth(struct sample_data *info, unsigned short depth)
@@ -457,7 +457,7 @@ static void sample_depth(struct sample_data *info, unsigned short depth)
 		return;
 
 	sample.depth = depth / 100.0;
-	if (info->callback) info->callback(DC_SAMPLE_DEPTH, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_DEPTH, &sample, info->userdata);
 }
 
 static void sample_temp(struct sample_data *info, short temp)
@@ -468,7 +468,7 @@ static void sample_temp(struct sample_data *info, short temp)
 		return;
 
 	sample.temperature = temp / 10.0;
-	if (info->callback) info->callback(DC_SAMPLE_TEMPERATURE, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_TEMPERATURE, &sample, info->userdata);
 }
 
 static void sample_ndl(struct sample_data *info, short ndl)
@@ -480,7 +480,8 @@ static void sample_ndl(struct sample_data *info, short ndl)
 
 	sample.deco.type = DC_DECO_NDL;
 	sample.deco.time = ndl;
-	if (info->callback) info->callback(DC_SAMPLE_DECO, sample, info->userdata);
+	sample.deco.tts = 0;
+	if (info->callback) info->callback(DC_SAMPLE_DECO, &sample, info->userdata);
 }
 
 static void sample_tts(struct sample_data *info, unsigned short tts)
@@ -488,7 +489,7 @@ static void sample_tts(struct sample_data *info, unsigned short tts)
 	if (tts != 0xffff) {
 		dc_sample_value_t sample = {0};
 		sample.time = tts;
-		if (info->callback) info->callback(DC_SAMPLE_TTS, sample, info->userdata);
+		if (info->callback) info->callback(DC_SAMPLE_TTS, &sample, info->userdata);
 	}
 }
 
@@ -504,7 +505,8 @@ static void sample_ceiling(struct sample_data *info, unsigned short ceiling)
 		sample.deco.type = DC_DECO_DECOSTOP;
 		sample.deco.time = ceiling ? 60 : 0;
 		sample.deco.depth = ceiling / 100.0;
-		if (info->callback) info->callback(DC_SAMPLE_DECO, sample, info->userdata);
+		sample.deco.tts = 0;    // Fixme? DC_SAMPLE_TTS?
+		if (info->callback) info->callback(DC_SAMPLE_DECO, &sample, info->userdata);
 	}
 }
 
@@ -517,7 +519,7 @@ static void sample_heading(struct sample_data *info, unsigned short heading)
 
 	sample.event.type = SAMPLE_EVENT_HEADING;
 	sample.event.value = heading;
-	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_EVENT, &sample, info->userdata);
 }
 
 static void sample_abspressure(struct sample_data *info, unsigned short pressure)
@@ -532,7 +534,7 @@ static void sample_gastime(struct sample_data *info, short gastime)
 		return;
 
 	sample.rbt = gastime / 60;
-	if (info->callback) info->callback (DC_SAMPLE_RBT, sample, info->userdata);
+	if (info->callback) info->callback (DC_SAMPLE_RBT, &sample, info->userdata);
 }
 
 /*
@@ -560,7 +562,7 @@ static void sample_pressure(struct sample_data *info, unsigned short pressure)
 
 	sample.pressure.tank = info->gasnr-1;
 	sample.pressure.value = pressure / 100.0;
-	if (info->callback) info->callback(DC_SAMPLE_PRESSURE, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_PRESSURE, &sample, info->userdata);
 }
 
 static void sample_bookmark_event(struct sample_data *info, unsigned short idx)
@@ -570,7 +572,7 @@ static void sample_bookmark_event(struct sample_data *info, unsigned short idx)
 	sample.event.type = SAMPLE_EVENT_BOOKMARK;
 	sample.event.value = idx;
 
-	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_EVENT, &sample, info->userdata);
 }
 
 static void sample_gas_switch_event(struct sample_data *info, unsigned short idx)
@@ -582,7 +584,7 @@ static void sample_gas_switch_event(struct sample_data *info, unsigned short idx
 		return;
 
 	sample.gasmix = idx - 1;
-	if (info->callback) info->callback(DC_SAMPLE_GASMIX, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_GASMIX, &sample, info->userdata);
 }
 
 static const char *mixname(suunto_eonsteel_parser_t *eon, int idx)
@@ -622,7 +624,7 @@ static void sample_insert_gas_event(struct sample_data *info, unsigned short idx
 	sample.event.name = strdup(event);
 	sample.event.flags = SAMPLE_FLAGS_SEVERITY_INFO;
 
-	info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+	info->callback(DC_SAMPLE_EVENT, &sample, info->userdata);
 }
 
 static void sample_remove_gas_event(struct sample_data *info, unsigned short idx)
@@ -639,7 +641,7 @@ static void sample_remove_gas_event(struct sample_data *info, unsigned short idx
 	sample.event.name = strdup(event);
 	sample.event.flags = SAMPLE_FLAGS_SEVERITY_INFO;
 
-	info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+	info->callback(DC_SAMPLE_EVENT, &sample, info->userdata);
 }
 
 /*
@@ -730,7 +732,7 @@ static void sample_event_state_value(const struct type_desc *desc, struct sample
 	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
 	sample.event.flags |= 1 << SAMPLE_FLAGS_SEVERITY_SHIFT;
 
-	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_EVENT, &sample, info->userdata);
 }
 
 static void sample_event_notify_type(const struct type_desc *desc, struct sample_data *info, unsigned char type)
@@ -753,7 +755,7 @@ static void sample_event_notify_value(const struct type_desc *desc, struct sampl
 	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
 	sample.event.flags |= 2 << SAMPLE_FLAGS_SEVERITY_SHIFT;
 
-	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_EVENT, &sample, info->userdata);
 }
 
 
@@ -777,7 +779,7 @@ static void sample_event_warning_value(const struct type_desc *desc, struct samp
 	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
 	sample.event.flags |= 3 << SAMPLE_FLAGS_SEVERITY_SHIFT;
 
-	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_EVENT, &sample, info->userdata);
 }
 
 static void sample_event_alarm_type(const struct type_desc *desc, struct sample_data *info, unsigned char type)
@@ -801,7 +803,7 @@ static void sample_event_alarm_value(const struct type_desc *desc, struct sample
 	sample.event.flags = value ? SAMPLE_FLAGS_BEGIN : SAMPLE_FLAGS_END;
 	sample.event.flags |= 4 << SAMPLE_FLAGS_SEVERITY_SHIFT;
 
-	if (info->callback) info->callback(DC_SAMPLE_EVENT, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_EVENT, &sample, info->userdata);
 }
 
 // enum:0=Low,1=High,2=Custom
@@ -827,7 +829,7 @@ static void sample_setpoint_type(const struct type_desc *desc, struct sample_dat
 		return;
 	}
 
-	if (info->callback) info->callback(DC_SAMPLE_SETPOINT, sample, info->userdata);
+	if (info->callback) info->callback(DC_SAMPLE_SETPOINT, &sample, info->userdata);
 	free(type);
 }
 
@@ -1048,6 +1050,7 @@ suunto_eonsteel_parser_get_field(dc_parser_t *parser, dc_field_type_t type, unsi
 			if (fabs(tank->volume - rint(tank->volume)) > 0.001)
 				tank->type += DC_TANKINFO_IMPERIAL - DC_TANKINFO_METRIC;
 		}
+		tank->usage = eon->cache.tankusage[flags];
 	}
 
 	return dc_field_get(&eon->cache, type, flags, value);
@@ -1106,6 +1109,7 @@ static dc_status_t add_gas_type(suunto_eonsteel_parser_t *eon, const struct type
 {
 	int idx = eon->cache.GASMIX_COUNT;
 	dc_tankinfo_t tankinfo = DC_TANKINFO_METRIC;
+	dc_usage_t usage = DC_USAGE_NONE;
 	char *name;
 
 	if (idx >= MAXGASES)
@@ -1116,15 +1120,19 @@ static dc_status_t add_gas_type(suunto_eonsteel_parser_t *eon, const struct type
 	if (!name)
 		DEBUG(eon->base.context, "Unable to look up gas type %u in %s", type, desc->format);
 	else if (!strcasecmp(name, "Diluent"))
-		tankinfo |= DC_TANKINFO_CC_DILUENT;
+		usage = DC_USAGE_DILUENT;
 	else if (!strcasecmp(name, "Oxygen"))
-		tankinfo |= DC_TANKINFO_CC_O2;
+		usage = DC_USAGE_OXYGEN;
 	else if (!strcasecmp(name, "None"))
 		tankinfo = DC_TANKVOLUME_NONE;
 	else if (strcasecmp(name, "Primary"))
 		DEBUG(eon->base.context, "Unknown gas type %u (%s)", type, name);
+	if (name && strcasecmp(name, "Diluent") && strcasecmp(name, "Oxygen"))
+	    usage = DC_USAGE_OPEN_CIRCUIT;
 
 	eon->cache.tankinfo[idx] = tankinfo;
+	eon->cache.tankusage[idx] = DC_TANK_USAGE_NONE;
+	eon->cache.GASMIX[idx].usage = usage;
 
 	eon->cache.initialized |= 1 << DC_FIELD_GASMIX_COUNT;
 	eon->cache.initialized |= 1 << DC_FIELD_TANK_COUNT;
@@ -1489,18 +1497,6 @@ static void show_all_descriptors(suunto_eonsteel_parser_t *eon)
 }
 
 static dc_status_t
-suunto_eonsteel_parser_set_data(dc_parser_t *parser, const unsigned char *data, unsigned int size)
-{
-	suunto_eonsteel_parser_t *eon = (suunto_eonsteel_parser_t *) parser;
-
-	desc_free(eon->type_desc, MAXTYPE);
-	memset(eon->type_desc, 0, sizeof(eon->type_desc));
-	initialize_field_caches(eon);
-	show_all_descriptors(eon);
-	return DC_STATUS_SUCCESS;
-}
-
-static dc_status_t
 suunto_eonsteel_parser_destroy(dc_parser_t *parser)
 {
 	suunto_eonsteel_parser_t *eon = (suunto_eonsteel_parser_t *) parser;
@@ -1513,7 +1509,6 @@ suunto_eonsteel_parser_destroy(dc_parser_t *parser)
 static const dc_parser_vtable_t suunto_eonsteel_parser_vtable = {
 	sizeof(suunto_eonsteel_parser_t),
 	DC_FAMILY_SUUNTO_EONSTEEL,
-	suunto_eonsteel_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -1524,14 +1519,14 @@ static const dc_parser_vtable_t suunto_eonsteel_parser_vtable = {
 };
 
 dc_status_t
-suunto_eonsteel_parser_create(dc_parser_t **out, dc_context_t *context, unsigned int model)
+suunto_eonsteel_parser_create(dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model)
 {
 	suunto_eonsteel_parser_t *parser = NULL;
 
 	if (out == NULL)
 		return DC_STATUS_INVALIDARGS;
 
-	parser = (suunto_eonsteel_parser_t *) dc_parser_allocate (context, &suunto_eonsteel_parser_vtable);
+	parser = (suunto_eonsteel_parser_t *) dc_parser_allocate (context, &suunto_eonsteel_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -1539,6 +1534,9 @@ suunto_eonsteel_parser_create(dc_parser_t **out, dc_context_t *context, unsigned
 
 	memset(&parser->type_desc, 0, sizeof(parser->type_desc));
 	memset(&parser->cache, 0, sizeof(parser->cache));
+
+	initialize_field_caches(parser);
+	show_all_descriptors(parser);
 
 	*out = (dc_parser_t *) parser;
 

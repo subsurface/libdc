@@ -47,7 +47,6 @@ struct reefnet_sensusultra_parser_t {
 	unsigned int maxdepth;
 };
 
-static dc_status_t reefnet_sensusultra_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t reefnet_sensusultra_parser_set_clock (dc_parser_t *abstract, unsigned int devtime, dc_ticks_t systime);
 static dc_status_t reefnet_sensusultra_parser_set_atmospheric (dc_parser_t *abstract, double atmospheric);
 static dc_status_t reefnet_sensusultra_parser_set_density (dc_parser_t *abstract, double density);
@@ -58,7 +57,6 @@ static dc_status_t reefnet_sensusultra_parser_samples_foreach (dc_parser_t *abst
 static const dc_parser_vtable_t reefnet_sensusultra_parser_vtable = {
 	sizeof(reefnet_sensusultra_parser_t),
 	DC_FAMILY_REEFNET_SENSUSULTRA,
-	reefnet_sensusultra_parser_set_data, /* set_data */
 	reefnet_sensusultra_parser_set_clock, /* set_clock */
 	reefnet_sensusultra_parser_set_atmospheric, /* set_atmospheric */
 	reefnet_sensusultra_parser_set_density, /* set_density */
@@ -70,7 +68,7 @@ static const dc_parser_vtable_t reefnet_sensusultra_parser_vtable = {
 
 
 dc_status_t
-reefnet_sensusultra_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int devtime, dc_ticks_t systime)
+reefnet_sensusultra_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size)
 {
 	reefnet_sensusultra_parser_t *parser = NULL;
 
@@ -78,7 +76,7 @@ reefnet_sensusultra_parser_create (dc_parser_t **out, dc_context_t *context, uns
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (reefnet_sensusultra_parser_t *) dc_parser_allocate (context, &reefnet_sensusultra_parser_vtable);
+	parser = (reefnet_sensusultra_parser_t *) dc_parser_allocate (context, &reefnet_sensusultra_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -87,42 +85,13 @@ reefnet_sensusultra_parser_create (dc_parser_t **out, dc_context_t *context, uns
 	// Set the default values.
 	parser->atmospheric = DEF_ATMOSPHERIC;
 	parser->hydrostatic = DEF_DENSITY_SALT * GRAVITY;
-	parser->devtime = devtime;
-	parser->systime = systime;
+	parser->devtime = 0;
+	parser->systime = 0;
 	parser->cached = 0;
 	parser->divetime = 0;
 	parser->maxdepth = 0;
 
 	*out = (dc_parser_t*) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
-reefnet_sensusultra_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	reefnet_sensusultra_parser_t *parser = (reefnet_sensusultra_parser_t*) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->divetime = 0;
-	parser->maxdepth = 0;
-
-	return DC_STATUS_SUCCESS;
-}
-
-
-dc_status_t
-reefnet_sensusultra_parser_set_calibration (dc_parser_t *abstract, double atmospheric, double hydrostatic)
-{
-	reefnet_sensusultra_parser_t *parser = (reefnet_sensusultra_parser_t*) abstract;
-
-	if (!ISINSTANCE (abstract))
-		return DC_STATUS_INVALIDARGS;
-
-	parser->atmospheric = atmospheric;
-	parser->hydrostatic = hydrostatic;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -275,18 +244,18 @@ reefnet_sensusultra_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 
 				// Time (seconds)
 				time += interval;
-				sample.time = time;
-				if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+				sample.time = time * 1000;
+				if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 				// Temperature (0.01 °K)
 				unsigned int temperature = array_uint16_le (data + offset);
 				sample.temperature = temperature / 100.0 - 273.15;
-				if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+				if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 				// Depth (absolute pressure in millibar)
 				unsigned int depth = array_uint16_le (data + offset + 2);
 				sample.depth = (depth * BAR / 1000.0 - parser->atmospheric) / parser->hydrostatic;
-				if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+				if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 				offset += 4;
 			}

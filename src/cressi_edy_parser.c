@@ -31,6 +31,8 @@
 #define IQ700 0x05
 #define EDY   0x08
 
+#define SZ_HEADER 32
+
 typedef struct cressi_edy_parser_t cressi_edy_parser_t;
 
 struct cressi_edy_parser_t {
@@ -38,7 +40,6 @@ struct cressi_edy_parser_t {
 	unsigned int model;
 };
 
-static dc_status_t cressi_edy_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t cressi_edy_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t cressi_edy_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t cressi_edy_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -46,7 +47,6 @@ static dc_status_t cressi_edy_parser_samples_foreach (dc_parser_t *abstract, dc_
 static const dc_parser_vtable_t cressi_edy_parser_vtable = {
 	sizeof(cressi_edy_parser_t),
 	DC_FAMILY_CRESSI_EDY,
-	cressi_edy_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -73,7 +73,7 @@ cressi_edy_parser_count_gasmixes (const unsigned char *data)
 }
 
 dc_status_t
-cressi_edy_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int model)
+cressi_edy_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model)
 {
 	cressi_edy_parser_t *parser = NULL;
 
@@ -81,7 +81,7 @@ cressi_edy_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (cressi_edy_parser_t *) dc_parser_allocate (context, &cressi_edy_parser_vtable);
+	parser = (cressi_edy_parser_t *) dc_parser_allocate (context, &cressi_edy_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -97,16 +97,9 @@ cressi_edy_parser_create (dc_parser_t **out, dc_context_t *context, unsigned int
 
 
 static dc_status_t
-cressi_edy_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	return DC_STATUS_SUCCESS;
-}
-
-
-static dc_status_t
 cressi_edy_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 {
-	if (abstract->size < 32)
+	if (abstract->size < SZ_HEADER)
 		return DC_STATUS_DATAFORMAT;
 
 	const unsigned char *p = abstract->data;
@@ -130,7 +123,7 @@ cressi_edy_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsign
 {
 	cressi_edy_parser_t *parser = (cressi_edy_parser_t *) abstract;
 
-	if (abstract->size < 32)
+	if (abstract->size < SZ_HEADER)
 		return DC_STATUS_DATAFORMAT;
 
 	const unsigned char *p = abstract->data;
@@ -152,6 +145,7 @@ cressi_edy_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsign
 			*((unsigned int *) value) = cressi_edy_parser_count_gasmixes(p);
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = 0.0;
 			gasmix->oxygen = bcd2dec (p[0x17 - flags]) / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -188,7 +182,7 @@ cressi_edy_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 	unsigned int ngasmixes = cressi_edy_parser_count_gasmixes(data);
 	unsigned int gasmix = 0xFFFFFFFF;
 
-	unsigned int offset = 32;
+	unsigned int offset = SZ_HEADER;
 	while (offset + 2 <= size) {
 		dc_sample_value_t sample = {0};
 
@@ -201,13 +195,13 @@ cressi_edy_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 
 		// Time (seconds).
 		time += interval;
-		sample.time = time;
-		if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+		sample.time = time * 1000;
+		if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 		// Depth (1/10 m).
 		unsigned int depth = bcd2dec (data[offset + 0] & 0x0F) * 100 + bcd2dec (data[offset + 1]);
 		sample.depth = depth / 10.0;
-		if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+		if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 		// Current gasmix
 		if (ngasmixes) {
@@ -220,7 +214,7 @@ cressi_edy_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t c
 			}
 			if (idx != gasmix) {
 				sample.gasmix = idx;
-				if (callback) callback (DC_SAMPLE_GASMIX, sample, userdata);
+				if (callback) callback (DC_SAMPLE_GASMIX, &sample, userdata);
 				gasmix = idx;
 			}
 		}

@@ -58,7 +58,6 @@ struct oceans_s1_parser_t {
 	unsigned int divetime;
 };
 
-static dc_status_t oceans_s1_parser_set_data(dc_parser_t *abstract, const unsigned char *data, unsigned int size);
 static dc_status_t oceans_s1_parser_get_datetime(dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t oceans_s1_parser_get_field(dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t oceans_s1_parser_samples_foreach(dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -66,7 +65,6 @@ static dc_status_t oceans_s1_parser_samples_foreach(dc_parser_t *abstract, dc_sa
 static const dc_parser_vtable_t oceans_s1_parser_vtable = {
 	sizeof(oceans_s1_parser_t),
 	DC_FAMILY_OCEANS_S1,
-	oceans_s1_parser_set_data, /* set_data */
 	NULL, /* set_clock */
 	NULL, /* set_atmospheric */
 	NULL, /* set_density */
@@ -77,7 +75,7 @@ static const dc_parser_vtable_t oceans_s1_parser_vtable = {
 };
 
 dc_status_t
-oceans_s1_parser_create (dc_parser_t **out, dc_context_t *context)
+oceans_s1_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size)
 {
 	oceans_s1_parser_t *parser = NULL;
 
@@ -85,7 +83,7 @@ oceans_s1_parser_create (dc_parser_t **out, dc_context_t *context)
 		return DC_STATUS_INVALIDARGS;
 
 	// Allocate memory.
-	parser = (oceans_s1_parser_t *) dc_parser_allocate (context, &oceans_s1_parser_vtable);
+	parser = (oceans_s1_parser_t *) dc_parser_allocate (context, &oceans_s1_parser_vtable, data, size);
 	if (parser == NULL) {
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
@@ -101,23 +99,6 @@ oceans_s1_parser_create (dc_parser_t **out, dc_context_t *context)
 	parser->divetime = 0;
 
 	*out = (dc_parser_t *) parser;
-
-	return DC_STATUS_SUCCESS;
-}
-
-static dc_status_t
-oceans_s1_parser_set_data (dc_parser_t *abstract, const unsigned char *data, unsigned int size)
-{
-	oceans_s1_parser_t *parser = (oceans_s1_parser_t *) abstract;
-
-	// Reset the cache.
-	parser->cached = 0;
-	parser->timestamp = 0;
-	parser->number = 0;
-	parser->divemode = 0;
-	parser->oxygen = 0;
-	parser->maxdepth = 0;
-	parser->divetime = 0;
 
 	return DC_STATUS_SUCCESS;
 }
@@ -166,6 +147,7 @@ oceans_s1_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigne
 			*((unsigned int *) value) = parser->divemode == SCUBA;
 			break;
 		case DC_FIELD_GASMIX:
+			gasmix->usage = DC_USAGE_NONE;
 			gasmix->helium = 0.0;
 			gasmix->oxygen = parser->oxygen / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
@@ -249,19 +231,19 @@ oceans_s1_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 			unsigned int nsamples = seconds / interval;
 			for (unsigned int i = 0; i < nsamples; ++i) {
 				time += interval;
-				sample.time = time;
-				if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+				sample.time = time * 1000;
+				if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 				sample.depth = 0;
-				if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+				if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 			}
 
 			time += interval;
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 			sample.depth = depth / 100.0;
-			if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+			if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 		} else if (strncmp(line, "enddive", 7) == 0) {
 			if (sscanf(line, "enddive %u,%u", &maxdepth, &divetime) != 2) {
 				ERROR (parser->base.context, "Failed to parse the line '%s'.", line);
@@ -280,14 +262,14 @@ oceans_s1_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 			}
 
 			time += interval;
-			sample.time = time;
-			if (callback) callback (DC_SAMPLE_TIME, sample, userdata);
+			sample.time = time * 1000;
+			if (callback) callback (DC_SAMPLE_TIME, &sample, userdata);
 
 			sample.depth = depth / 100.0;
-			if (callback) callback (DC_SAMPLE_DEPTH, sample, userdata);
+			if (callback) callback (DC_SAMPLE_DEPTH, &sample, userdata);
 
 			sample.temperature = temperature;
-			if (callback) callback (DC_SAMPLE_TEMPERATURE, sample, userdata);
+			if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 			if (events & EVENT_DECO_STOP) {
 				sample.deco.type = DC_DECO_DECOSTOP;
@@ -298,7 +280,8 @@ oceans_s1_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t ca
 			}
 			sample.deco.depth = 0.0;
 			sample.deco.time = 0;
-			if (callback) callback (DC_SAMPLE_DECO, sample, userdata);
+			sample.deco.tts = 0;
+			if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 		}
 	}
 

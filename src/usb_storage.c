@@ -35,7 +35,6 @@
 #include "context-private.h"
 #include "iostream-private.h"
 #include "iterator-private.h"
-#include "descriptor-private.h"
 #include "timer.h"
 
 // Fake "device" that just contains the directory name that

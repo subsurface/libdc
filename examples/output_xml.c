@@ -90,7 +90,7 @@ convert_volume (double value, dctool_units_t units)
 }
 
 static void
-sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata)
+sample_cb (dc_sample_type_t type, const dc_sample_value_t *value, void *userdata)
 {
 	static const char *events[] = {
 		"none", "deco", "rbt", "ascent", "ceiling", "workload", "transmitter",
@@ -104,64 +104,80 @@ sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata)
 
 	sample_data_t *sampledata = (sample_data_t *) userdata;
 
+	unsigned int seconds = 0, milliseconds = 0;
+
 	switch (type) {
 	case DC_SAMPLE_TIME:
+		seconds = value->time / 1000;
+		milliseconds = value->time % 1000;
 		if (sampledata->nsamples++)
 			fprintf (sampledata->ostream, "</sample>\n");
 		fprintf (sampledata->ostream, "<sample>\n");
-		fprintf (sampledata->ostream, "   <time>%02u:%02u</time>\n", value.time / 60, value.time % 60);
+		if (milliseconds) {
+			fprintf (sampledata->ostream, "   <time>%02u:%02u.%03u</time>\n", seconds / 60, seconds % 60, milliseconds);
+		} else {
+			fprintf (sampledata->ostream, "   <time>%02u:%02u</time>\n", seconds / 60, seconds % 60);
+		}
 		break;
 	case DC_SAMPLE_DEPTH:
 		fprintf (sampledata->ostream, "   <depth>%.2f</depth>\n",
-			convert_depth(value.depth, sampledata->units));
+			convert_depth(value->depth, sampledata->units));
 		break;
 	case DC_SAMPLE_PRESSURE:
 		fprintf (sampledata->ostream, "   <pressure tank=\"%u\">%.2f</pressure>\n",
-			value.pressure.tank,
-			convert_pressure(value.pressure.value, sampledata->units));
+			value->pressure.tank,
+			convert_pressure(value->pressure.value, sampledata->units));
 		break;
 	case DC_SAMPLE_TEMPERATURE:
 		fprintf (sampledata->ostream, "   <temperature>%.2f</temperature>\n",
-			convert_temperature(value.temperature, sampledata->units));
+			convert_temperature(value->temperature, sampledata->units));
 		break;
 	case DC_SAMPLE_EVENT:
-		if (value.event.type != SAMPLE_EVENT_GASCHANGE && value.event.type != SAMPLE_EVENT_GASCHANGE2) {
+		if (value->event.type != SAMPLE_EVENT_GASCHANGE && value->event.type != SAMPLE_EVENT_GASCHANGE2) {
 			fprintf (sampledata->ostream, "   <event type=\"%u\" time=\"%u\" flags=\"%u\" value=\"%u\">%s</event>\n",
-				value.event.type, value.event.time, value.event.flags, value.event.value, events[value.event.type]);
+				value->event.type, value->event.time, value->event.flags, value->event.value, events[value->event.type]);
 		}
 		break;
 	case DC_SAMPLE_RBT:
-		fprintf (sampledata->ostream, "   <rbt>%u</rbt>\n", value.rbt);
+		fprintf (sampledata->ostream, "   <rbt>%u</rbt>\n", value->rbt);
 		break;
 	case DC_SAMPLE_HEARTBEAT:
-		fprintf (sampledata->ostream, "   <heartbeat>%u</heartbeat>\n", value.heartbeat);
+		fprintf (sampledata->ostream, "   <heartbeat>%u</heartbeat>\n", value->heartbeat);
 		break;
 	case DC_SAMPLE_BEARING:
-		fprintf (sampledata->ostream, "   <bearing>%u</bearing>\n", value.bearing);
+		fprintf (sampledata->ostream, "   <bearing>%u</bearing>\n", value->bearing);
 		break;
 	case DC_SAMPLE_VENDOR:
-		fprintf (sampledata->ostream, "   <vendor type=\"%u\" size=\"%u\">", value.vendor.type, value.vendor.size);
-		for (unsigned int i = 0; i < value.vendor.size; ++i)
-			fprintf (sampledata->ostream, "%02X", ((const unsigned char *) value.vendor.data)[i]);
+		fprintf (sampledata->ostream, "   <vendor type=\"%u\" size=\"%u\">", value->vendor.type, value->vendor.size);
+		for (unsigned int i = 0; i < value->vendor.size; ++i)
+			fprintf (sampledata->ostream, "%02X", ((const unsigned char *) value->vendor.data)[i]);
 		fprintf (sampledata->ostream, "</vendor>\n");
 		break;
 	case DC_SAMPLE_SETPOINT:
-		fprintf (sampledata->ostream, "   <setpoint>%.2f</setpoint>\n", value.setpoint);
+		fprintf (sampledata->ostream, "   <setpoint>%.2f</setpoint>\n", value->setpoint);
 		break;
 	case DC_SAMPLE_PPO2:
-		fprintf (sampledata->ostream, "   <ppo2>%.2f</ppo2>\n", value.ppo2);
+		if (value->ppo2.sensor != DC_SENSOR_NONE) {
+			fprintf (sampledata->ostream, "   <ppo2 sensor=\"%u\">%.2f</ppo2>\n", value->ppo2.sensor, value->ppo2.value);
+		} else {
+			fprintf (sampledata->ostream, "   <ppo2>%.2f</ppo2>\n", value->ppo2.value);
+		}
 		break;
 	case DC_SAMPLE_CNS:
-		fprintf (sampledata->ostream, "   <cns>%.1f</cns>\n", value.cns * 100.0);
+		fprintf (sampledata->ostream, "   <cns>%.1f</cns>\n", value->cns * 100.0);
 		break;
 	case DC_SAMPLE_DECO:
 		fprintf (sampledata->ostream, "   <deco time=\"%u\" depth=\"%.2f\">%s</deco>\n",
-			value.deco.time,
-			convert_depth(value.deco.depth, sampledata->units),
-			decostop[value.deco.type]);
+			value->deco.time,
+			convert_depth(value->deco.depth, sampledata->units),
+			decostop[value->deco.type]);
+		if (value->deco.tts) {
+			fprintf (sampledata->ostream, "   <tts>%u</tts>\n",
+				value->deco.tts);
+		}
 		break;
 	case DC_SAMPLE_GASMIX:
-		fprintf (sampledata->ostream, "   <gasmix>%u</gasmix>\n", value.gasmix);
+		fprintf (sampledata->ostream, "   <gasmix>%u</gasmix>\n", value->gasmix);
 		break;
 	default:
 		break;
@@ -322,11 +338,19 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 			"<gasmix>\n"
 			"   <he>%.1f</he>\n"
 			"   <o2>%.1f</o2>\n"
-			"   <n2>%.1f</n2>\n"
-			"</gasmix>\n",
+			"   <n2>%.1f</n2>\n",
 			gasmix.helium * 100.0,
 			gasmix.oxygen * 100.0,
 			gasmix.nitrogen * 100.0);
+		if (gasmix.usage) {
+			const char *usage[] = {"none", "oxygen", "diluent", "sidemount"};
+			fprintf (output->ostream,
+				"   <usage>%s</usage>\n",
+				usage[gasmix.usage]);
+		}
+		fprintf (output->ostream,
+			"</gasmix>\n");
+
 	}
 
 	// Parse the tanks.
@@ -353,6 +377,12 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 			fprintf (output->ostream,
 				"   <gasmix>%u</gasmix>\n",
 				tank.gasmix);
+		}
+		if (tank.usage) {
+			const char *usage[] = {"none", "oxygen", "diluent", "sidemount"};
+			fprintf (output->ostream,
+				"   <usage>%s</usage>\n",
+				usage[tank.usage]);
 		}
 		if (tank.type != DC_TANKVOLUME_NONE) {
 			fprintf (output->ostream,
@@ -420,8 +450,14 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 	}
 
 	if (status != DC_STATUS_UNSUPPORTED) {
-		fprintf (output->ostream, "<salinity type=\"%u\">%.1f</salinity>\n",
-			salinity.type, salinity.density);
+		const char *names[] = {"fresh", "salt"};
+		if (salinity.density) {
+			fprintf (output->ostream, "<salinity density=\"%.1f\">%s</salinity>\n",
+				salinity.density, names[salinity.type]);
+		} else {
+			fprintf (output->ostream, "<salinity>%s</salinity>\n",
+				names[salinity.type]);
+		}
 	}
 
 	// Parse the atmospheric pressure.
