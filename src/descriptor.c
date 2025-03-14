@@ -493,7 +493,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* for the Mk2/Mk3 we are using the model of the Mk2 global model */
 	/* see garmin_parser.c for a more comprehensive list of models */
 	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, NULL},
-	{"Garmin", "Descent Mk2(i)/Mk3(i)", DC_FAMILY_GARMIN, 3258, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent Mk2(i)/Mk3(i)(S)/G1/G2/X50i", DC_FAMILY_GARMIN, 3258, DC_TRANSPORT_USBSTORAGE, NULL},
 	{"FIT", "File import", DC_FAMILY_GARMIN, 0, DC_TRANSPORT_USBSTORAGE, NULL },
 };
 
