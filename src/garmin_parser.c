@@ -1648,18 +1648,23 @@ static void add_sensor_string(garmin_parser_t *garmin, const char *desc, const s
 static dc_status_t
 garmin_parser_set_data (garmin_parser_t *garmin, const unsigned char *data, unsigned int size)
 {
-	// This list is empirical and somewhat speculative
-	// will have to be confirmed with Garmin
+	// Ids can be found at https://developer.garmin.com/connect-iq/reference-guides/devices-reference/
+	// (look for 'Part Number')
 	static const struct {
-		int id;
 		const char *name;
+		int id;
 	} models[] = {
-		{ 2859, "Descent Mk1" },
-		{ 2991, "Descent Mk1 APAC" },
-		{ 3258, "Descent Mk2(i)" },
-		{ 3542, "Descent Mk2s" },
-		{ 3702, "Descent Mk2 APAC" },
-		{ 4223, "Descent Mk3" },
+		{ "Descent™ G1 / G1 Solar", 4005 },
+		{ "Descent™ G2", 4588 },
+		{ "Descent™ Mk1", 2859 },
+		{ "Descent™ Mk1 APAC", 2991 },
+		{ "Descent™ Mk2(i)", 3258 },
+		{ "Descent™ Mk2(i) APAC", 3702 },
+		{ "Descent™ Mk2 S", 3542 },
+		{ "Descent™ Mk2 S APAC", 3930 },
+		{ "Descent™ Mk3(i) 43mm", 4222 },
+		{ "Descent™ Mk3(i) 51mm", 4223 },
+		{ "Descent™ X50i", 4518 },
 	};
 
 	/* Walk the data once without a callback to set up the core fields */
