@@ -591,14 +591,15 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 					if (pressure < 0xFFF0) {
 						unsigned int battery = 1u << (pressure >> 12);
 						pressure &= 0x0FFF;
-						if (!tank[id].active) {
-							tank[id].active = 1;
-							tank[id].beginpressure = pressure;
+						if (pressure) {
+							if (!tank[id].active) {
+								tank[id].active = 1;
+								tank[id].beginpressure = pressure;
+								tank[id].endpressure = pressure;
+							}
 							tank[id].endpressure = pressure;
 							tank[id].battery = 0;
 						}
-						tank[id].endpressure = pressure;
-						tank[id].battery |= battery;
 					}
 				}
 			}
@@ -610,12 +611,14 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 					unsigned int id = 2 + i;
 					if (pressure < 0xFFF0) {
 						pressure &= 0x0FFF;
-						if (!tank[id].active) {
-							tank[id].active = 1;
-							tank[id].beginpressure = pressure;
+						if (pressure) {
+							if (!tank[id].active) {
+								tank[id].active = 1;
+								tank[id].beginpressure = pressure;
+								tank[id].endpressure = pressure;
+							}
 							tank[id].endpressure = pressure;
 						}
-						tank[id].endpressure = pressure;
 					}
 				}
 			}
@@ -1233,9 +1236,11 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 					unsigned int id = (parser->aimode == AI_HPCCR ? 4 : 0) + i;
 					if (pressure < 0xFFF0) {
 						pressure &= 0x0FFF;
-						sample.pressure.tank = parser->tankidx[id];
-						sample.pressure.value = pressure * 2 * PSI / BAR;
-						if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
+						if (pressure) {
+							sample.pressure.tank = parser->tankidx[id];
+							sample.pressure.value = pressure * 2 * PSI / BAR;
+							if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
+						}
 					}
 				}
 
@@ -1259,9 +1264,11 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 					unsigned int id = 2 + i;
 					if (pressure < 0xFFF0) {
 						pressure &= 0x0FFF;
-						sample.pressure.tank = parser->tankidx[id];
-						sample.pressure.value = pressure * 2 * PSI / BAR;
-						if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
+						if (pressure) {
+							sample.pressure.tank = parser->tankidx[id];
+							sample.pressure.value = pressure * 2 * PSI / BAR;
+							if (callback) callback (DC_SAMPLE_PRESSURE, &sample, userdata);
+						}
 					}
 				}
 			}
