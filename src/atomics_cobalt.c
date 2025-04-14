@@ -161,7 +161,7 @@ atomics_cobalt_device_version (dc_device_t *abstract, unsigned char data[], unsi
 	// Send the command to the dive computer.
 	unsigned char bRequest = 0x01;
 	dc_usb_control_t control = {
-		DC_USB_REQUEST_VENDOR | DC_USB_RECIPIENT_DEVICE | DC_USB_ENDPOINT_OUT, /* bmRequestType */
+		(unsigned char) DC_USB_REQUEST_VENDOR | DC_USB_RECIPIENT_DEVICE | DC_USB_ENDPOINT_OUT, /* bmRequestType */
 		bRequest, /* bRequest */
 		0, /* wValue */
 		0, /* wIndex */
@@ -229,7 +229,7 @@ atomics_cobalt_read_dive (dc_device_t *abstract, dc_buffer_t *buffer, int init, 
 		bRequest = init ? 0x09 : 0x0A;
 
 	dc_usb_control_t control = {
-		DC_USB_REQUEST_VENDOR | DC_USB_RECIPIENT_DEVICE | DC_USB_ENDPOINT_OUT, /* bmRequestType */
+		(unsigned char) DC_USB_REQUEST_VENDOR | DC_USB_RECIPIENT_DEVICE | DC_USB_ENDPOINT_OUT, /* bmRequestType */
 		bRequest, /* bRequest */
 		0, /* wValue */
 		0, /* wIndex */
