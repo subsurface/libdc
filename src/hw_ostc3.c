@@ -488,12 +488,19 @@ hw_ostc3_device_id (hw_ostc3_device_t *device, unsigned char data[], unsigned in
 	if (size != SZ_HARDWARE && size != SZ_HARDWARE2)
 		return DC_STATUS_INVALIDARGS;
 
-	// Send the command.
+	// We need to try the HARDWARE command first, as HARDWARE2 results
+	// in a bluetooth disconnect when the OSTC4 is in bootloader mode.
 	unsigned char hardware[SZ_HARDWARE2] = {0};
-	status = hw_ostc3_transfer (device, NULL, HARDWARE2, NULL, 0, hardware, SZ_HARDWARE2, NULL, NODELAY);
-	if (status == DC_STATUS_UNSUPPORTED) {
-		status = hw_ostc3_transfer (device, NULL, HARDWARE, NULL, 0, hardware + 1, SZ_HARDWARE, NULL, NODELAY);
+	status = hw_ostc3_transfer(device, NULL, HARDWARE, NULL, 0, hardware + 1, SZ_HARDWARE, NULL, NODELAY);
+	if (size == SZ_HARDWARE2 && array_uint16_be(hardware) != OSTC4) {
+		// HARDWARE2 returns additional information
+		unsigned char hardware2[SZ_HARDWARE2] = {0};
+		status = hw_ostc3_transfer(device, NULL, HARDWARE2, NULL, 0, hardware2, SZ_HARDWARE2, NULL, NODELAY);
+		if (status == DC_STATUS_SUCCESS) {
+			memcpy(hardware, hardware2, SZ_HARDWARE2);
+		}
 	}
+
 	if (status != DC_STATUS_SUCCESS)
 		return status;
 
@@ -615,8 +622,10 @@ hw_ostc3_device_init (hw_ostc3_device_t *device, hw_ostc3_state_t state)
 
 	// Cache the descriptor.
 	device->hardware = array_uint16_be(hardware + 0);
-	device->feature = array_uint16_be(hardware + 2);
-	device->model = hardware[4];
+	if (device->hardware != OSTC4) {
+		device->feature = array_uint16_be(hardware + 2);
+		device->model = hardware[4];
+	}
 	device->serial = array_uint16_le (version + 0);
 	if (device->hardware == OSTC4) {
 		device->firmware = array_uint16_le (version + 2);
