@@ -549,7 +549,7 @@ dc_match_prefix_with_number (const void *key, const void *value)
 
 	size_t n = strlen (prefix);
 
-	if (strncmp (str, prefix, n) != 0) {
+	if (strncasecmp (str, prefix, n) != 0) {
 		return 0;
 	}
 
@@ -572,7 +572,7 @@ dc_match_prefix_with_hex (const void *key, const void *value)
 
 	size_t n = strlen (prefix);
 
-	if (strncmp (str, prefix, n) != 0) {
+	if (strncasecmp (str, prefix, n) != 0) {
 		return 0;
 	}
 
