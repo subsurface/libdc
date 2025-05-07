@@ -598,7 +598,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 								tank[id].endpressure = pressure;
 							}
 							tank[id].endpressure = pressure;
-							tank[id].battery = 0;
+							tank[id].battery |= battery;
 						}
 					}
 				}

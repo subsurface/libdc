@@ -80,7 +80,7 @@ typedef struct halcyon_symbios_tank_t {
 	unsigned int beginpressure;
 	unsigned int endpressure;
 	unsigned int gasmix;
-	dc_usage_t usage;
+	dc_tank_usage_t usage;
 } halcyon_symbios_tank_t;
 
 typedef struct halcyon_symbios_parser_t {
@@ -156,7 +156,7 @@ halcyon_symbios_parser_create (dc_parser_t **out, dc_context_t *context, const u
 		parser->tank[i].beginpressure = 0;
 		parser->tank[i].endpressure = 0;
 		parser->tank[i].gasmix = DC_GASMIX_UNKNOWN;
-		parser->tank[i].usage = DC_USAGE_NONE;
+		parser->tank[i].usage = DC_TANK_USAGE_NONE;
 	}
 
 	*out = (dc_parser_t *) parser;
@@ -440,7 +440,7 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			unsigned int DC_ATTR_UNUSED battery = array_uint16_le (data + offset + 4);
 			unsigned int pressure = array_uint16_le (data + offset + 6);
 			unsigned int transmitter = array_uint16_le (data + offset + 8);
-			dc_usage_t usage = DC_USAGE_NONE;
+			dc_tank_usage_t usage = DC_TANK_USAGE_NONE;
 
 			if (have_gasmix && gasmix_id_previous != gas_id) {
 				unsigned int idx = 0;
@@ -561,7 +561,7 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			}
 			unsigned int pressure = array_uint16_le (data + offset + 8);
 			unsigned int serial   = array_uint16_le (data + offset + 10);
-			dc_usage_t usage = DC_USAGE_OXYGEN;
+			dc_tank_usage_t usage = DC_TANK_USAGE_NONE;
 
 			if (tank_id_previous != serial ||
 				tank_usage_previous != usage) {
@@ -642,7 +642,7 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			unsigned int id = data[offset + 2] | TRANSMITTER_ID;
 			unsigned int DC_ATTR_UNUSED battery = array_uint16_le (data + offset + 4);
 			unsigned int pressure = array_uint16_le (data + offset + 6) / 10;
-			dc_usage_t usage = DC_USAGE_NONE;
+			dc_tank_usage_t usage = DC_TANK_USAGE_NONE;
 
 			if (tank_id_previous != id ||
 				tank_usage_previous != usage) {
