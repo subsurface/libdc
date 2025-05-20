@@ -21,6 +21,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <libdivecomputer/units.h>
 
@@ -101,6 +102,8 @@
 #define PETREL   3
 #define TERIC    8
 
+#define SENSOR_CALIBRATION_DEFAULT 2100
+
 #define UNDEFINED 0xFFFFFFFF
 
 typedef struct shearwater_predator_parser_t shearwater_predator_parser_t;
@@ -149,6 +152,7 @@ struct shearwater_predator_parser_t {
 	unsigned int hpccr;
 	unsigned int calibrated;
 	double calibration[3];
+	bool needs_divecan_calibration_estimate;
 	unsigned int divemode;
 	unsigned int serial;
 	unsigned int units;
@@ -280,6 +284,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, const
 	for (unsigned int i = 0; i < 3; ++i) {
 		parser->calibration[i] = 0.0;
 	}
+	parser->needs_divecan_calibration_estimate = false;
 	parser->units = METRIC;
 	parser->density = DEF_DENSITY_SALT;
 	parser->atmospheric = DEF_ATMOSPHERIC / (BAR / 1000);
@@ -748,9 +753,17 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	unsigned int base = parser->opening[3] + (pnf ? 6 : 86);
 	parser->calibrated = data[base];
 
+	unsigned int calibration_count = 0;
+	unsigned int calibration_default_count = 0;
 	for (size_t i = 0; i < 3; ++i) {
 		if (parser->calibrated & (1 << i)) {
 			unsigned int calibration = array_uint16_be(data + base + 1 + i * 2);
+
+			calibration_count++;
+			if (calibration == SENSOR_CALIBRATION_DEFAULT) {
+				calibration_default_count++;
+			}
+
 			parser->calibration[i] = calibration / 100000.0;
 			if (parser->model == PREDATOR) {
 				// The Predator expects the mV output of the cells to be
@@ -759,14 +772,26 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 				// sensors lines up and matches the average.
 				parser->calibration[i] *= 2.2;
 			}
+		}
+	}
 
-			static const char *name[] = {
-				"Sensor 1 calibration [bar / V]",
-				"Sensor 2 calibration [bar / V]",
-				"Sensor 3 calibration [bar / V]",
-			};
-			dc_field_add_string_fmt(&parser->cache, name[i], "%.2f", parser->calibration[i] * 1000);
-
+	if (calibration_count > 0) {
+		if (calibration_default_count < calibration_count) {
+			for (size_t i = 0; i < 3; ++i) {
+				if (parser->calibrated & (1 << i)) {
+					static const char *name[] = {
+						"Sensor 1 calibration [bar / V]",
+						"Sensor 2 calibration [bar / V]",
+						"Sensor 3 calibration [bar / V]",
+					};
+					dc_field_add_string_fmt(&parser->cache, name[i], "%.2f", parser->calibration[i] * 1000);
+				}
+			}
+		} else {
+			// All calibrated sensors report the default calibration value
+			// so this could be a DiveCAN controller, where the calibration values
+			// are stored in the CCR's sensor module.
+			parser->needs_divecan_calibration_estimate = true;
 		}
 	}
 
@@ -856,6 +881,10 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		break;
 	default:
 		break;
+	}
+
+	if (parser->needs_divecan_calibration_estimate) {
+		return shearwater_predator_parser_samples_foreach(abstract, NULL, NULL);
 	}
 
 	return DC_STATUS_SUCCESS;
@@ -1041,21 +1070,65 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 			if (ccr) {
 				// PPO2
 				if ((status & PPO2_EXTERNAL) == 0) {
-					sample.ppo2.sensor = DC_SENSOR_NONE;
-					sample.ppo2.value = data[offset + pnf + 6] / 100.0;
-					if (callback) callback (DC_SAMPLE_PPO2, &sample, userdata);
+					double calculated_ppo2 = data[offset + pnf + 6] / 100.0;
 
-					sample.ppo2.sensor = 0;
-					sample.ppo2.value = data[offset + pnf + 12] * parser->calibration[0];
-					if (callback && (parser->calibrated & 0x01)) callback (DC_SAMPLE_PPO2, &sample, userdata);
+					if (parser->needs_divecan_calibration_estimate) {
+						double ppo2_sum = 0.0;
+						unsigned int ppo2_count = 0;
+						if (parser->calibrated & 0x01) {
+							 ppo2_sum += data[offset + pnf + 12] * SENSOR_CALIBRATION_DEFAULT;
+							 ppo2_count++;
+						}
 
-					sample.ppo2.sensor = 1;
-					sample.ppo2.value = data[offset + pnf + 14] * parser->calibration[1];
-					if (callback && (parser->calibrated & 0x02)) callback (DC_SAMPLE_PPO2, &sample, userdata);
+						if (parser->calibrated & 0x02) {
+							 ppo2_sum += data[offset + pnf + 14] * SENSOR_CALIBRATION_DEFAULT;
+							 ppo2_count++;
+						}
 
-					sample.ppo2.sensor = 2;
-					sample.ppo2.value = data[offset + pnf + 15] * parser->calibration[2];
-					if (callback && (parser->calibrated & 0x04)) callback (DC_SAMPLE_PPO2, &sample, userdata);
+						if (parser->calibrated & 0x04) {
+							 ppo2_sum += data[offset + pnf + 15] * SENSOR_CALIBRATION_DEFAULT;
+							 ppo2_count++;
+						}
+
+						double calibration = SENSOR_CALIBRATION_DEFAULT;
+						double calibration_scaling_factor = calculated_ppo2 / (ppo2_sum / ppo2_count);
+						if (calibration_scaling_factor < 0.95 || calibration_scaling_factor > 1.05) {
+							// The calibration scaling is significant, use it.
+							calibration *= calibration_scaling_factor;
+						}
+
+						parser->calibration[0] = calibration;
+						parser->calibration[1] = calibration;
+						parser->calibration[2] = calibration;
+
+						dc_field_add_string_fmt(&parser->cache, "Estimated DiveCAN calibration [bar / V]", "%.2f", calibration * 1000);
+
+						parser->needs_divecan_calibration_estimate = false;
+					}
+
+					if (callback) {
+						sample.ppo2.sensor = DC_SENSOR_NONE;
+						sample.ppo2.value = calculated_ppo2;
+						callback(DC_SAMPLE_PPO2, &sample, userdata);
+
+						if (parser->calibrated & 0x01) {
+							sample.ppo2.sensor = 0;
+							sample.ppo2.value = data[offset + pnf + 12] * parser->calibration[0];
+							callback(DC_SAMPLE_PPO2, &sample, userdata);
+						}
+
+						if (parser->calibrated & 0x02) {
+							sample.ppo2.sensor = 1;
+							sample.ppo2.value = data[offset + pnf + 14] * parser->calibration[1];
+							callback(DC_SAMPLE_PPO2, &sample, userdata);
+						}
+
+						if (parser->calibrated & 0x04) {
+							sample.ppo2.sensor = 2;
+							sample.ppo2.value = data[offset + pnf + 15] * parser->calibration[2];
+							callback(DC_SAMPLE_PPO2, &sample, userdata);
+						}
+					}
 				}
 
 				// Setpoint
