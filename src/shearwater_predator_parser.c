@@ -163,6 +163,12 @@ struct shearwater_predator_parser_t {
 	struct dc_field_cache cache;
 };
 
+struct dc_parser_sensor_calibration_t {
+	double sum_ppo2;
+	double sum_calculated_ppo2;
+	unsigned int ppo2_sample_count;
+};
+
 static dc_status_t shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -414,6 +420,20 @@ add_battery_type(shearwater_predator_parser_t *parser, const unsigned char *data
 	default:
 		dc_field_add_string_fmt(&parser->cache, "Battery type", "unknown type %d", data[idx_battery_type]);
 		break;
+	}
+}
+
+static void print_calibration(shearwater_predator_parser_t *parser)
+{
+	for (size_t i = 0; i < 3; ++i) {
+		if (parser->calibrated & (1 << i)) {
+			static const char *name[] = {
+				"Sensor 1 calibration [bar / V]",
+				"Sensor 2 calibration [bar / V]",
+				"Sensor 3 calibration [bar / V]",
+			};
+			dc_field_add_string_fmt(&parser->cache, name[i], "%.2f", parser->calibration[i] * 1000);
+		}
 	}
 }
 
@@ -777,16 +797,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 
 	if (calibration_count > 0) {
 		if (calibration_default_count < calibration_count) {
-			for (size_t i = 0; i < 3; ++i) {
-				if (parser->calibrated & (1 << i)) {
-					static const char *name[] = {
-						"Sensor 1 calibration [bar / V]",
-						"Sensor 2 calibration [bar / V]",
-						"Sensor 3 calibration [bar / V]",
-					};
-					dc_field_add_string_fmt(&parser->cache, name[i], "%.2f", parser->calibration[i] * 1000);
-				}
-			}
+			print_calibration(parser);
 		} else {
 			// All calibrated sensors report the default calibration value
 			// so this could be a DiveCAN controller, where the calibration values
@@ -883,8 +894,33 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		break;
 	}
 
+	dc_status_t rc = DC_STATUS_SUCCESS;
 	if (parser->needs_divecan_calibration_estimate) {
-		return shearwater_predator_parser_samples_foreach(abstract, NULL, NULL);
+		struct dc_parser_sensor_calibration_t data = { 0 };
+
+		rc = shearwater_predator_parser_samples_foreach(abstract, NULL, (void *)&data);
+
+		bool calibrated = false;
+		if (data.sum_ppo2 != 0) {
+			double calibration = data.sum_calculated_ppo2 / data.sum_ppo2;
+			if (calibration < 0.98 || calibration > 1.02) {
+				// The calibration scaling is significant, use it.
+				calibration *= SENSOR_CALIBRATION_DEFAULT / 100000.0;
+				parser->calibration[0] = calibration;
+				parser->calibration[1] = calibration;
+				parser->calibration[2] = calibration;
+
+				dc_field_add_string_fmt(&parser->cache, "Estimated (DiveCAN?) sensor calibration [bar / V]", "%.2f", calibration * 1000);
+
+				calibrated = true;
+			}
+		}
+
+		if (!calibrated) {
+			print_calibration(parser);
+		}
+
+		parser->needs_divecan_calibration_estimate = false;
 	}
 
 	return DC_STATUS_SUCCESS;
@@ -1073,37 +1109,30 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 					double calculated_ppo2 = data[offset + pnf + 6] / 100.0;
 
 					if (parser->needs_divecan_calibration_estimate) {
+						struct dc_parser_sensor_calibration_t *out = (struct dc_parser_sensor_calibration_t *)userdata;
+
 						double ppo2_sum = 0.0;
 						unsigned int ppo2_count = 0;
 						if (parser->calibrated & 0x01) {
-							 ppo2_sum += data[offset + pnf + 12] * SENSOR_CALIBRATION_DEFAULT;
+							 ppo2_sum += data[offset + pnf + 12] * SENSOR_CALIBRATION_DEFAULT / 100000.0;
 							 ppo2_count++;
 						}
 
 						if (parser->calibrated & 0x02) {
-							 ppo2_sum += data[offset + pnf + 14] * SENSOR_CALIBRATION_DEFAULT;
+							 ppo2_sum += data[offset + pnf + 14] * SENSOR_CALIBRATION_DEFAULT / 100000.0;
 							 ppo2_count++;
 						}
 
 						if (parser->calibrated & 0x04) {
-							 ppo2_sum += data[offset + pnf + 15] * SENSOR_CALIBRATION_DEFAULT;
+							 ppo2_sum += data[offset + pnf + 15] * SENSOR_CALIBRATION_DEFAULT / 100000.0;
 							 ppo2_count++;
 						}
 
-						double calibration = SENSOR_CALIBRATION_DEFAULT;
-						double calibration_scaling_factor = calculated_ppo2 / (ppo2_sum / ppo2_count);
-						if (calibration_scaling_factor < 0.95 || calibration_scaling_factor > 1.05) {
-							// The calibration scaling is significant, use it.
-							calibration *= calibration_scaling_factor;
-						}
+						double ppo2 = ppo2_sum / ppo2_count;
 
-						parser->calibration[0] = calibration;
-						parser->calibration[1] = calibration;
-						parser->calibration[2] = calibration;
-
-						dc_field_add_string_fmt(&parser->cache, "Estimated DiveCAN calibration [bar / V]", "%.2f", calibration * 1000);
-
-						parser->needs_divecan_calibration_estimate = false;
+						out->sum_ppo2 += ppo2;
+						out->sum_calculated_ppo2 += calculated_ppo2;
+						out->ppo2_sample_count++;
 					}
 
 					if (callback) {
