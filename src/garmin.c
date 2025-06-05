@@ -39,8 +39,8 @@
 #include "libmtp.h"
 
 #define GARMIN_VENDOR      0x091E
-#define DESCENT_MK2        0x4CBA
-#define DESCENT_MK2_APAC   0x4E76
+
+#define DESCENT_MK2        3258
 
 // deal with ancient libmpt found on older Linux distros
 #ifndef LIBMTP_FILES_AND_FOLDERS_ROOT
@@ -58,6 +58,24 @@ typedef struct garmin_device_t {
 	LIBMTP_mtpdevice_t *mtp_device;
 #endif
 } garmin_device_t;
+
+// Ids can be found at https://developer.garmin.com/connect-iq/reference-guides/devices-reference/
+// (look for 'Part Number')
+
+const garmin_model_t garmin_models[] = {
+	{ "Descent™ G1 / G1 Solar", 4005, true },
+	{ "Descent™ G2", 4588, true },
+	{ "Descent™ Mk1", 2859, false },
+	{ "Descent™ Mk1 APAC", 2991, false },
+	{ "Descent™ Mk2(i)", 3258, true },
+	{ "Descent™ Mk2(i) APAC", 3702, true },
+	{ "Descent™ Mk2 S", 3542, true },
+	{ "Descent™ Mk2 S APAC", 3930, true },
+	{ "Descent™ Mk3(i) 43mm", 4222, true },
+	{ "Descent™ Mk3(i) 51mm", 4223, true },
+	{ "Descent™ X50i", 4518, true },
+	{ NULL, 0, false }
+};
 
 static dc_status_t garmin_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
 static dc_status_t garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
@@ -99,7 +117,7 @@ garmin_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *ios
 	// for a Descent Mk2/Mk2i, we have to use MTP to access its storage;
 	// for Garmin devices, the model number corresponds to the lower three nibbles of the USB product ID
 	// in order to have only one entry for the Mk2, we don't use the Mk2/APAC model number in our code
-	device->use_mtp = (model == (0x0FFF & DESCENT_MK2));
+	device->use_mtp = model == DESCENT_MK2;
 	device->mtp_device = NULL;
 #endif
 
@@ -335,7 +353,17 @@ mtp_get_file_list(dc_device_t *abstract, struct file_list *files)
 			      rawdevices[i].device_entry.vendor_id, rawdevices[i].device_entry.product_id);
 			continue;
 		}
-		if (rawdevices[i].device_entry.product_id != DESCENT_MK2 && rawdevices[i].device_entry.product_id != DESCENT_MK2_APAC) {
+
+		bool mtp_capable = false;
+		for (unsigned j = 0; garmin_models[j].name; j++) {
+			if ((garmin_models[j].id | 0x4000) == rawdevices[i].device_entry.product_id) {
+				mtp_capable = garmin_models[j].mtp_capable;
+
+				break;
+			}
+		}
+
+		if (!mtp_capable) {
 			DEBUG(abstract->context, "Garmin/mtp: skipping Garmin raw device %04x/%04x, as it is not a dive computer / does not support MTP",
 			      rawdevices[i].device_entry.vendor_id, rawdevices[i].device_entry.product_id);
 			continue;
