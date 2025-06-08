@@ -60,6 +60,7 @@ static int dc_filter_deepblu (dc_descriptor_t *descriptor, dc_transport_t transp
 static int dc_filter_oceans (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 static int dc_filter_divesoft (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 static int dc_filter_cressi (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_halcyon (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
 // Not merged upstream yet
 static int dc_filter_garmin (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
@@ -486,6 +487,9 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Divesoft Freedom */
 	{"Divesoft", "Freedom", DC_FAMILY_DIVESOFT_FREEDOM, 19, DC_TRANSPORT_BLE, dc_filter_divesoft},
 	{"Divesoft", "Liberty", DC_FAMILY_DIVESOFT_FREEDOM, 10, DC_TRANSPORT_BLE, dc_filter_divesoft},
+	/* Halcyon Symbios */
+	{"Halcyon", "Symbios HUD",     DC_FAMILY_HALCYON_SYMBIOS, 1, DC_TRANSPORT_BLE, dc_filter_halcyon},
+	{"Halcyon", "Symbios Handset", DC_FAMILY_HALCYON_SYMBIOS, 7, DC_TRANSPORT_BLE, dc_filter_halcyon},
 
 	// Not merged upstream yet
 	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model) */
@@ -937,6 +941,21 @@ dc_filter_cressi (dc_descriptor_t *descriptor, dc_transport_t transport, const v
 
 	if (transport == DC_TRANSPORT_BLE) {
 		return DC_FILTER_INTERNAL (userdata, model, 0, dc_match_cressi);
+	}
+
+	return 1;
+}
+
+static int
+dc_filter_halcyon (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
+{
+	static const char * const bluetooth[] = {
+		"H01", // Symbios HUD
+		"H07", // Symbios Handset
+	};
+
+	if (transport == DC_TRANSPORT_BLE) {
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_prefix);
 	}
 
 	return 1;
