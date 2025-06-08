@@ -96,6 +96,8 @@
 #define OSTC4_SCRUBBER_STATE_ERROR_FLAG 0x4000
 #define OSTC4_SCRUBBER_STATE_WARNING_FLAG 0x2000
 
+#define OSTC5_STARTING_SERIAL 1500
+
 typedef struct hw_ostc_sample_info_t {
 	unsigned int type;
 	unsigned int divisor;
@@ -818,7 +820,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				break;
 			case 6:
 				if (parser->first_scrubber_time_minutes == INT_MAX) {
-					return DC_STATUS_DATAFORMAT;
+					return DC_STATUS_UNSUPPORTED;
 				}
 
 				string->desc = "Remaining scrubber time at start [minutes]";
@@ -826,11 +828,20 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				break;
 			case 7:
 				if (parser->last_scrubber_time_minutes == INT_MAX) {
-					return DC_STATUS_DATAFORMAT;
+					return DC_STATUS_UNSUPPORTED;
 				}
 
 				string->desc = "Remaining scrubber time at end [minutes]";
 				snprintf(buf, BUFLEN, "%d", parser->last_scrubber_time_minutes);
+				break;
+			case 8:
+				if (parser->model != OSTC4) {
+					return DC_STATUS_UNSUPPORTED;
+				}
+
+				string->desc = "Model";
+				snprintf(buf, BUFLEN, "%s", parser->serial < OSTC5_STARTING_SERIAL ? "OSTC4" : "OSTC5");
+
 				break;
 			default:
 				return DC_STATUS_UNSUPPORTED;
