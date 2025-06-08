@@ -773,46 +773,48 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 
 	dc_field_add_string_fmt(&parser->cache, "Logversion", "%d%s", logversion, pnf ? "(PNF)" : "");
 
-	// Cache sensor calibration for later use
-	unsigned int base = parser->opening[3] + (pnf ? 6 : 86);
-	parser->calibrated = data[base];
-
-	unsigned int calibration_count = 0;
-	unsigned int calibration_default_count = 0;
-	for (size_t i = 0; i < 3; ++i) {
-		if (parser->calibrated & (1 << i)) {
-			unsigned int calibration = array_uint16_be(data + base + 1 + i * 2);
-
-			calibration_count++;
-			if (calibration == SENSOR_CALIBRATION_DEFAULT) {
-				calibration_default_count++;
-			}
-
-			parser->calibration[i] = calibration / 100000.0;
-			if (parser->model == PREDATOR) {
-				// The Predator expects the mV output of the cells to be
-				// within 30mV to 70mV in 100% O2 at 1 atmosphere. If the
-				// calibration value is scaled with a factor 2.2, then the
-				// sensors lines up and matches the average.
-				parser->calibration[i] *= 2.2;
-			}
-		}
-	}
-
-	if (calibration_count > 0) {
-		if (calibration_default_count < calibration_count) {
-			print_calibration(parser);
-		} else {
-			// All calibrated sensors report the default calibration value
-			// so this could be a DiveCAN controller, where the calibration values
-			// are stored in the CCR's sensor module.
-			parser->needs_divecan_calibration_estimate = true;
-		}
-	}
-
 	// Get the dive mode from the header (if available).
 	if (logversion >= 8) {
 		divemode = data[parser->opening[4] + (pnf ? 1 : 112)];
+	}
+
+	if (divemode == M_CC || divemode == M_CC2 || divemode == M_SC) {
+		// Cache sensor calibration for later use
+		unsigned int base = parser->opening[3] + (pnf ? 6 : 86);
+		parser->calibrated = data[base];
+
+		unsigned int calibration_count = 0;
+		unsigned int calibration_default_count = 0;
+		for (size_t i = 0; i < 3; ++i) {
+			if (parser->calibrated & (1 << i)) {
+				unsigned int calibration = array_uint16_be(data + base + 1 + i * 2);
+
+				calibration_count++;
+				if (calibration == SENSOR_CALIBRATION_DEFAULT) {
+					calibration_default_count++;
+				}
+
+				parser->calibration[i] = calibration / 100000.0;
+				if (parser->model == PREDATOR) {
+					// The Predator expects the mV output of the cells to be
+					// within 30mV to 70mV in 100% O2 at 1 atmosphere. If the
+					// calibration value is scaled with a factor 2.2, then the
+					// sensors lines up and matches the average.
+					parser->calibration[i] *= 2.2;
+				}
+			}
+		}
+
+		if (calibration_count > 0) {
+			if (calibration_default_count < calibration_count) {
+				print_calibration(parser);
+			} else {
+				// All calibrated sensors report the default calibration value
+				// so this could be a DiveCAN controller, where the calibration values
+				// are stored in the CCR's sensor module.
+				parser->needs_divecan_calibration_estimate = true;
+			}
+		}
 	}
 
 	// Get the correct model number from the final block.
