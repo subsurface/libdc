@@ -344,6 +344,8 @@ divesoft_freedom_device_open (dc_device_t **out, dc_context_t *context, dc_iostr
 		goto error_free_hdlc;
 	}
 
+	HEXDUMP (context, DC_LOGLEVEL_DEBUG, "Connection", rsp_connect, sizeof(rsp_connect));
+
 	DEBUG (context, "Connection: compression=%u, protocol=%u.%u, serial=%.16s",
 		array_uint16_le (rsp_connect),
 		rsp_connect[2], rsp_connect[3],
@@ -402,6 +404,8 @@ divesoft_freedom_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
 		goto error_exit;
 	}
 
+	HEXDUMP (abstract->context, DC_LOGLEVEL_DEBUG, "Version", rsp_version, sizeof(rsp_version));
+
 	DEBUG (abstract->context, "Device: model=%u, hw=%u.%u, sw=%u.%u.%u.%u serial=%.16s",
 		rsp_version[0],
 		rsp_version[1], rsp_version[2],
@@ -436,7 +440,6 @@ divesoft_freedom_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
 	unsigned int recordsize = 0;
 
 	// Download the dive list.
-	unsigned int ndives = 0;
 	unsigned int total = 0;
 	unsigned int maxsize = 0;
 	unsigned int current = INVALID;
@@ -509,7 +512,6 @@ divesoft_freedom_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
 
 			offset += recordsize;
 			count++;
-			ndives++;
 		}
 
 		// Append the records to the dive list buffer.

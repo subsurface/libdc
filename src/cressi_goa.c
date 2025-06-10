@@ -522,6 +522,8 @@ cressi_goa_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, v
 	const unsigned char *id_data = dc_buffer_get_data(id);
 	size_t id_size = dc_buffer_get_size(id);
 
+	HEXDUMP (abstract->context, DC_LOGLEVEL_DEBUG, "Version", id_data, id_size);
+
 	if (id_size < 9) {
 		ERROR (abstract->context, "Unexpected version length (" DC_PRINTF_SIZE ").", id_size);
 		status = DC_STATUS_DATAFORMAT;
@@ -546,7 +548,7 @@ cressi_goa_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, v
 			version = 2;
 		} else if (firmware >= 100 && firmware <= 110) {
 			version = 3;
-		} else if (firmware >= 200 && firmware <= 205) {
+		} else if (firmware >= 200 && firmware <= 299) {
 			version = 4;
 		} else if (firmware >= 300) {
 			version = 5;

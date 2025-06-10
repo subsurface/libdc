@@ -79,7 +79,7 @@ static const backend_table_t g_backends[] = {
 	{"iconhd",      DC_FAMILY_MARES_ICONHD,        0x14},
 	{"ostc",        DC_FAMILY_HW_OSTC,             0},
 	{"frog",        DC_FAMILY_HW_FROG,             0},
-	{"ostc3",       DC_FAMILY_HW_OSTC3,            0x0A},
+	{"ostc3",       DC_FAMILY_HW_OSTC3,            0x11},
 	{"edy",         DC_FAMILY_CRESSI_EDY,          0x08},
 	{"leonardo",	DC_FAMILY_CRESSI_LEONARDO,     1},
 	{"goa",         DC_FAMILY_CRESSI_GOA,          2},
@@ -100,6 +100,7 @@ static const backend_table_t g_backends[] = {
 	{"cosmiq",      DC_FAMILY_DEEPBLU_COSMIQ,      0},
 	{"s1",          DC_FAMILY_OCEANS_S1,           0},
 	{"freedom",     DC_FAMILY_DIVESOFT_FREEDOM,    19},
+	{"symbios",     DC_FAMILY_HALCYON_SYMBIOS,     1},
 
 	// Not merged upstream yet
 	{"descentmk1",  DC_FAMILY_GARMIN,              0},
@@ -260,7 +261,7 @@ dctool_descriptor_search (dc_descriptor_t **out, const char *name, dc_family_t f
 	dc_status_t rc = DC_STATUS_SUCCESS;
 
 	dc_iterator_t *iterator = NULL;
-	rc = dc_descriptor_iterator (&iterator);
+	rc = dc_descriptor_iterator_new (&iterator, NULL);
 	if (rc != DC_STATUS_SUCCESS) {
 		ERROR ("Error creating the device descriptor iterator.");
 		return rc;

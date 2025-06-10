@@ -23,6 +23,7 @@
 #define DC_DESCRIPTOR_H
 
 #include "common.h"
+#include "context.h"
 #include "iterator.h"
 
 #ifdef __cplusplus
@@ -38,11 +39,15 @@ typedef struct dc_descriptor_t dc_descriptor_t;
  * Create an iterator to enumerate the supported dive computers.
  *
  * @param[out] iterator  A location to store the iterator.
+ * @param[in]  context   A valid device descriptor.
  * @returns #DC_STATUS_SUCCESS on success, or another #dc_status_t code
  * on failure.
  */
 dc_status_t
-dc_descriptor_iterator (dc_iterator_t **iterator);
+dc_descriptor_iterator_new (dc_iterator_t **iterator, dc_context_t *context);
+
+/* For backwards compatibility */
+#define dc_descriptor_iterator(iterator) dc_descriptor_iterator_new(iterator, NULL)
 
 /**
  * Free the device descriptor.
@@ -59,7 +64,7 @@ dc_descriptor_free (dc_descriptor_t *descriptor);
  * @returns The vendor name of the dive computer on success, or NULL on failure.
  */
 const char *
-dc_descriptor_get_vendor (dc_descriptor_t *descriptor);
+dc_descriptor_get_vendor (const dc_descriptor_t *descriptor);
 
 /**
  * Get the product name of the dive computer.
@@ -69,7 +74,7 @@ dc_descriptor_get_vendor (dc_descriptor_t *descriptor);
  * failure.
  */
 const char *
-dc_descriptor_get_product (dc_descriptor_t *descriptor);
+dc_descriptor_get_product (const dc_descriptor_t *descriptor);
 
 /**
  * Get the family type of the dive computer.
@@ -79,7 +84,7 @@ dc_descriptor_get_product (dc_descriptor_t *descriptor);
  * on failure.
  */
 dc_family_t
-dc_descriptor_get_type (dc_descriptor_t *descriptor);
+dc_descriptor_get_type (const dc_descriptor_t *descriptor);
 
 /**
  * Get the model number of the dive computer.
@@ -89,7 +94,7 @@ dc_descriptor_get_type (dc_descriptor_t *descriptor);
  * failure.
  */
 unsigned int
-dc_descriptor_get_model (dc_descriptor_t *descriptor);
+dc_descriptor_get_model (const dc_descriptor_t *descriptor);
 
 /**
  * Get all transports supported by the dive computer.
@@ -99,7 +104,7 @@ dc_descriptor_get_model (dc_descriptor_t *descriptor);
  * success, or DC_TRANSPORT_NONE on failure.
  */
 unsigned int
-dc_descriptor_get_transports (dc_descriptor_t *descriptor);
+dc_descriptor_get_transports (const dc_descriptor_t *descriptor);
 
 /**
  * Check if a low-level I/O device matches a supported dive computer.
@@ -117,7 +122,7 @@ dc_descriptor_get_transports (dc_descriptor_t *descriptor);
  * there is no match.
  */
 int
-dc_descriptor_filter (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+dc_descriptor_filter (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
 #ifdef __cplusplus
 }

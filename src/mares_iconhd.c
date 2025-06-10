@@ -91,6 +91,7 @@
 #define CMD_OBJ_ODD   0xFE
 
 #define OBJ_DEVICE        0x2000
+#define OBJ_DEVICE_MODEL  0x02
 #define OBJ_DEVICE_SERIAL 0x04
 #define OBJ_LOGBOOK       0x2008
 #define OBJ_LOGBOOK_COUNT 0x01
@@ -195,6 +196,7 @@ mares_iconhd_get_model (mares_iconhd_device_t *device)
 		{"Sirius",      SIRIUS},
 		{"Quad Ci",     QUADCI},
 		{"Puck4",       PUCK4},
+		{"Puck Lite",   PUCK4},
 	};
 
 	// Check the product name in the version packet against the list
@@ -244,17 +246,18 @@ mares_iconhd_packet_fixed (mares_iconhd_device_t *device,
 	}
 
 	// Receive the header byte.
-	unsigned char header[1] = {0};
-	status = dc_iostream_read (device->iostream, header, sizeof (header), NULL);
-	if (status != DC_STATUS_SUCCESS) {
-		ERROR (abstract->context, "Failed to receive the packet header.");
-		return status;
-	}
+	while (1) {
+		unsigned char header[1] = {0};
+		status = dc_iostream_read (device->iostream, header, sizeof (header), NULL);
+		if (status != DC_STATUS_SUCCESS) {
+			ERROR (abstract->context, "Failed to receive the packet header.");
+			return status;
+		}
 
-	// Verify the header byte.
-	if (header[0] != ACK) {
-		ERROR (abstract->context, "Unexpected packet header byte (%02x).", header[0]);
-		return DC_STATUS_PROTOCOL;
+		if (header[0] == ACK)
+			break;
+
+		WARNING (abstract->context, "Unexpected packet header byte (%02x).", header[0]);
 	}
 
 	// Send the command payload to the dive computer.
@@ -411,7 +414,7 @@ mares_iconhd_transfer (mares_iconhd_device_t *device, unsigned char cmd, const u
 			return rc;
 
 		// Discard any garbage bytes.
-		dc_iostream_sleep (device->iostream, 100);
+		dc_iostream_sleep (device->iostream, 1000);
 		dc_iostream_purge (device->iostream, DC_DIRECTION_INPUT);
 	}
 
@@ -613,6 +616,8 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_
 		goto error_free_iostream;
 	}
 
+	HEXDUMP (context, DC_LOGLEVEL_DEBUG, "Version", device->version, sizeof (device->version));
+
 	// Autodetect the model using the version packet.
 	device->model = mares_iconhd_get_model (device);
 
@@ -658,6 +663,10 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_
 		break;
 	case GENIUS:
 	case HORIZON:
+	case PUCKAIR2:
+	case SIRIUS:
+	case QUADCI:
+	case PUCK4:
 		device->layout = &mares_genius_layout;
 		device->packetsize = 4096;
 		device->fingerprint_size = 4;
@@ -1032,6 +1041,28 @@ mares_iconhd_device_foreach_object (dc_device_t *abstract, dc_dive_callback_t ca
 		return DC_STATUS_NOMEMORY;
 	}
 
+	// Read the model number.
+	rc = mares_iconhd_read_object (device, NULL, buffer, OBJ_DEVICE, OBJ_DEVICE_MODEL);
+	if (rc != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to read the model number.");
+		dc_buffer_free (buffer);
+		return rc;
+	}
+
+	HEXDUMP (abstract->context, DC_LOGLEVEL_DEBUG, "Model", dc_buffer_get_data (buffer), dc_buffer_get_size (buffer));
+
+	if (dc_buffer_get_size (buffer) < 4) {
+		ERROR (abstract->context, "Unexpected number of bytes received (" DC_PRINTF_SIZE ").",
+			dc_buffer_get_size (buffer));
+		dc_buffer_free (buffer);
+		return DC_STATUS_PROTOCOL;
+	}
+
+	unsigned int DC_ATTR_UNUSED model = array_uint32_le (dc_buffer_get_data (buffer));
+
+	// Erase the buffer.
+	dc_buffer_clear (buffer);
+
 	// Read the serial number.
 	rc = mares_iconhd_read_object (device, NULL, buffer, OBJ_DEVICE, OBJ_DEVICE_SERIAL);
 	if (rc != DC_STATUS_SUCCESS) {
@@ -1039,6 +1070,8 @@ mares_iconhd_device_foreach_object (dc_device_t *abstract, dc_dive_callback_t ca
 		dc_buffer_free (buffer);
 		return rc;
 	}
+
+	HEXDUMP (abstract->context, DC_LOGLEVEL_DEBUG, "Serial", dc_buffer_get_data (buffer), dc_buffer_get_size (buffer));
 
 	if (dc_buffer_get_size (buffer) < 16) {
 		ERROR (abstract->context, "Unexpected number of bytes received (" DC_PRINTF_SIZE ").",

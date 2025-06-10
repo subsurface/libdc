@@ -23,6 +23,7 @@
 #define ARRAY_H
 
 #define C_ARRAY_SIZE(a) (sizeof (a) / sizeof *(a))
+#define C_ARRAY_ITEMSIZE(a) (sizeof *(a))
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +34,9 @@ array_reverse_bytes (unsigned char data[], unsigned int size);
 
 void
 array_reverse_bits (unsigned char data[], unsigned int size);
+
+void
+array_reverse_nibbles (unsigned char data[], unsigned int size);
 
 int
 array_isequal (const unsigned char data[], unsigned int size, unsigned char value);

@@ -56,7 +56,7 @@ static const suunto_common2_device_vtable_t suunto_d9_device_vtable = {
 		suunto_common2_device_write, /* write */
 		suunto_common2_device_dump, /* dump */
 		suunto_common2_device_foreach, /* foreach */
-		NULL, /* timesync */
+		suunto_common2_device_timesync, /* timesync */
 		NULL /* close */
 	},
 	suunto_d9_device_packet
@@ -179,6 +179,8 @@ suunto_d9_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *
 		ERROR (context, "Failed to identify the protocol variant.");
 		goto error_free;
 	}
+
+	HEXDUMP (context, DC_LOGLEVEL_DEBUG, "Version", device->base.version, sizeof (device->base.version));
 
 	// Override the base class values.
 	model = device->base.version[0];
