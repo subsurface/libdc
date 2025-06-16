@@ -1226,9 +1226,9 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 				}
 
 				coordinate_value_t lon;
-				lon.intval = (float)array_uint32_le(data + offset); // Longitude
+				lon.intval = array_uint32_le(data + offset); // Longitude
 				coordinate_value_t lat;
-				lat.intval = (float)array_uint32_le(data + offset + 4); // Latitude
+				lat.intval = array_uint32_le(data + offset + 4); // Latitude
 
 				INFO(abstract->context, "Received GPS coordinates %f / %f", lat.floatval, lon.floatval);
 
