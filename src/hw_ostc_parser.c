@@ -153,6 +153,11 @@ typedef struct hw_ostc_parser_t {
 	bool scrubber_warning_reported;
 } hw_ostc_parser_t;
 
+typedef union {
+	unsigned int intval;
+	float floatval;
+} coordinate_value_t;
+
 static dc_status_t hw_ostc_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t hw_ostc_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
@@ -1213,12 +1218,19 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 				length -= 2;
 			}
 
-			// GNSS position
+			// GNSS position update (placeholder for now)
 			if (events & 0x0400) {
 				if (length < 8) {
-					ERROR (abstract->context, "Buffer overflow detected!");
+					ERROR (abstract->context, "Buffer underflow detected!");
 					return DC_STATUS_DATAFORMAT;
 				}
+
+				coordinate_value_t lon;
+				lon.intval = (float)array_uint32_le(data + offset); // Longitude
+				coordinate_value_t lat;
+				lat.intval = (float)array_uint32_le(data + offset + 4); // Latitude
+
+				INFO(abstract->context, "Received GPS coordinates %f / %f", lat.floatval, lon.floatval);
 
 				offset += 8;
 				length -= 8;
