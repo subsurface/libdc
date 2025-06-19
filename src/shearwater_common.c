@@ -520,7 +520,7 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
 
 
 dc_status_t
-shearwater_common_rdbi (shearwater_common_device_t *device, unsigned int id, unsigned char data[], unsigned int size)
+shearwater_common_rdbi (shearwater_common_device_t *device, unsigned int id, unsigned char data[], unsigned int size, unsigned int *actual)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
@@ -549,9 +549,20 @@ shearwater_common_rdbi (shearwater_common_device_t *device, unsigned int id, uns
 
 	unsigned int length = n - 3;
 
-	if (length != size) {
+	if (length > size) {
 		ERROR (abstract->context, "Unexpected packet size (%u bytes).", length);
 		return DC_STATUS_PROTOCOL;
+	}
+
+	if (actual == NULL) {
+		// Verify the actual length.
+		if (length != size) {
+			ERROR (abstract->context, "Unexpected packet size (%u bytes).", length);
+			return DC_STATUS_PROTOCOL;
+		}
+	} else {
+		// Return the actual length.
+		*actual = length;
 	}
 
 	if (length) {
@@ -688,7 +699,7 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 {
 	// Read the hardware type.
 	unsigned char rsp_hardware[2] = {0};
-	dc_status_t status = shearwater_common_rdbi (device, ID_HARDWARE, rsp_hardware, sizeof(rsp_hardware));
+	dc_status_t status = shearwater_common_rdbi (device, ID_HARDWARE, rsp_hardware, sizeof(rsp_hardware), NULL);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (device->base.context, "Failed to read the hardware type.");
 		return status;
@@ -739,6 +750,7 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 		break;
 	case 0xC407:
 	case 0xC964:
+	case 0x9C64:
 		*model = PERDIX2;
 		break;
 	case 0x0F0F:
