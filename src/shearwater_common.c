@@ -748,6 +748,7 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 	case 0x8D6C:
 		*model = PERDIXAI;
 		break;
+	case 0x704C:
 	case 0xC407:
 	case 0xC964:
 	case 0x9C64:
