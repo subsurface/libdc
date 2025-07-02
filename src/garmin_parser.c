@@ -1648,25 +1648,6 @@ static void add_sensor_string(garmin_parser_t *garmin, const char *desc, const s
 static dc_status_t
 garmin_parser_set_data (garmin_parser_t *garmin, const unsigned char *data, unsigned int size)
 {
-	// Ids can be found at https://developer.garmin.com/connect-iq/reference-guides/devices-reference/
-	// (look for 'Part Number')
-	static const struct {
-		const char *name;
-		int id;
-	} models[] = {
-		{ "Descent™ G1 / G1 Solar", 4005 },
-		{ "Descent™ G2", 4588 },
-		{ "Descent™ Mk1", 2859 },
-		{ "Descent™ Mk1 APAC", 2991 },
-		{ "Descent™ Mk2(i)", 3258 },
-		{ "Descent™ Mk2(i) APAC", 3702 },
-		{ "Descent™ Mk2 S", 3542 },
-		{ "Descent™ Mk2 S APAC", 3930 },
-		{ "Descent™ Mk3(i) 43mm", 4222 },
-		{ "Descent™ Mk3(i) 51mm", 4223 },
-		{ "Descent™ X50i", 4518 },
-	};
-
 	/* Walk the data once without a callback to set up the core fields */
 	garmin->callback = NULL;
 	garmin->userdata = NULL;
@@ -1683,13 +1664,13 @@ garmin_parser_set_data (garmin_parser_t *garmin, const unsigned char *data, unsi
 		dc_field_add_string_fmt(&garmin->cache, "Firmware", "%u.%02u",
 			garmin->dive.firmware / 100, garmin->dive.firmware % 100);
 	if (garmin->dive.product) {
-		int i = 0;
-		for (i = 0; i < C_ARRAY_SIZE(models); i++)
-			if (models[i].id == garmin->dive.product)
+		unsigned i;
+		for (i = 0; garmin_models[i].name; i++)
+			if (garmin_models[i].id == garmin->dive.product)
 				break;
 
-		if (i < C_ARRAY_SIZE(models))
-			dc_field_add_string_fmt(&garmin->cache, "Model", "%s", models[i].name);
+		if (garmin_models[i].name)
+			dc_field_add_string_fmt(&garmin->cache, "Model", "%s", garmin_models[i].name);
 		else
 			dc_field_add_string_fmt(&garmin->cache, "Model", "Unknown model ID: %u", garmin->dive.product);
 	}

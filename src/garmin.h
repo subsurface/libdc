@@ -22,6 +22,8 @@
 #ifndef GARMIN_H
 #define GARMIN_H
 
+#include <stdbool.h>
+
 #include <libdivecomputer/context.h>
 #include <libdivecomputer/iostream.h>
 #include <libdivecomputer/device.h>
@@ -30,6 +32,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
+
+typedef struct {
+	const char *name;
+	int id;
+	bool mtp_capable;
+} garmin_model_t;
+
+extern const garmin_model_t garmin_models[];
 
 dc_status_t
 garmin_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream, unsigned int model);
