@@ -81,6 +81,11 @@
 #define M_OC_REC   6
 #define M_FREEDIVE 7
 
+#define SM_3_GAS_NX 0
+#define SM_AIR 1
+#define SM_NX 2
+#define SM_OC_REC 3
+
 #define AI_OFF   0
 #define AI_HPCCR 4
 #define AI_ON    5
@@ -428,12 +433,12 @@ static void print_calibration(shearwater_predator_parser_t *parser)
 {
 	for (size_t i = 0; i < 3; ++i) {
 		if (parser->calibrated & (1 << i)) {
-			static const char *name[] = {
+			static const char *names[] = {
 				"Sensor 1 calibration [bar / V]",
 				"Sensor 2 calibration [bar / V]",
 				"Sensor 3 calibration [bar / V]",
 			};
-			dc_field_add_string_fmt(&parser->cache, name[i], "%.2f", parser->calibration[i] * 1000);
+			dc_field_add_string_fmt(&parser->cache, names[i], "%.2f", parser->calibration[i] * 1000);
 		}
 	}
 }
@@ -522,6 +527,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 
 	unsigned int offset = headersize;
 	unsigned int length = size - footersize;
+	unsigned int sub_mode = SM_OC_REC;
 	unsigned int stack_time_total_s = 0;
 	unsigned int stack_time_remaining_s;
 	while (offset + parser->samplesize <= length) {
@@ -718,6 +724,11 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 						dc_field_add_string_fmt(&parser->cache, "Remaining stack time at start [hh:mm:ss]", "%d:%02d:%02d", stack_time_remaining_s / 3600, (stack_time_remaining_s / 60) % 60, stack_time_remaining_s % 60);
 					}
 				}
+				if (logversion >= 12) {
+					if (divemode == M_OC_REC) {
+						sub_mode = data[offset + 5];
+					}
+				}
 				if (logversion >= 13) {
 					tank[0].enabled = data[offset + 19];
 					memcpy (tank[0].name, data + offset + 20, sizeof (tank[0].name));
@@ -904,14 +915,13 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		break;
 	}
 
-	dc_status_t rc = DC_STATUS_SUCCESS;
 	if (parser->needs_divecan_calibration_estimate) {
 		struct dc_parser_sensor_calibration_t data = { 0 };
 
-		rc = shearwater_predator_parser_samples_foreach(abstract, NULL, (void *)&data);
+		dc_status_t rc = shearwater_predator_parser_samples_foreach(abstract, NULL, (void *)&data);
 
 		bool calibrated = false;
-		if (data.sum_ppo2 != 0) {
+		if (rc == DC_STATUS_SUCCESS && data.sum_ppo2 != 0) {
 			double calibration = data.sum_calculated_ppo2 / data.sum_ppo2;
 			if (calibration < 0.98 || calibration > 1.02) {
 				// The calibration scaling is significant, use it.
@@ -931,6 +941,29 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		}
 
 		parser->needs_divecan_calibration_estimate = false;
+	}
+
+	static const char *name = "Divemode";
+	if (divemode == M_OC_REC) {
+		static const char *oc_rec_modes[] = {
+			"3 Gas Nitrox",
+			"Air",
+			"Nitrox",
+			"OC Recreational",
+		};
+		dc_field_add_string_fmt(&parser->cache, name, "%s", sub_mode <= SM_OC_REC ? oc_rec_modes[sub_mode] : "Unknown divemode");
+	} else {
+		static const char *modes[] = {
+			"CC / BO",
+			"OC Technical",
+			"Gauge",
+			"PPO2 Display",
+			"SC / BO",
+			"CC / BO 2",
+			"OC Recreational",
+			"Freedive",
+		};
+		dc_field_add_string_fmt(&parser->cache, name, "%s", divemode <= M_FREEDIVE ? modes[divemode] : "Unknown divemode");
 	}
 
 	return DC_STATUS_SUCCESS;
