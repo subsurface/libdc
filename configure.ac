@@ -217,6 +217,11 @@ AS_IF([test "$platform" = "windows"], [
 	AX_APPEND_COMPILE_FLAGS([-Wno-pedantic-ms-format])
 ])
 
+# macOS specific compiler options.
+AS_IF([test "$platform" = "mac"], [
+	AX_APPEND_COMPILE_FLAGS([-Wl,-not_for_dyld_shared_cache])
+])
+
 # Versioning.
 AC_SUBST([DC_VERSION],[dc_version])
 AC_SUBST([DC_VERSION_MAJOR],[dc_version_major])
