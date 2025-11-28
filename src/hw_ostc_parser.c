@@ -86,7 +86,7 @@
 
 #define OSTC4FW(major,minor,micro,beta) ( \
 		(((major) & 0x1F) << 11) | \
-		(((minor) & 0x1F) >> 6) | \
+		(((minor) & 0x1F) << 6) | \
 		(((micro) & 0x1F) << 1) | \
 		((beta) & 0x01))
 
@@ -944,8 +944,18 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 	unsigned int firmware = 0;
 	if (parser->model == OSTC4) {
 		firmware = array_uint16_le (data + layout->firmware);
+		DEBUG (abstract->context, "Device: firmware=%u (%u.%u.%u.%u)",
+			firmware,
+			(firmware >> 11) & 0x1F,
+			(firmware >>  6) & 0x1F,
+			(firmware >>  1) & 0x1F,
+			(firmware      ) & 0x01);
 	} else {
 		firmware = array_uint16_be (data + layout->firmware);
+		DEBUG (abstract->context, "Device: firmware=%u (%u.%u)",
+			firmware,
+			(firmware >>  8) & 0xFF,
+			(firmware      ) & 0xFF);
 	}
 
 	// Get the dive mode.
@@ -1174,6 +1184,7 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 
 				if (callback) {
 					unsigned int value = array_uint16_le(data + offset);
+					dc_sample_type_t eventType = DC_SAMPLE_EVENT;
 					dc_sample_value_t sample = {
 						.event.type = SAMPLE_EVENT_STRING,
 						.event.flags = SAMPLE_FLAGS_SEVERITY_INFO,
@@ -1183,12 +1194,13 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 					if (value & OSTC4_COMPASS_HEADING_CLEARED_FLAG) {
 						snprintf(buf, BUFLEN, "Cleared compass heading");
 					} else {
-						sample.event.value = heading;
 
 						if (value & OSTC4_COMPASS_HEADING_SET_FLAG) {
-							sample.event.type = SAMPLE_EVENT_HEADING;
+							eventType = DC_SAMPLE_BEARING;
+							sample.bearing = heading;
 							snprintf(buf, BUFLEN, "Set compass heading [degrees]%s", sample.event.value ? "" : ": 0");
 						} else {
+							sample.event.value = heading;
 							snprintf(buf, BUFLEN, "Logged compass heading [degrees]%s", sample.event.value ? "" : ": 0");
 						}
 
@@ -1196,11 +1208,22 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 
 					sample.event.name = buf;
 
-					callback(DC_SAMPLE_EVENT, &sample, userdata);
+					callback(eventType, &sample, userdata);
 				}
 
 				offset += 2;
 				length -= 2;
+			}
+
+			// GNSS position
+			if (events & 0x0400) {
+				if (length < 8) {
+					ERROR (abstract->context, "Buffer overflow detected!");
+					return DC_STATUS_DATAFORMAT;
+				}
+
+				offset += 8;
+				length -= 8;
 			}
 
 			// Scrubber state update
@@ -1251,6 +1274,7 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 				offset += 2;
 				length -= 2;
 			}
+
 		}
 
 		// Extended sample info.
