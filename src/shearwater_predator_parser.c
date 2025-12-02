@@ -39,6 +39,7 @@
 
 #define LOG_RECORD_DIVE_SAMPLE     0x01
 #define LOG_RECORD_FREEDIVE_SAMPLE 0x02
+#define LOG_RECORD_AVELO_SAMPLE    0x03
 #define LOG_RECORD_OPENING_0       0x10
 #define LOG_RECORD_OPENING_1       0x11
 #define LOG_RECORD_OPENING_2       0x12
@@ -80,6 +81,7 @@
 #define M_CC2      5
 #define M_OC_REC   6
 #define M_FREEDIVE 7
+#define M_AVELO    12
 
 #define SM_3_GAS_NX 0
 #define SM_AIR 1
@@ -540,10 +542,15 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		// Get the record type.
 		unsigned int type = pnf ? data[offset] : LOG_RECORD_DIVE_SAMPLE;
 
-		if (type == LOG_RECORD_DIVE_SAMPLE) {
+		if (type == LOG_RECORD_DIVE_SAMPLE ||
+			type == LOG_RECORD_AVELO_SAMPLE) {
 			// Status flags.
-			unsigned int status = data[offset + 11 + pnf];
-			unsigned int ccr = (status & OC) == 0;
+			unsigned int status = 0;
+			unsigned int ccr = 0;
+			if (type != LOG_RECORD_AVELO_SAMPLE) {
+				status = data[offset + 11 + pnf];
+				ccr = (status & OC) == 0;
+			}
 			if (ccr) {
 				divemode = status & SC ? M_SC : M_CC;
 			}
@@ -583,7 +590,8 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			// Tank pressure
 			if (logversion >= 7) {
 				const unsigned int idx[2] = {27, 19};
-				for (unsigned int i = 0; i < 2; ++i) {
+				const unsigned int count = type == LOG_RECORD_AVELO_SAMPLE ? 1 : 2;
+				for (unsigned int i = 0; i < count; ++i) {
 					// Values above 0xFFF0 are special codes:
 					//    0xFFFF AI is off
 					//    0xFFFE No comms for 90 seconds+
@@ -1038,7 +1046,30 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			*((double *) value) = parser->atmospheric / 1000.0;
 			break;
 		case DC_FIELD_DIVEMODE:
-			return DC_FIELD_VALUE(parser->cache, value, DIVEMODE);
+			switch (parser->divemode) {
+			case M_CC:
+			case M_CC2:
+				*((dc_divemode_t *) value) = DC_DIVEMODE_CCR;
+				break;
+			case M_SC:
+				*((dc_divemode_t *) value) = DC_DIVEMODE_SCR;
+				break;
+			case M_OC_TEC:
+			case M_OC_REC:
+			case M_AVELO:
+				*((dc_divemode_t *) value) = DC_DIVEMODE_OC;
+				break;
+			case M_GAUGE:
+			case M_PPO2:
+				*((dc_divemode_t *) value) = DC_DIVEMODE_GAUGE;
+				break;
+			case M_FREEDIVE:
+				*((dc_divemode_t *) value) = DC_DIVEMODE_FREEDIVE;
+				break;
+			default:
+				return DC_STATUS_DATAFORMAT;
+			}
+			break;
 		case DC_FIELD_DECOMODEL:
 			switch (data[decomodel_idx]) {
 			case GF:
@@ -1109,11 +1140,8 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		// Get the record type.
 		unsigned int type = pnf ? data[offset] : LOG_RECORD_DIVE_SAMPLE;
 
-		// stop parsing if we see the end block
-		if (type == LOG_RECORD_FINAL && data[offset + 1] == 0xFD)
-			break;
-
-		if (type == LOG_RECORD_DIVE_SAMPLE) {
+		if (type == LOG_RECORD_DIVE_SAMPLE ||
+			type == LOG_RECORD_AVELO_SAMPLE) {
 			// Time (seconds).
 			time += interval;
 			sample.time = time;
@@ -1143,8 +1171,12 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 			if (callback) callback (DC_SAMPLE_TEMPERATURE, &sample, userdata);
 
 			// Status flags.
-			unsigned int status = data[offset + pnf + 11];
-			unsigned int ccr = (status & OC) == 0;
+			unsigned int status = 0;
+			unsigned int ccr = 0;
+			if (type != LOG_RECORD_AVELO_SAMPLE) {
+				status = data[offset + 11 + pnf];
+				ccr = (status & OC) == 0;
+			}
 
 			if (ccr) {
 				// PPO2
@@ -1261,7 +1293,8 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 			// detect tank pressure
 			if (parser->logversion >= 7) {
 				const unsigned int idx[2] = {27, 19};
-				for (unsigned int i = 0; i < 2; ++i) {
+				const unsigned int count = type == LOG_RECORD_AVELO_SAMPLE ? 1 : 2;
+				for (unsigned int i = 0; i < count; ++i) {
 					// Tank pressure
 					// Values above 0xFFF0 are special codes:
 					//    0xFFFF AI is off
