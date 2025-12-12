@@ -571,7 +571,7 @@ DECLARE_FIELD(RECORD, tts, UINT32)
 {
 	if (garmin->callback) {
 		dc_sample_value_t sample = {0};
-		sample.time = data;
+		sample.deco.tts = data;
 		garmin->callback(DC_SAMPLE_TTS, &sample, garmin->userdata);
 	}
 }
