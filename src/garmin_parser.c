@@ -297,6 +297,7 @@ static void flush_pending_record(struct garmin_parser_t *garmin)
 		sample.deco.type = DC_DECO_DECOSTOP;
 		sample.deco.time = record->stop_time;
 		sample.deco.depth = record->ceiling;
+		sample.deco.tts = 0;
 		garmin->callback(DC_SAMPLE_DECO, &sample, garmin->userdata);
 	}
 
@@ -581,6 +582,7 @@ DECLARE_FIELD(RECORD, ndl, UINT32)			// s
 		dc_sample_value_t sample = {0};
 		sample.deco.type = DC_DECO_NDL;
 		sample.deco.time = data;
+		sample.deco.tts = 0;
 		garmin->callback(DC_SAMPLE_DECO, &sample, garmin->userdata);
 	}
 }
