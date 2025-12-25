@@ -48,6 +48,8 @@
 #define LOG_RECORD_OPENING_5       0x15
 #define LOG_RECORD_OPENING_6       0x16
 #define LOG_RECORD_OPENING_7       0x17
+#define LOG_RECORD_OPENING_8       0x18
+#define LOG_RECORD_OPENING_9       0x19
 #define LOG_RECORD_CLOSING_0       0x20
 #define LOG_RECORD_CLOSING_1       0x21
 #define LOG_RECORD_CLOSING_2       0x22
@@ -56,6 +58,8 @@
 #define LOG_RECORD_CLOSING_5       0x25
 #define LOG_RECORD_CLOSING_6       0x26
 #define LOG_RECORD_CLOSING_7       0x27
+#define LOG_RECORD_CLOSING_8       0x28
+#define LOG_RECORD_CLOSING_9       0x29
 #define LOG_RECORD_INFO_EVENT      0x30
 #define LOG_RECORD_DIVE_SAMPLE_EXT 0xE1
 #define LOG_RECORD_FINAL           0xFF
@@ -103,7 +107,7 @@
 #define NGASMIXES 20
 #define NFIXED    10
 #define NTANKS    6
-#define NRECORDS  8
+#define NRECORDS  10
 #define MAXSTRINGS 32
 
 #define PREDATOR 2
@@ -657,7 +661,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		} else if (type == LOG_RECORD_FREEDIVE_SAMPLE) {
 			// Freedive record
 			divemode = M_FREEDIVE;
-		} else if (type >= LOG_RECORD_OPENING_0 && type <= LOG_RECORD_OPENING_7) {
+		} else if (type >= LOG_RECORD_OPENING_0 && type <= LOG_RECORD_OPENING_9) {
 			// Opening record
 			parser->opening[type - LOG_RECORD_OPENING_0] = offset;
 
@@ -760,7 +764,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 					memcpy (tank[3].name, data + offset + 12, sizeof (tank[3].name));
 				}
 			}
-		} else if (type >= LOG_RECORD_CLOSING_0 && type <= LOG_RECORD_CLOSING_7) {
+		} else if (type >= LOG_RECORD_CLOSING_0 && type <= LOG_RECORD_CLOSING_9) {
 			if (type == LOG_RECORD_CLOSING_6) {
 				if (logversion >= 11) {
 					if (stack_time_total_s > 0) {
@@ -991,11 +995,13 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 
 	unsigned int decomodel_idx = parser->pnf ? parser->opening[2] + 18 : 67;
 	unsigned int gf_idx        = parser->pnf ? parser->opening[0] +  4 : 4;
+	int latitude = 0, longitude = 0;
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_tank_t *tank = (dc_tank_t *) value;
 	dc_salinity_t *water = (dc_salinity_t *) value;
 	dc_decomodel_t *decomodel = (dc_decomodel_t *) value;
+	dc_location_t *location = (dc_location_t *) value;
 	dc_field_string_t *string = (dc_field_string_t *) value;
 
 	if (value) {
@@ -1090,6 +1096,17 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			default:
 				return DC_STATUS_DATAFORMAT;
 			}
+			break;
+		case DC_FIELD_LOCATION:
+			if (parser->opening[9] == UNDEFINED || parser->logversion < 17)
+				return DC_STATUS_UNSUPPORTED;
+			latitude  = (signed int) array_uint32_be (data + parser->opening[9] + 21);
+			longitude = (signed int) array_uint32_be (data + parser->opening[9] + 25);
+			if (latitude == 0 && longitude == 0)
+				return DC_STATUS_UNSUPPORTED;
+			location->latitude  = latitude  / 100000.0;
+			location->longitude = longitude / 100000.0;
+			location->altitude  = 0.0;
 			break;
 		case DC_FIELD_STRING:
 			return dc_field_get_string(&parser->cache, flags, string);
