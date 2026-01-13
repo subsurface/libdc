@@ -1184,7 +1184,6 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 
 				if (callback) {
 					unsigned int value = array_uint16_le(data + offset);
-					dc_sample_type_t eventType = DC_SAMPLE_EVENT;
 					dc_sample_value_t sample = {
 						.event.type = SAMPLE_EVENT_STRING,
 						.event.flags = SAMPLE_FLAGS_SEVERITY_INFO,
@@ -1194,13 +1193,12 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 					if (value & OSTC4_COMPASS_HEADING_CLEARED_FLAG) {
 						snprintf(buf, BUFLEN, "Cleared compass heading");
 					} else {
+						sample.event.value = heading;
 
 						if (value & OSTC4_COMPASS_HEADING_SET_FLAG) {
-							eventType = DC_SAMPLE_BEARING;
-							sample.bearing = heading;
+							sample.event.type = SAMPLE_EVENT_HEADING;
 							snprintf(buf, BUFLEN, "Set compass heading [degrees]%s", sample.event.value ? "" : ": 0");
 						} else {
-							sample.event.value = heading;
 							snprintf(buf, BUFLEN, "Logged compass heading [degrees]%s", sample.event.value ? "" : ": 0");
 						}
 
@@ -1208,7 +1206,7 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 
 					sample.event.name = buf;
 
-					callback(eventType, &sample, userdata);
+					callback(DC_SAMPLE_EVENT, &sample, userdata);
 				}
 
 				offset += 2;
