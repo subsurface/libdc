@@ -1192,8 +1192,13 @@ uwatec_smart_parse (uwatec_smart_parser_t *parser, dc_sample_callback_t callback
 			}
 
 			if (have_bearing) {
-				sample.bearing = bearing;
-				if (callback) callback (DC_SAMPLE_BEARING, &sample, userdata);
+				sample.event.type = SAMPLE_EVENT_HEADING;
+				sample.event.time = 0;
+				sample.event.flags = SAMPLE_FLAGS_SEVERITY_INFO;
+				sample.event.value = bearing;
+				sample.event.name = NULL;
+
+				if (callback) callback(DC_SAMPLE_EVENT, &sample, userdata);
 				have_bearing = 0;
 			}
 
