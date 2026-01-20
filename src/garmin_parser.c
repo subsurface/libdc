@@ -1749,8 +1749,10 @@ garmin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime)
 		/* 15-minute (900-second) offsets are real */
 		if ((offset % 900) == 0 &&
 		    offset >= -12*60*60 &&
-		    offset <= 14*60*60)
+		    offset <= 14*60*60) {
 			timezone = offset;
+			dc_field_add_string_fmt(&garmin->cache, "Time offset from UTC [s]", "%+d", offset);
+		}
 	}
 	datetime->timezone = timezone;
 
