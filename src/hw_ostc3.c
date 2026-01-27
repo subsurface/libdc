@@ -83,9 +83,11 @@
 #define INVALID    0xFFFFFFFF
 #define UNKNOWN    0x00
 #define OSTC3      0x0A
-#define OSTC4      0x3B
+#define OSTC4_5_PREFIX 0x3B
 #define SPORT      0x12
 #define CR         0x05
+#define MODEL_OSTC4 0x43
+#define MODEL_OSTC5 0x44
 
 #define NODELAY 0
 #define TIMEOUT 400
@@ -102,6 +104,7 @@
 
 #define HDR_FULL_POINTERS    2 // 6 bytes
 #define HDR_FULL_FIRMWARE   48 // 2 bytes
+
 
 typedef enum hw_ostc3_state_t {
 	OPEN,
@@ -201,6 +204,12 @@ hw_ostc3_strncpy (unsigned char *data, unsigned int size, const char *text)
 	return 0;
 }
 
+static bool is_ostc4_family(unsigned int hardware)
+{
+	// Check if the hardware is an OSTC 4 or 5.
+	return (hardware >> 8) == OSTC4_5_PREFIX;
+}
+
 static dc_status_t
 hw_ostc3_read (hw_ostc3_device_t *device, dc_event_progress_t *progress, unsigned char data[], size_t size)
 {
@@ -240,7 +249,7 @@ hw_ostc3_write (hw_ostc3_device_t *device, dc_event_progress_t *progress, const 
 	size_t nbytes = 0;
 	while (nbytes < size) {
 		// Set the maximum packet size.
-		size_t length = (device->hardware == OSTC4) ? 64 : 1024;
+		size_t length = is_ostc4_family(device->hardware) ? 64 : 1024;
 
 		// Limit the packet size to the total size.
 		if (nbytes + length > size)
@@ -488,17 +497,13 @@ hw_ostc3_device_id (hw_ostc3_device_t *device, unsigned char data[], unsigned in
 	if (size != SZ_HARDWARE && size != SZ_HARDWARE2)
 		return DC_STATUS_INVALIDARGS;
 
-	// We need to try the HARDWARE command first, as HARDWARE2 results
-	// in a bluetooth disconnect when the OSTC4 is in bootloader mode.
 	unsigned char hardware[SZ_HARDWARE2] = {0};
-	status = hw_ostc3_transfer(device, NULL, HARDWARE, NULL, 0, hardware + 1, SZ_HARDWARE, NULL, NODELAY);
-	if (size == SZ_HARDWARE2 && array_uint16_be(hardware) != OSTC4) {
-		// HARDWARE2 returns additional information
-		unsigned char hardware2[SZ_HARDWARE2] = {0};
-		status = hw_ostc3_transfer(device, NULL, HARDWARE2, NULL, 0, hardware2, SZ_HARDWARE2, NULL, NODELAY);
-		if (status == DC_STATUS_SUCCESS) {
-			memcpy(hardware, hardware2, SZ_HARDWARE2);
-		}
+	if (size == SZ_HARDWARE2) {
+		status = hw_ostc3_transfer(device, NULL, HARDWARE2, NULL, 0, hardware, SZ_HARDWARE2, NULL, NODELAY);
+	}
+
+	if (size == SZ_HARDWARE || status == DC_STATUS_UNSUPPORTED) {
+		status = hw_ostc3_transfer(device, NULL, HARDWARE, NULL, 0, hardware + 1, SZ_HARDWARE, NULL, NODELAY);
 	}
 
 	if (status != DC_STATUS_SUCCESS)
@@ -605,14 +610,34 @@ hw_ostc3_device_init (hw_ostc3_device_t *device, hw_ostc3_state_t state)
 		return DC_STATUS_SUCCESS;
 
 	// Read the hardware descriptor.
-	unsigned char hardware[SZ_HARDWARE2] = {0, UNKNOWN};
-	rc = hw_ostc3_device_id (device, hardware, sizeof(hardware));
-	if (rc != DC_STATUS_SUCCESS && rc != DC_STATUS_UNSUPPORTED) {
-		ERROR (abstract->context, "Failed to read the hardware descriptor.");
-		return rc;
+	unsigned int hardware_prefix;
+	if (device->state == SERVICE) {
+		// We need to try the HARDWARE command first, as HARDWARE2 results
+		// in a bluetooth disconnect when the OSTC 4/5 is in bootloader mode.
+		unsigned char hardware[SZ_HARDWARE] = {UNKNOWN};
+		rc = hw_ostc3_device_id (device, hardware, sizeof(hardware));
+		if (rc != DC_STATUS_SUCCESS && rc != DC_STATUS_UNSUPPORTED) {
+			ERROR (abstract->context, "Failed to read the hardware descriptor.");
+			return rc;
+		}
+
+		HEXDUMP (abstract->context, DC_LOGLEVEL_DEBUG, "Hardware", hardware, sizeof(hardware));
+
+		hardware_prefix = hardware[0];
 	}
 
-	HEXDUMP (abstract->context, DC_LOGLEVEL_DEBUG, "Hardware", hardware, sizeof(hardware));
+	unsigned char hardware2[SZ_HARDWARE2] = {0, UNKNOWN, 0, 0, MODEL_OSTC4};
+	if (device->state != SERVICE || hardware_prefix != OSTC4_5_PREFIX) {
+		rc = hw_ostc3_device_id (device, hardware2, sizeof(hardware2));
+		if (rc != DC_STATUS_SUCCESS && rc != DC_STATUS_UNSUPPORTED) {
+			ERROR (abstract->context, "Failed to read the hardware2 descriptor.");
+			return rc;
+		}
+
+		HEXDUMP (abstract->context, DC_LOGLEVEL_DEBUG, "Hardware2", hardware2, sizeof(hardware2));
+
+		hardware_prefix = array_uint16_be(hardware2 + 0);
+	}
 
 	// Read the version information.
 	unsigned char version[SZ_VERSION] = {0};
@@ -625,17 +650,16 @@ hw_ostc3_device_init (hw_ostc3_device_t *device, hw_ostc3_state_t state)
 	HEXDUMP (abstract->context, DC_LOGLEVEL_DEBUG, "Version", version, sizeof(version));
 
 	// Cache the descriptor.
-	device->hardware = array_uint16_be(hardware + 0);
-	if (device->hardware != OSTC4) {
-		device->feature = array_uint16_be(hardware + 2);
-		device->model = hardware[4];
-	}
-	device->serial = array_uint16_le (version + 0);
-	if (device->hardware == OSTC4) {
-		device->firmware = array_uint16_le (version + 2);
-	} else {
+	if (hardware_prefix != OSTC4_5_PREFIX) {
+		device->hardware = hardware_prefix;
+		device->feature = array_uint16_be(hardware2 + 2);
 		device->firmware = array_uint16_be (version + 2);
+	} else {
+		device->hardware = (hardware_prefix << 8) | hardware2[4];
+		device->firmware = array_uint16_le (version + 2);
 	}
+	device->model = hardware2[4];
+	device->serial = array_uint16_le (version + 0);
 
 	return DC_STATUS_SUCCESS;
 }
@@ -811,7 +835,7 @@ hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, voi
 
 		// Get the internal dive number.
 		unsigned int current = array_uint16_le (header + offset + logbook->number);
-		if (current > maximum || device->hardware == OSTC4) {
+		if (current > maximum || is_ostc4_family(device->hardware)) {
 			maximum = current;
 			latest = i;
 		}
@@ -913,7 +937,7 @@ hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, voi
 		}
 
 		// Detect invalid profile data.
-		unsigned int delta = device->hardware == OSTC4 ? 3 : 0;
+		unsigned int delta = is_ostc4_family(device->hardware) ? 3 : 0;
 		if (length < RB_LOGBOOK_SIZE_FULL + 2 ||
 			profile[length - 2] != 0xFD || profile[length - 1] != 0xFD) {
 			// A valid profile should have at least a correct 2 byte
@@ -1031,7 +1055,7 @@ hw_ostc3_device_config_read (dc_device_t *abstract, unsigned int config, unsigne
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
 
-	if (device->hardware == OSTC4 ? size != SZ_CONFIG : size > SZ_CONFIG) {
+	if (is_ostc4_family(device->hardware) ? size != SZ_CONFIG : size > SZ_CONFIG) {
 		ERROR (abstract->context, "Invalid parameter specified.");
 		return DC_STATUS_INVALIDARGS;
 	}
@@ -1057,7 +1081,7 @@ hw_ostc3_device_config_write (dc_device_t *abstract, unsigned int config, const 
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
 
-	if (device->hardware == OSTC4 ? size != SZ_CONFIG : size > SZ_CONFIG) {
+	if (is_ostc4_family(device->hardware) ? size != SZ_CONFIG : size > SZ_CONFIG) {
 		ERROR (abstract->context, "Invalid parameter specified.");
 		return DC_STATUS_INVALIDARGS;
 	}
@@ -1624,7 +1648,7 @@ hw_ostc3_device_fwupdate (dc_device_t *abstract, const char *filename, bool forc
 		return status;
 	}
 
-	if (device->hardware == OSTC4) {
+	if (is_ostc4_family(device->hardware)) {
 		return hw_ostc3_device_fwupdate4 (abstract, filename, forceUpdate);
 	} else {
 		if (forceUpdate) {
@@ -1653,7 +1677,7 @@ hw_ostc3_device_read (dc_device_t *abstract, unsigned int address, unsigned char
 		return status;
 	}
 
-	if (device->hardware == OSTC4) {
+	if (is_ostc4_family(device->hardware)) {
 		return DC_STATUS_UNSUPPORTED;
 	}
 
@@ -1690,7 +1714,7 @@ hw_ostc3_device_write (dc_device_t *abstract, unsigned int address, const unsign
 		return status;
 	}
 
-	if (device->hardware == OSTC4) {
+	if (is_ostc4_family(device->hardware)) {
 		return DC_STATUS_UNSUPPORTED;
 	}
 
@@ -1732,7 +1756,7 @@ hw_ostc3_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 		return rc;
 	}
 
-	if (device->hardware == OSTC4) {
+	if (is_ostc4_family(device->hardware)) {
 		return DC_STATUS_UNSUPPORTED;
 	}
 

@@ -818,7 +818,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				break;
 			case 6:
 				if (parser->first_scrubber_time_minutes == INT_MAX) {
-					return DC_STATUS_DATAFORMAT;
+					return DC_STATUS_UNSUPPORTED;
 				}
 
 				string->desc = "Remaining scrubber time at start [minutes]";
@@ -826,7 +826,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 				break;
 			case 7:
 				if (parser->last_scrubber_time_minutes == INT_MAX) {
-					return DC_STATUS_DATAFORMAT;
+					return DC_STATUS_UNSUPPORTED;
 				}
 
 				string->desc = "Remaining scrubber time at end [minutes]";
