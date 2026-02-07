@@ -1663,7 +1663,7 @@ garmin_parser_set_data (garmin_parser_t *garmin, const unsigned char *data, unsi
 	if (garmin->dive.serial)
 		dc_field_add_string_fmt(&garmin->cache, "Serial", "%u", garmin->dive.serial);
 	if (garmin->dive.firmware)
-		dc_field_add_string_fmt(&garmin->cache, "Firmware", "%u.%02u",
+		dc_field_add_string_fmt(&garmin->cache, STRING_KEY_FIRMWARE_VERSION, "%u.%02u",
 			garmin->dive.firmware / 100, garmin->dive.firmware % 100);
 	if (garmin->dive.product) {
 		unsigned i;

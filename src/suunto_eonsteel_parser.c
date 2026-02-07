@@ -1208,7 +1208,7 @@ static dc_status_t traverse_device_fields(suunto_eonsteel_parser_t *eon,
 	if (!strcmp(name, "Info.HW"))
 		return dc_field_add_string(&eon->cache, "HW Version", data);
 	if (!strcmp(name, "Info.SW"))
-		return dc_field_add_string(&eon->cache, "FW Version", data);
+		return dc_field_add_string(&eon->cache, STRING_KEY_FIRMWARE_VERSION, data);
 	if (!strcmp(name, "Info.BatteryAtStart"))
 		return dc_field_add_string(&eon->cache, "Battery at start", data);
 	if (!strcmp(name, "Info.BatteryAtEnd"))
