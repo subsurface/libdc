@@ -782,7 +782,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 					Z = (firmwareOnDevice & 0x003E) >> 1;
 					beta = firmwareOnDevice & 0x0001;
 
-					snprintf(buf, BUFLEN, "%u.%u.%u%s\n", X, Y, Z, beta? "beta": "");
+					snprintf(buf, BUFLEN, "%u.%u.%u%s", X, Y, Z, beta? "beta": "");
 				} else {
 					snprintf(buf, BUFLEN, "%0u.%02u", data[layout->firmware], data[layout->firmware + 1]);
 				}
