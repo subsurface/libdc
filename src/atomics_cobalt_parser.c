@@ -212,7 +212,7 @@ atomics_cobalt_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, un
 		case DC_FIELD_STRING:
 			switch(flags) {
 			case 0: // Serialnr
-				string->desc = "Serial";
+				string->desc = STRING_KEY_SERIAL_NUMBER;
 				snprintf(buf, BUFLEN, "%c%c%c%c-%c%c%c%c", p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11]);
 				break;
 			case 1: // Program Version

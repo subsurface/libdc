@@ -751,7 +751,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 		case DC_FIELD_STRING:
 			switch(flags) {
 			case 0: /* serial */
-				string->desc = "Serial";
+				string->desc = STRING_KEY_SERIAL_NUMBER;
 				snprintf(buf, BUFLEN, "%u", parser->serial);
 				break;
 			case 1: /* battery */
