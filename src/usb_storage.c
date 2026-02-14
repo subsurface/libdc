@@ -23,13 +23,31 @@
 #include "config.h"
 #endif
 
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOGDI
+#include <windows.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#ifndef PATH_MAX
+#define PATH_MAX MAX_PATH
+#endif
+#define dc_stat _stat
+#define dc_stat_t struct _stat
+#define DC_S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+#else
 #include <limits.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
+#define dc_stat stat
+#define dc_stat_t struct stat
+#define DC_S_ISDIR(mode) S_ISDIR(mode)
+#endif
 
 #include "common-private.h"
 #include "context-private.h"
@@ -70,7 +88,7 @@ dc_status_t
 dc_usb_storage_open (dc_iostream_t **out, dc_context_t *context, const char *name)
 {
 	dc_usbstorage_t *device = NULL;
-	struct stat st;
+	dc_stat_t st;
 
 	if (out == NULL || name == NULL)
 		return DC_STATUS_INVALIDARGS;
@@ -80,7 +98,7 @@ dc_usb_storage_open (dc_iostream_t **out, dc_context_t *context, const char *nam
 		INFO (context, "Open MTP device");
 	} else {
 		INFO (context, "Open: name=%s", name);
-		if (stat(name, &st) < 0 || !S_ISDIR(st.st_mode))
+		if (dc_stat(name, &st) < 0 || !DC_S_ISDIR(st.st_mode))
 			return DC_STATUS_NODEVICE;
 	}
 	// Allocate memory.

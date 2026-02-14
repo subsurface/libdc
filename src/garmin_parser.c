@@ -1217,9 +1217,16 @@ static const struct {
 #define MSG_NAME_LEN 16
 static const struct msg_desc *lookup_msg_desc(unsigned short msg, int local, const char **namep)
 {
-	static struct msg_desc local_array[16];
+	/*
+	 * msg_desc has a flexible array member, so we can't create an array of them.
+	 * Use a compatible struct for local "fake" descriptors that have no fields.
+	 */
+	struct msg_desc_stub {
+		unsigned char maxfield;
+	};
+	static struct msg_desc_stub local_array[16];
 	static char local_name[16][MSG_NAME_LEN];
-	struct msg_desc *desc;
+	struct msg_desc_stub *stub;
 	char *name;
 
 	/* Do we have a real one? */
@@ -1229,13 +1236,13 @@ static const struct msg_desc *lookup_msg_desc(unsigned short msg, int local, con
 	}
 
 	/* If not, fake it */
-	desc = &local_array[local];
-	memset(desc, 0, sizeof(*desc));
+	stub = &local_array[local];
+	memset(stub, 0, sizeof(*stub));
 
 	name = local_name[local];
 	snprintf(name, MSG_NAME_LEN, "msg-%d", msg);
 	*namep = name;
-	return desc;
+	return (const struct msg_desc *)stub;
 }
 
 static int all_data_inval(const unsigned char *data, int base_type, int len)
