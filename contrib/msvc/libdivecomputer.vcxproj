@@ -207,6 +207,9 @@
     <ClCompile Include="..\..\src\divesoft_freedom_parser.c" />
     <ClCompile Include="..\..\src\divesystem_idive.c" />
     <ClCompile Include="..\..\src\divesystem_idive_parser.c" />
+    <ClCompile Include="..\..\src\field-cache.c" />
+    <ClCompile Include="..\..\src\garmin.c" />
+    <ClCompile Include="..\..\src\garmin_parser.c" />
     <ClCompile Include="..\..\src\halcyon_symbios.c" />
     <ClCompile Include="..\..\src\halcyon_symbios_parser.c" />
     <ClCompile Include="..\..\src\hdlc.c" />
@@ -280,6 +283,7 @@
     <ClCompile Include="..\..\src\tecdiving_divecomputereu_parser.c" />
     <ClCompile Include="..\..\src\timer.c" />
     <ClCompile Include="..\..\src\usb.c" />
+    <ClCompile Include="..\..\src\usb_storage.c" />
     <ClCompile Include="..\..\src\usbhid.c" />
     <ClCompile Include="..\..\src\uwatec_aladin.c" />
     <ClCompile Include="..\..\src\uwatec_memomouse.c" />
@@ -340,6 +344,8 @@
     <ClInclude Include="..\..\src\diverite_nitekq.h" />
     <ClInclude Include="..\..\src\divesoft_freedom.h" />
     <ClInclude Include="..\..\src\divesystem_idive.h" />
+    <ClInclude Include="..\..\src\field-cache.h" />
+    <ClInclude Include="..\..\src\garmin.h" />
     <ClInclude Include="..\..\src\halcyon_symbios.h" />
     <ClInclude Include="..\..\src\hdlc.h" />
     <ClInclude Include="..\..\src\hw_frog.h" />
