@@ -108,6 +108,9 @@ typedef enum parser_sample_event_t {
 /* To let the compile know we have this */
 #define SAMPLE_EVENT_STRING SAMPLE_EVENT_STRING
 
+#define STRING_KEY_FIRMWARE_VERSION "FW Version"
+#define STRING_KEY_SERIAL_NUMBER "Serial"
+
 /* For backwards compatibility */
 #define SAMPLE_EVENT_UNKNOWN SAMPLE_EVENT_FLOOR
 

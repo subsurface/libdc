@@ -626,7 +626,7 @@ oceanic_atom2_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, uns
 		case DC_FIELD_STRING:
 			switch(flags) {
 			case 0: /* Serial */
-				string->desc = "Serial";
+				string->desc = STRING_KEY_SERIAL_NUMBER;
 				snprintf(buf, BUF_LEN, "%06u", parser->serial);
 				break;
 			default:

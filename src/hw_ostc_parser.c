@@ -751,7 +751,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 		case DC_FIELD_STRING:
 			switch(flags) {
 			case 0: /* serial */
-				string->desc = "Serial";
+				string->desc = STRING_KEY_SERIAL_NUMBER;
 				snprintf(buf, BUFLEN, "%u", parser->serial);
 				break;
 			case 1: /* battery */
@@ -772,7 +772,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 						 array_uint16_le (data + layout->desat) % 60);
 				break;
 			case 3: /* firmware */
-				string->desc = "FW Version";
+				string->desc = STRING_KEY_FIRMWARE_VERSION;
 				/* OSTC4 stores firmware as XXXX XYYY YYZZ ZZZB, -> X.Y.Z beta? */
 				if (parser->model == OSTC4) {
 					int firmwareOnDevice = array_uint16_le (data + layout->firmware);
