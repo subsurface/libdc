@@ -96,6 +96,8 @@
 #define OSTC4_SCRUBBER_STATE_ERROR_FLAG 0x4000
 #define OSTC4_SCRUBBER_STATE_WARNING_FLAG 0x2000
 
+#define OSTC4_SURFACE_GF_OFFSET 56
+
 typedef struct hw_ostc_sample_info_t {
 	unsigned int type;
 	unsigned int divisor;
@@ -774,7 +776,7 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 			case 3: /* firmware */
 				string->desc = STRING_KEY_FIRMWARE_VERSION;
 				/* OSTC4 stores firmware as XXXX XYYY YYZZ ZZZB, -> X.Y.Z beta? */
-				if (parser->model == OSTC4) {
+				if (is_ostc4_family(parser->model)) {
 					int firmwareOnDevice = array_uint16_le (data + layout->firmware);
 					unsigned char X = 0, Y = 0, Z = 0, beta = 0;
 					X = (firmwareOnDevice & 0xF800) >> 11;
@@ -831,6 +833,20 @@ hw_ostc_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned 
 
 				string->desc = "Remaining scrubber time at end [minutes]";
 				snprintf(buf, BUFLEN, "%d", parser->last_scrubber_time_minutes);
+				break;
+			case 8:
+				if (!is_ostc4_family(parser->model)) {
+					return DC_STATUS_UNSUPPORTED;
+				}
+
+				int firmwareOnDevice = array_uint16_le (data + layout->firmware);
+				if  (firmwareOnDevice < OSTC4FW(1, 7, 5, 0) || firmwareOnDevice == OSTC4FW(1, 7, 5, 1)) {
+					return DC_STATUS_UNSUPPORTED;
+				}
+
+				string->desc = "Surface GF at end";
+				snprintf(buf, BUFLEN, "%d", data[OSTC4_SURFACE_GF_OFFSET]);
+
 				break;
 			default:
 				return DC_STATUS_UNSUPPORTED;
@@ -942,7 +958,7 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 
 	// Get the firmware version.
 	unsigned int firmware = 0;
-	if (parser->model == OSTC4) {
+	if (is_ostc4_family(parser->model)) {
 		firmware = array_uint16_le (data + layout->firmware);
 		DEBUG (abstract->context, "Device: firmware=%u (%u.%u.%u.%u)",
 			firmware,
@@ -1075,7 +1091,7 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 			}
 			unsigned int o2 = data[offset];
 			unsigned int diluent;
-			if (parser->model == OSTC4) {
+			if (is_ostc4_family(parser->model)) {
 				// all manually added gas mixes on OSTC4 are OC gases
 				diluent = 0;
 			} else {
@@ -1283,7 +1299,7 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 					// the hwOS Sport firmware v10.57 to v10.63, the ppO2 divisor
 					// is sometimes not correctly reset to zero when no ppO2
 					// samples are being recorded.
-					if (info[i].type == PPO2 && parser->hwos && parser->model != OSTC4 &&
+					if (info[i].type == PPO2 && parser->hwos && !is_ostc4_family(parser->model) &&
 						((firmware >= OSTC3FW(3,3) && firmware <= OSTC3FW(3,8)) ||
 						(firmware >= OSTC3FW(10,57) && firmware <= OSTC3FW(10,63)))) {
 						WARNING (abstract->context, "Reset invalid ppO2 divisor to zero.");
@@ -1307,7 +1323,7 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 				case DECO:
 					// Due to a firmware bug, the deco/ndl info is incorrect for
 					// all OSTC4 dives with a firmware older than version 1.0.8.
-					if (parser->model == OSTC4 && firmware < OSTC4FW(1,0,8,0))
+					if (is_ostc4_family(parser->model) && firmware < OSTC4FW(1,0,8,0))
 						break;
 					if (data[offset]) {
 						sample.deco.type = DC_DECO_DECOSTOP;
@@ -1352,7 +1368,7 @@ hw_ostc_parser_internal_foreach (hw_ostc_parser_t *parser, dc_sample_callback_t 
 						sample.pressure.value = value;
 						// The hwOS Sport firmware used a resolution of
 						// 0.1 bar between versions 10.40 and 10.50.
-						if (parser->hwos && parser->model != OSTC4 &&
+						if (parser->hwos && !is_ostc4_family(parser->model) &&
 							(firmware >= OSTC3FW(10,40) && firmware <= OSTC3FW(10,50))) {
 							sample.pressure.value /= 10.0;
 						}
