@@ -2,6 +2,7 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include "platform.h"
 #include "parser-private.h"
 #include "field-cache.h"
 
