@@ -54,6 +54,7 @@
 #endif
 #endif
 
+#include "platform.h"
 #include "garmin.h"
 #include "context-private.h"
 #include "device-private.h"
@@ -333,6 +334,11 @@ get_file_list(dc_device_t *abstract, const char *pathname, struct file_list *fil
 		add_name(files, findData.cFileName, 0);
 	} while (FindNextFileA(hFind, &findData));
 
+	if (GetLastError() != ERROR_NO_MORE_FILES) {
+		FindClose(hFind);
+		return DC_STATUS_IO;
+	}
+
 	FindClose(hFind);
 
 	DEBUG(abstract->context, "Found %d files", files->nr);
@@ -596,12 +602,22 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		// On Windows, get_file_list takes the pathname directly
 		rc = get_file_list(abstract, pathname, &files);
 		if (rc != DC_STATUS_SUCCESS) {
+			if (rc == DC_STATUS_NOMEMORY) {
+				free(files.array);
+				return rc;
+			}
+
+			free(files.array);
+			files.nr = 0;
+			files.allocated = 0;
+			files.array = NULL;
+
 			// Try the input path directly
 			rc = get_file_list(abstract, pathname_input, &files);
 			if (rc != DC_STATUS_SUCCESS) {
 				ERROR (abstract->context, "Failed to open directory '%s' or '%s'.", pathname, pathname_input);
 				free(files.array);
-				return DC_STATUS_IO;
+				return rc;
 			}
 			strcpy(pathname, pathname_input);
 			pathlen = strlen(pathname);
