@@ -1218,16 +1218,13 @@ static const struct {
 static const struct msg_desc *lookup_msg_desc(unsigned short msg, int local, const char **namep)
 {
 	/*
-	 * msg_desc has a flexible array member, so we can't create an array of them.
-	 * Use a compatible struct for local "fake" descriptors that have no fields.
+	 * All unknown/local messages share a single zero-initialised descriptor.
+	 * maxfield == 0 means no fields will ever be indexed via ->field[].
+	 * Declaring a single named instance of a struct with a flexible array
+	 * member is valid C99; the flexible array simply has zero elements.
 	 */
-	struct msg_desc_stub {
-		unsigned char maxfield;
-	};
-	static struct msg_desc_stub local_array[16];
+	static const struct msg_desc zero_desc = { .maxfield = 0 };
 	static char local_name[16][MSG_NAME_LEN];
-	struct msg_desc_stub *stub;
-	char *name;
 
 	/* Do we have a real one? */
 	if (msg < C_ARRAY_SIZE(message_array) && message_array[msg].name) {
@@ -1236,13 +1233,9 @@ static const struct msg_desc *lookup_msg_desc(unsigned short msg, int local, con
 	}
 
 	/* If not, fake it */
-	stub = &local_array[local];
-	memset(stub, 0, sizeof(*stub));
-
-	name = local_name[local];
-	snprintf(name, MSG_NAME_LEN, "msg-%d", msg);
-	*namep = name;
-	return (const struct msg_desc *)stub;
+	snprintf(local_name[local], MSG_NAME_LEN, "msg-%d", msg);
+	*namep = local_name[local];
+	return &zero_desc;
 }
 
 static int all_data_inval(const unsigned char *data, int base_type, int len)
