@@ -204,7 +204,7 @@ hw_ostc3_strncpy (unsigned char *data, unsigned int size, const char *text)
 	return 0;
 }
 
-static bool is_ostc4_family(unsigned int hardware)
+bool is_ostc4_family(unsigned int hardware)
 {
 	// Check if the hardware is an OSTC 4 or 5.
 	return (hardware >> 8) == OSTC4_5_PREFIX;
