@@ -315,7 +315,9 @@ get_file_list(dc_device_t *abstract, const char *pathname, struct file_list *fil
 
 	hFind = FindFirstFileA(searchPath, &findData);
 	if (hFind == INVALID_HANDLE_VALUE) {
-		return DC_STATUS_IO;
+		/* Directory does not exist; caller may retry with a fallback path.
+		 * Nothing has been added to 'files' yet, so no cleanup needed. */
+		return DC_STATUS_NODEVICE;
 	}
 
 	do {
@@ -601,18 +603,9 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 #ifdef _WIN32
 		// On Windows, get_file_list takes the pathname directly
 		rc = get_file_list(abstract, pathname, &files);
-		if (rc != DC_STATUS_SUCCESS) {
-			if (rc == DC_STATUS_NOMEMORY) {
-				free(files.array);
-				return rc;
-			}
-
-			free(files.array);
-			files.nr = 0;
-			files.allocated = 0;
-			files.array = NULL;
-
-			// Try the input path directly
+		if (rc == DC_STATUS_NODEVICE) {
+			/* Garmin/Activity directory not found; 'files' is untouched.
+			 * Try the input path directly as a fallback. */
 			rc = get_file_list(abstract, pathname_input, &files);
 			if (rc != DC_STATUS_SUCCESS) {
 				ERROR (abstract->context, "Failed to open directory '%s' or '%s'.", pathname, pathname_input);
@@ -621,6 +614,11 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 			}
 			strcpy(pathname, pathname_input);
 			pathlen = strlen(pathname);
+		} else if (rc != DC_STATUS_SUCCESS) {
+			/* Real error (e.g. DC_STATUS_NOMEMORY or mid-enumeration IO
+			 * error): files may be partially populated, don't retry. */
+			free(files.array);
+			return rc;
 		}
 		if (!files.nr) {
 			free(files.array);
