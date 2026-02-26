@@ -48,6 +48,7 @@ extern "C" {
 #ifdef _MSC_VER
 #define strcasecmp _stricmp
 #define strncasecmp _strnicmp
+#define strdup _strdup
 #if _MSC_VER < 1800
 // The rint() function is only available in MSVC 2013 and later
 // versions. Our replacement macro isn't entirely correct, because the

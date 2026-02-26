@@ -22,14 +22,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <dirent.h>
-#include <sys/types.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOGDI
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+#ifndef PATH_MAX
+#define PATH_MAX MAX_PATH
+#endif
+#define dc_open _open
+#define dc_read _read
+#define dc_close _close
+#define DC_O_RDONLY _O_RDONLY
+#define DC_O_BINARY _O_BINARY
+#else
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#define dc_open open
+#define dc_read read
+#define dc_close close
+#define DC_O_RDONLY O_RDONLY
+#ifdef O_BINARY
+#define DC_O_BINARY O_BINARY
+#else
+#define DC_O_BINARY 0
+#endif
+#endif
 
+#include "platform.h"
 #include "garmin.h"
 #include "context-private.h"
 #include "device-private.h"
@@ -275,6 +300,54 @@ add_name(struct file_list *files, const char *name, unsigned int mtp_id)
 	entry->mtp_id = mtp_id;
 }
 
+#ifdef _WIN32
+static dc_status_t
+get_file_list(dc_device_t *abstract, const char *pathname, struct file_list *files)
+{
+	WIN32_FIND_DATAA findData;
+	HANDLE hFind;
+	char searchPath[PATH_MAX];
+
+	DEBUG(abstract->context, "Iterating over Garmin files");
+
+	// Create search pattern (pathname\*.fit)
+	snprintf(searchPath, sizeof(searchPath), "%s\\*", pathname);
+
+	hFind = FindFirstFileA(searchPath, &findData);
+	if (hFind == INVALID_HANDLE_VALUE) {
+		return DC_STATUS_IO;
+	}
+
+	do {
+		// Skip directories
+		if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			continue;
+
+		if (!check_filename(abstract, findData.cFileName))
+			continue;
+
+		dc_status_t rc = make_space(files);
+		if (rc != DC_STATUS_SUCCESS) {
+			FindClose(hFind);
+			return rc;
+		}
+		add_name(files, findData.cFileName, 0);
+	} while (FindNextFileA(hFind, &findData));
+
+	if (GetLastError() != ERROR_NO_MORE_FILES) {
+		FindClose(hFind);
+		return DC_STATUS_IO;
+	}
+
+	FindClose(hFind);
+
+	DEBUG(abstract->context, "Found %d files", files->nr);
+
+	if (files->array)
+		qsort(files->array, files->nr, sizeof(struct fit_file), name_cmp);
+	return DC_STATUS_SUCCESS;
+}
+#else
 static dc_status_t
 get_file_list(dc_device_t *abstract, DIR *dir, struct file_list *files)
 {
@@ -296,6 +369,7 @@ get_file_list(dc_device_t *abstract, DIR *dir, struct file_list *files)
 		qsort(files->array, files->nr, sizeof(struct fit_file), name_cmp);
 	return DC_STATUS_SUCCESS;
 }
+#endif
 
 #ifdef HAVE_LIBMTP
 static unsigned int
@@ -438,10 +512,6 @@ mtp_read_file(garmin_device_t *device, unsigned int file_id, dc_buffer_t *file)
 }
 #endif /* HAVE_LIBMTP */
 
-#ifndef O_BINARY
-#define O_BINARY 0
-#endif
-
 static dc_status_t
 read_file(char *pathname, int pathlen, const char *name, dc_buffer_t *file)
 {
@@ -449,7 +519,7 @@ read_file(char *pathname, int pathlen, const char *name, dc_buffer_t *file)
 
 	pathname[pathlen] = '/';
 	memcpy(pathname+pathlen+1, name, FILE_NAME_SIZE);
-	fd = open(pathname, O_RDONLY | O_BINARY);
+	fd = dc_open(pathname, DC_O_RDONLY | DC_O_BINARY);
 
 	if (fd < 0)
 		return DC_STATUS_IO;
@@ -459,7 +529,7 @@ read_file(char *pathname, int pathlen, const char *name, dc_buffer_t *file)
 		char buffer[4096];
 		int n;
 
-		n = read(fd, buffer, sizeof(buffer));
+		n = dc_read(fd, buffer, sizeof(buffer));
 		if (!n)
 			break;
 		if (n > 0) {
@@ -470,7 +540,7 @@ read_file(char *pathname, int pathlen, const char *name, dc_buffer_t *file)
 		break;
 	}
 
-	close(fd);
+	dc_close(fd);
 	return rc;
 }
 
@@ -488,7 +558,9 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		NULL   // array of file names / ids
 	};
 	dc_buffer_t *file;
+#ifndef _WIN32
 	DIR *dir;
+#endif
 	dc_status_t rc;
 
 	// Read the directory name from the iostream
@@ -526,6 +598,35 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 	} else
 #endif
 	{ // slight coding style violation to deal with the non-MTP case
+#ifdef _WIN32
+		// On Windows, get_file_list takes the pathname directly
+		rc = get_file_list(abstract, pathname, &files);
+		if (rc != DC_STATUS_SUCCESS) {
+			if (rc == DC_STATUS_NOMEMORY) {
+				free(files.array);
+				return rc;
+			}
+
+			free(files.array);
+			files.nr = 0;
+			files.allocated = 0;
+			files.array = NULL;
+
+			// Try the input path directly
+			rc = get_file_list(abstract, pathname_input, &files);
+			if (rc != DC_STATUS_SUCCESS) {
+				ERROR (abstract->context, "Failed to open directory '%s' or '%s'.", pathname, pathname_input);
+				free(files.array);
+				return rc;
+			}
+			strcpy(pathname, pathname_input);
+			pathlen = strlen(pathname);
+		}
+		if (!files.nr) {
+			free(files.array);
+			return rc;
+		}
+#else
 		dir = opendir(pathname);
 		if (!dir) {
 			dir = opendir(pathname_input);
@@ -543,6 +644,7 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 			free(files.array);
 			return rc;
 		}
+#endif
 	}
 	// We found at least one file
 	// Can we find the fingerprint entry?
