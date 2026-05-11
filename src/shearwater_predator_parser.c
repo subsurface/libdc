@@ -897,7 +897,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 
 	dc_field_add_string_fmt(&parser->cache, "Serial", "%08x", parser->serial);
 	// bytes 1-31 are identical in all formats
-	dc_field_add_string_fmt(&parser->cache, STRING_KEY_FIRMWARE_VERSION, "%2x", data[19]);
+	dc_field_add_string_fmt(&parser->cache, STRING_KEY_FIRMWARE_VERSION, "%u", bcd2dec(data[19]));
 	add_deco_model(parser, data);
 	add_battery_type(parser, data);
 	dc_field_add_string_fmt(&parser->cache, "Battery at end", "%.1f V", data[9] / 10.0);
