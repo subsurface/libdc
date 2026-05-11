@@ -730,6 +730,7 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 		*model = PETREL2;
 		break;
 	case 0xB407:
+	case 0xB429:
 		*model = PETREL3;
 		break;
 	case 0x0606:
@@ -744,23 +745,29 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 		*model = PERDIX;
 		break;
 	case 0x0C0D:
+	case 0x425B:
 	case 0x7C2D:
 	case 0x8D6C:
-	case 0x425B:
 		*model = PERDIXAI;
 		break;
 	case 0x704C:
-	case 0xC407:
-	case 0xC964:
+	case 0x924C:
 	case 0x9C64:
+	case 0xC407:
+	case 0xC429:
+	case 0xC964:
 		*model = PERDIX2;
 		break;
-	case 0x0F0F:
 	case 0x1F0A:
-	case 0x1F0F:
+	case 0x0F0F:
+	case 0x1F10:
+	case 0x1F1A:
 		*model = TERIC;
 		break;
 	case 0x1512:
+	case 0x1613:
+	case 0x2623:
+	case 0x63A5:
 		*model = PEREGRINE;
 		break;
 	case 0x1712:
