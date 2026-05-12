@@ -118,6 +118,9 @@
 
 #define UNDEFINED 0xFFFFFFFF
 
+#define GNSS_FIX_2D 2
+#define GNSS_FIX_3D 3
+
 typedef struct shearwater_predator_parser_t shearwater_predator_parser_t;
 
 typedef struct shearwater_predator_gasmix_t {
@@ -1100,11 +1103,13 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 		case DC_FIELD_LOCATION:
 			if (parser->opening[9] == UNDEFINED || parser->logversion < 17)
 				return DC_STATUS_UNSUPPORTED;
+
+			unsigned int gnss_status = data[parser->opening[9] + 16];
+			if (!(gnss_status == GNSS_FIX_2D || gnss_status == GNSS_FIX_3D))
+				return DC_STATUS_UNSUPPORTED;
+
 			latitude  = (signed int) array_uint32_be (data + parser->opening[9] + 21);
 			longitude = (signed int) array_uint32_be (data + parser->opening[9] + 25);
-			if ((latitude == 0 && longitude == 0) ||
-				(latitude == -1 && longitude == -1))
-				return DC_STATUS_UNSUPPORTED;
 			location->latitude  = latitude  / 100000.0;
 			location->longitude = longitude / 100000.0;
 			location->altitude  = 0.0;
