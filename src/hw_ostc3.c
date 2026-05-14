@@ -763,8 +763,7 @@ hw_ostc3_device_hardware (dc_device_t *abstract, unsigned char data[], unsigned 
 		return rc;
 
 	// Send the command.
-	const unsigned char cmd = size == SZ_HARDWARE2 ? HARDWARE2 : HARDWARE;
-	rc = hw_ostc3_transfer (device, NULL, cmd, NULL, 0, data, size, NULL, NODELAY);
+	rc = hw_ostc3_device_id (device, data, size);
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
 
@@ -790,7 +789,15 @@ hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, voi
 	dc_event_devinfo_t devinfo;
 	devinfo.firmware = device->firmware;
 	devinfo.serial = device->serial;
-	devinfo.model = device->model;
+	if (device->hardware != UNKNOWN) {
+		devinfo.model = device->hardware;
+	} else {
+		// Fallback to the serial number.
+		if (devinfo.serial > 10000)
+			devinfo.model = SPORT;
+		else
+			devinfo.model = OSTC3;
+	}
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate memory.
@@ -1769,7 +1776,15 @@ hw_ostc3_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	dc_event_devinfo_t devinfo;
 	devinfo.firmware = device->firmware;
 	devinfo.serial = device->serial;
-	devinfo.model = device->model;
+	if (device->hardware != UNKNOWN) {
+		devinfo.model = device->hardware;
+	} else {
+		// Fallback to the serial number.
+		if (devinfo.serial > 10000)
+			devinfo.model = SPORT;
+		else
+			devinfo.model = OSTC3;
+	}
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate the required amount of memory.

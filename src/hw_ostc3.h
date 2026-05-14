@@ -33,7 +33,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 #define OSTC4_5_PREFIX 0x3B
-#define ISHWOS4(hardware) ((hardware >> 8) == OSTC4_5_PREFIX)
+#define ISHWOS4(hardware) (((hardware) >> 8) == OSTC4_5_PREFIX)
 
 dc_status_t
 hw_ostc3_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream);
