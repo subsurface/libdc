@@ -517,8 +517,9 @@ static void sample_heading(struct sample_data *info, unsigned short heading)
 	if (heading == 0xffff)
 		return;
 
-	sample.bearing = heading;
-	if (info->callback) info->callback(DC_SAMPLE_BEARING, &sample, info->userdata);
+	sample.event.type = SAMPLE_EVENT_HEADING;
+	sample.event.value = heading;
+	if (info->callback) info->callback(DC_SAMPLE_EVENT, &sample, info->userdata);
 }
 
 static void sample_abspressure(struct sample_data *info, unsigned short pressure)
