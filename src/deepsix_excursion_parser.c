@@ -755,7 +755,6 @@ deepsix_excursion_parser_samples_foreach_v1 (dc_parser_t *abstract, dc_sample_ca
 						sample.deco.time = deco_ndl_tts;
 						sample.deco.tts = 0;
 					}
-					sample.deco.tts = 0;
 					if (callback) callback (DC_SAMPLE_DECO, &sample, userdata);
 					break;
 				default:
