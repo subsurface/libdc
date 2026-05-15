@@ -49,6 +49,8 @@
 #define ID_GAS_CONFIG      0x11
 #define ID_TANK_TRANSMITTER 0x12
 #define ID_GF_INFO          0x13
+#define ID_SGC             0x14
+#define ID_GF_DATA         0x15
 
 #define ISCONFIG(type) ( \
 	(type) == ID_LOG_VERSION || \
@@ -64,9 +66,10 @@
 #define EPOCH 1609459200 /* 2021-01-01 00:00:00 */
 
 #define OC        0
-#define CC        1
-#define GAUGE     2
+#define CCR       1
+#define CCR_FSP   2
 #define SIDEMOUNT 3
+#define GAUGE     4
 
 #define NGASMIXES 10
 #define NTANKS    10
@@ -248,7 +251,8 @@ halcyon_symbios_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, u
 			case SIDEMOUNT:
 				*((dc_divemode_t *) value) = DC_DIVEMODE_OC;
 				break;
-			case CC:
+			case CCR:
+			case CCR_FSP:
 				*((dc_divemode_t *) value) = DC_DIVEMODE_CCR;
 				break;
 			case GAUGE:
@@ -332,6 +336,8 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 		8,  /* ID_GAS_CONFIG */
 		8,  /* ID_TANK_TRANSMITTER */
 		6,  /* ID_GF_INFO */
+		4,  /* ID_SGC */
+		8,  /* ID_GF_DATA */
 	};
 
 	unsigned int logversion = 0;
@@ -370,6 +376,15 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 		if (length < 2 || offset + length > size) {
 			ERROR (abstract->context, "Buffer overflow detected!");
 			return DC_STATUS_DATAFORMAT;
+		}
+
+		// Since log version 1.9, the ID_GF_INFO record has been deprecated and
+		// replaced with the larger ID_GF_DATA record. Unfortunately some
+		// earlier firmware versions produced records with the new type, but
+		// with the old size. This has been fixed in log version 1.12.
+		// Correct the record type to workaround this bug.
+		if (type == ID_GF_DATA && length == lengths[ID_GF_INFO]) {
+			type = ID_GF_INFO;
 		}
 
 		if (type < C_ARRAY_SIZE(lengths)) {
@@ -416,12 +431,12 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			unsigned int DC_ATTR_UNUSED battery = array_uint16_le(data + offset + 20);
 			time_start = array_uint32_le(data + offset + 24);
 			unsigned int serial = array_uint32_le(data + offset + 28);
-			DEBUG (abstract->context, "Device: model=%u, hw=%u.%u, fw=%u.%u.%u, deco=%u.%u, serial=%u",
+			DEBUG (abstract->context, "Device: model=%u, serial=%u, firmware=%u.%u.%u, hw=%u.%u, deco=%u.%u",
 				model,
-				hw_major, hw_minor,
+				serial,
 				fw_major, fw_minor, fw_bugfix,
-				deco_major, deco_minor,
-				serial);
+				hw_major, hw_minor,
+				deco_major, deco_minor);
 		} else if (type == ID_GAS_SWITCH) {
 			unsigned int id = UNDEFINED;
 			unsigned int o2 = data[offset + 2];
@@ -497,7 +512,7 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 
 				// Add a new tank if necessary.
 				if (idx >= ntanks) {
-					if (ngasmixes >= NTANKS) {
+					if (ntanks >= NTANKS) {
 						ERROR (abstract->context, "Maximum number of tanks reached.");
 						return DC_STATUS_NOMEMORY;
 					}
@@ -601,7 +616,7 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 
 				// Add a new tank if necessary.
 				if (idx >= ntanks) {
-					if (ngasmixes >= NTANKS) {
+					if (ntanks >= NTANKS) {
 						ERROR (abstract->context, "Maximum number of tanks reached.");
 						return DC_STATUS_NOMEMORY;
 					}
@@ -623,7 +638,7 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			sample.pressure.value = pressure / 10.0;
 			if (callback) callback(DC_SAMPLE_PRESSURE, &sample, userdata);
 		} else if (type == ID_COMPASS) {
-			unsigned int heading = array_uint16_le (data + offset + 4);
+			unsigned int heading = array_uint16_le (data + offset + 2);
 			sample.bearing = heading;
 			if (callback) callback(DC_SAMPLE_BEARING, &sample, userdata);
 		} else if (type == ID_TRIM) {
@@ -682,7 +697,7 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 
 				// Add a new tank if necessary.
 				if (idx >= ntanks) {
-					if (ngasmixes >= NTANKS) {
+					if (ntanks >= NTANKS) {
 						ERROR (abstract->context, "Maximum number of tanks reached.");
 						return DC_STATUS_NOMEMORY;
 					}
@@ -703,11 +718,17 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			sample.pressure.tank = tank_idx;
 			sample.pressure.value = pressure / 10.0;
 			if (callback) callback(DC_SAMPLE_PRESSURE, &sample, userdata);
-		} else if (type == ID_GF_INFO) {
+		} else if (type == ID_GF_INFO || type == ID_GF_DATA) {
 			unsigned int DC_ATTR_UNUSED gf_now  = array_uint16_le (data + offset + 2);
 			unsigned int DC_ATTR_UNUSED gf_surface  = array_uint16_le (data + offset + 4);
+			if (type == ID_GF_DATA) {
+				unsigned int DC_ATTR_UNUSED leading_tissue_gf_now = data[offset + 6];
+				unsigned int DC_ATTR_UNUSED leading_tissue_gf_surface = data[offset + 7];
+			}
+		} else if (type == ID_SGC) {
+			unsigned int DC_ATTR_UNUSED sgc = array_uint16_le (data + offset + 2);
 		} else {
-			WARNING (abstract->context, "Unknown record (type=%u, size=%u", type, length);
+			WARNING (abstract->context, "Unknown record (type=%u, size=%u)", type, length);
 		}
 
 		offset += length;

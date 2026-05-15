@@ -63,6 +63,7 @@ static int dc_filter_oceans (const dc_descriptor_t *descriptor, dc_transport_t t
 static int dc_filter_divesoft (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 static int dc_filter_cressi (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 static int dc_filter_halcyon (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
+static int dc_filter_seac (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
 // Not merged upstream yet
 static int dc_filter_garmin (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
@@ -339,12 +340,12 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x1B, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	/* Historic models */
 	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x3B43, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05, DC_TRANSPORT_SERIAL, NULL},
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07, DC_TRANSPORT_SERIAL, NULL},
+	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x12, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC 2 TR",  DC_FAMILY_HW_OSTC3, 0x33, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A, DC_TRANSPORT_SERIAL, NULL},
+	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC 2N",  DC_FAMILY_HW_OSTC, 2, DC_TRANSPORT_SERIAL, NULL},
 	{"Heinrichs Weikamp", "OSTC 2C",  DC_FAMILY_HW_OSTC, 3, DC_TRANSPORT_SERIAL, NULL},
 	{"Heinrichs Weikamp", "OSTC Mk2", DC_FAMILY_HW_OSTC, 1, DC_TRANSPORT_SERIAL, NULL},
@@ -491,7 +492,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	/* Seac Screen */
 	{"Seac", "Action", DC_FAMILY_SEAC_SCREEN, 0x01, DC_TRANSPORT_SERIAL, NULL},
 	{"Seac", "Screen", DC_FAMILY_SEAC_SCREEN, 0x02, DC_TRANSPORT_SERIAL, NULL},
-	{"Seac", "Tablet", DC_FAMILY_SEAC_SCREEN, 0x10, DC_TRANSPORT_SERIAL, NULL},
+	{"Seac", "Tablet", DC_FAMILY_SEAC_SCREEN, 0x10, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_seac},
 	/* Deepblu Cosmiq */
 	{"Deepblu", "Cosmiq+", DC_FAMILY_DEEPBLU_COSMIQ, 0, DC_TRANSPORT_BLE, dc_filter_deepblu},
 	/* Oceans S1 */
@@ -977,6 +978,20 @@ dc_filter_halcyon (const dc_descriptor_t *descriptor, dc_transport_t transport, 
 
 	if (transport == DC_TRANSPORT_BLE) {
 		return DC_FILTER_INTERNAL (userdata, model, 0, dc_match_halcyon);
+	}
+
+	return 1;
+}
+
+static int
+dc_filter_seac (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata)
+{
+	static const char * const bluetooth[] = {
+		"Tablet",
+	};
+
+	if (transport == DC_TRANSPORT_BLE) {
+		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_prefix_with_number);
 	}
 
 	return 1;

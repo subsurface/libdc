@@ -95,6 +95,7 @@
 #define AI_OFF   0
 #define AI_HPCCR 4
 #define AI_ON    5
+#define AI_ON_GPS 6
 
 #define GF       0
 #define VPMB     1
@@ -108,7 +109,6 @@
 #define NFIXED    10
 #define NTANKS    6
 #define NRECORDS  10
-#define MAXSTRINGS 32
 
 #define PREDATOR 2
 #define PETREL   3
@@ -1098,7 +1098,7 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			}
 			break;
 		case DC_FIELD_LOCATION:
-			if (parser->opening[9] == UNDEFINED || parser->logversion < 17)
+			if (parser->opening[9] == UNDEFINED || parser->aimode != AI_ON_GPS)
 				return DC_STATUS_UNSUPPORTED;
 			latitude  = (signed int) array_uint32_be (data + parser->opening[9] + 21);
 			longitude = (signed int) array_uint32_be (data + parser->opening[9] + 25);
