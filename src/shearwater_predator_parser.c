@@ -751,7 +751,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 						sub_mode = data[offset + 5];
 					}
 				}
-				if (logversion >= 13) {
+				if (logversion >= 13 && parser->samplesize >= 32) {
 					tank[0].enabled = data[offset + 19];
 					memcpy (tank[0].name, data + offset + 20, sizeof (tank[0].name));
 
@@ -763,7 +763,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 					tank[2].pressure_reserve = array_uint16_be(data + offset + 30);
 				}
 			} else if (type == LOG_RECORD_OPENING_7) {
-				if (logversion >= 13) {
+				if (logversion >= 13 && parser->samplesize >= 14) {
 					tank[2].enabled =  data[offset + 1];
 					memcpy (tank[2].name, data + offset + 2, sizeof (tank[2].name));
 
