@@ -76,6 +76,7 @@
 #define SETPOINT_HIGH 0x04
 #define SC            0x08
 #define OC            0x10
+#define SAMPLE_STATUS_BO_CCR 0x20
 
 #define M_CC       0
 #define M_OC_TEC   1
@@ -179,6 +180,7 @@ struct shearwater_predator_parser_t {
 };
 
 struct dc_parser_sensor_calibration_t {
+	bool external_ppo2_used;
 	double sum_ppo2;
 	double sum_calculated_ppo2;
 	unsigned int ppo2_sample_count;
@@ -438,17 +440,22 @@ add_battery_type(shearwater_predator_parser_t *parser, const unsigned char *data
 	}
 }
 
-static void print_calibration(shearwater_predator_parser_t *parser)
+static void add_sensor_state(shearwater_predator_parser_t *parser, bool external_ppo2_used)
 {
-	for (size_t i = 0; i < 3; ++i) {
-		if (parser->calibrated & (1 << i)) {
-			static const char *names[] = {
-				"Sensor 1 calibration [bar / V]",
-				"Sensor 2 calibration [bar / V]",
-				"Sensor 3 calibration [bar / V]",
-			};
-			dc_field_add_string_fmt(&parser->cache, names[i], "%.2f", parser->calibration[i] * 1000);
-		}
+	if (shearwater_predator_is_ccr(parser->divemode)) {
+		dc_field_add_string(&parser->cache, "ppO2 data source", external_ppo2_used ? "external" : "internal");
+
+		if (external_ppo2_used)
+			for (size_t i = 0; i < 3; ++i) {
+				if (parser->calibrated & (1 << i)) {
+					static const char *names[] = {
+						"Sensor 1 calibration [bar / V]",
+						"Sensor 2 calibration [bar / V]",
+						"Sensor 3 calibration [bar / V]",
+					};
+					dc_field_add_string_fmt(&parser->cache, names[i], "%.2f", parser->calibration[i] * 1000);
+				}
+			}
 	}
 }
 
@@ -832,9 +839,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		}
 
 		if (calibration_count > 0) {
-			if (calibration_default_count < calibration_count) {
-				print_calibration(parser);
-			} else {
+			if (calibration_default_count == calibration_count) {
 				// All calibrated sensors report the default calibration value
 				// so this could be a DiveCAN controller, where the calibration values
 				// are stored in the CCR's sensor module.
@@ -930,14 +935,13 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		break;
 	}
 
+	struct dc_parser_sensor_calibration_t userdata = { 0 };
+	dc_status_t rc = shearwater_predator_parser_samples_foreach(abstract, NULL, (void *)&userdata);
+
+	bool calibrated = false;
 	if (parser->needs_divecan_calibration_estimate) {
-		struct dc_parser_sensor_calibration_t data = { 0 };
-
-		dc_status_t rc = shearwater_predator_parser_samples_foreach(abstract, NULL, (void *)&data);
-
-		bool calibrated = false;
-		if (rc == DC_STATUS_SUCCESS && data.sum_ppo2 != 0) {
-			double calibration = data.sum_calculated_ppo2 / data.sum_ppo2;
+		if (rc == DC_STATUS_SUCCESS && userdata.sum_ppo2 != 0) {
+			double calibration = userdata.sum_calculated_ppo2 / userdata.sum_ppo2;
 			if (calibration < 0.98 || calibration > 1.02) {
 				// The calibration scaling is significant, use it.
 				calibration *= SENSOR_CALIBRATION_DEFAULT / 100000.0;
@@ -951,11 +955,11 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			}
 		}
 
-		if (!calibrated) {
-			print_calibration(parser);
-		}
-
 		parser->needs_divecan_calibration_estimate = false;
+	}
+
+	if (!calibrated) {
+		add_sensor_state(parser, userdata.external_ppo2_used);
 	}
 
 	static const char *name = "Divemode";
@@ -1202,38 +1206,41 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 			}
 
 			if (ccr) {
-				// PPO2
 				if ((status & PPO2_EXTERNAL) == 0) {
 					double calculated_ppo2 = data[offset + pnf + 6] / 100.0;
 
-					if (parser->needs_divecan_calibration_estimate) {
+					if (userdata) {
 						struct dc_parser_sensor_calibration_t *out = (struct dc_parser_sensor_calibration_t *)userdata;
 
-						double ppo2_sum = 0.0;
-						unsigned int ppo2_count = 0;
-						if (parser->calibrated & 0x01) {
-							 ppo2_sum += data[offset + pnf + 12] * SENSOR_CALIBRATION_DEFAULT / 100000.0;
-							 ppo2_count++;
+						out->external_ppo2_used = true;
+
+						if (parser->needs_divecan_calibration_estimate) {
+							double ppo2_sum = 0.0;
+							unsigned int ppo2_count = 0;
+							if (parser->calibrated & 0x01) {
+								ppo2_sum += data[offset + pnf + 12] * SENSOR_CALIBRATION_DEFAULT / 100000.0;
+								ppo2_count++;
+							}
+
+							if (parser->calibrated & 0x02) {
+								ppo2_sum += data[offset + pnf + 14] * SENSOR_CALIBRATION_DEFAULT / 100000.0;
+								ppo2_count++;
+							}
+
+							if (parser->calibrated & 0x04) {
+								ppo2_sum += data[offset + pnf + 15] * SENSOR_CALIBRATION_DEFAULT / 100000.0;
+								ppo2_count++;
+							}
+
+							double ppo2 = ppo2_sum / ppo2_count;
+
+							out->sum_ppo2 += ppo2;
+							out->sum_calculated_ppo2 += calculated_ppo2;
+							out->ppo2_sample_count++;
 						}
-
-						if (parser->calibrated & 0x02) {
-							 ppo2_sum += data[offset + pnf + 14] * SENSOR_CALIBRATION_DEFAULT / 100000.0;
-							 ppo2_count++;
-						}
-
-						if (parser->calibrated & 0x04) {
-							 ppo2_sum += data[offset + pnf + 15] * SENSOR_CALIBRATION_DEFAULT / 100000.0;
-							 ppo2_count++;
-						}
-
-						double ppo2 = ppo2_sum / ppo2_count;
-
-						out->sum_ppo2 += ppo2;
-						out->sum_calculated_ppo2 += calculated_ppo2;
-						out->ppo2_sample_count++;
 					}
 
-					if (callback) {
+					if ((status & SAMPLE_STATUS_BO_CCR) == 0 && callback) {
 						sample.ppo2.sensor = DC_SENSOR_NONE;
 						sample.ppo2.value = calculated_ppo2;
 						callback(DC_SAMPLE_PPO2, &sample, userdata);
