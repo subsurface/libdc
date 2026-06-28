@@ -58,3 +58,6 @@ Makefile.in
 /src/revision.h
 
 /build
+
+# Artifact produced by the Subsurface MSVC build
+/contrib/msvc/x64/
