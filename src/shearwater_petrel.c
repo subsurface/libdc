@@ -79,7 +79,7 @@ str2num (unsigned char data[], unsigned int size, unsigned int offset)
 
 
 dc_status_t
-shearwater_petrel_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *iostream)
+shearwater_petrel_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *iostream, unsigned int model)
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	shearwater_petrel_device_t *device = NULL;
@@ -101,6 +101,13 @@ shearwater_petrel_device_open (dc_device_t **out, dc_context_t *context, dc_iost
 	status = shearwater_common_setup (&device->base, context, iostream);
 	if (status != DC_STATUS_SUCCESS) {
 		goto error_free;
+	}
+
+	// The Perdix 3 speaks the classic application protocol with a new
+	// framing. The framing must be selected before the first packet is
+	// exchanged, so it is derived from the descriptor model.
+	if (model == PERDIX3) {
+		device->base.framing = SHEARWATER_FRAMING_PERDIX3;
 	}
 
 	*out = (dc_device_t *) device;

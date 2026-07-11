@@ -28,7 +28,11 @@
 #include "platform.h"
 #include "array.h"
 
-#define SZ_PACKET  254
+// The Perdix 3 framing uses a 24-bit length field and negotiates larger
+// download blocks than the classic 254 byte packets: 514 bytes (including
+// the 2 byte block header) for uncompressed manifest reads, and 2306 bytes
+// for compressed dive downloads (init response 75 20 0902 observed live).
+#define SZ_PACKET  4096
 
 // SLIP special character codes
 #define END       0xC0
@@ -50,6 +54,7 @@ shearwater_common_setup (shearwater_common_device_t *device, dc_context_t *conte
 	dc_status_t status = DC_STATUS_SUCCESS;
 
 	device->iostream = iostream;
+	device->framing = SHEARWATER_FRAMING_CLASSIC;
 
 	// Set the serial communication protocol (115200 8N1).
 	status = dc_iostream_configure (device->iostream, 115200, 8, DC_PARITY_NONE, DC_STOPBITS_ONE, DC_FLOWCONTROL_NONE);
@@ -139,7 +144,13 @@ shearwater_common_slip_write (shearwater_common_device_t *device, const unsigned
 	unsigned char buffer[32];
 	unsigned int nbytes = 0;
 
-	if (transport == DC_TRANSPORT_BLE) {
+	// The classic BLE framing prefixes every packet with a 2-byte
+	// [nframes, index] header. The Perdix 3 framing sends the raw SLIP
+	// stream without any per-packet header.
+	unsigned int ble_classic = (transport == DC_TRANSPORT_BLE &&
+		device->framing == SHEARWATER_FRAMING_CLASSIC);
+
+	if (ble_classic) {
 		// Calculate the total number of bytes.
 		unsigned int count = 1;
 		for (unsigned int i = 0; i < size; ++i) {
@@ -174,7 +185,7 @@ shearwater_common_slip_write (shearwater_common_device_t *device, const unsigned
 					return status;
 				}
 
-				if (transport == DC_TRANSPORT_BLE) {
+				if (ble_classic) {
 					buffer[1]++;
 					nbytes = 2;
 				} else {
@@ -201,7 +212,7 @@ shearwater_common_slip_write (shearwater_common_device_t *device, const unsigned
 				return status;
 			}
 
-			if (transport == DC_TRANSPORT_BLE) {
+			if (ble_classic) {
 				buffer[1]++;
 				nbytes = 2;
 			} else {
@@ -229,9 +240,15 @@ shearwater_common_slip_read (shearwater_common_device_t *device, unsigned char d
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_transport_t transport = dc_iostream_get_transport(device->iostream);
-	unsigned char buffer[256];
+	// The Perdix 3 negotiates a large MTU and sends notifications of up to
+	// several hundred bytes, so the read buffer must be large enough to
+	// receive a full notification in one dc_iostream_read call.
+	unsigned char buffer[1024];
 	unsigned int escaped = 0;
 	unsigned int nbytes = 0;
+
+	unsigned int ble_classic = (transport == DC_TRANSPORT_BLE &&
+		device->framing == SHEARWATER_FRAMING_CLASSIC);
 
 	// Get the packet size.
 	size_t packetsize = (transport == DC_TRANSPORT_BLE) ? sizeof(buffer) : 1;
@@ -249,7 +266,9 @@ shearwater_common_slip_read (shearwater_common_device_t *device, unsigned char d
 		}
 
 		size_t offset = 0;
-		if (transport == DC_TRANSPORT_BLE) {
+		if (ble_classic) {
+			// Skip the classic 2-byte [nframes, index] packet header.
+			// The Perdix 3 framing has no per-packet header.
 			if (transferred < 2) {
 				ERROR (device->base.context, "Invalid packet length (" DC_PRINTF_SIZE ").", transferred);
 				return DC_STATUS_PROTOCOL;
@@ -330,7 +349,8 @@ shearwater_common_transfer (shearwater_common_device_t *device, const unsigned c
 {
 	dc_status_t status = DC_STATUS_SUCCESS;
 	dc_device_t *abstract = (dc_device_t *) device;
-	unsigned char packet[SZ_PACKET + 4];
+	unsigned char packet[SZ_PACKET + 5];
+	unsigned int hlen = 0;
 	unsigned int n = 0;
 
 	if (isize > SZ_PACKET || osize > SZ_PACKET)
@@ -340,14 +360,29 @@ shearwater_common_transfer (shearwater_common_device_t *device, const unsigned c
 		return DC_STATUS_CANCELLED;
 
 	// Setup the request packet.
-	packet[0] = 0xFF;
-	packet[1] = 0x01;
-	packet[2] = isize + 1;
-	packet[3] = 0x00;
-	memcpy (packet + 4, input, isize);
+	// AI-generated (Claude)
+	if (device->framing == SHEARWATER_FRAMING_PERDIX3) {
+		// FF 01 <length:24 be> <payload>
+		packet[0] = 0xFF;
+		packet[1] = 0x01;
+		packet[2] = (isize >> 16) & 0xFF;
+		packet[3] = (isize >>  8) & 0xFF;
+		packet[4] = (isize      ) & 0xFF;
+		hlen = 5;
+	} else {
+		// FF 01 <length + 1:8> 00 <payload>
+		if (isize + 1 > 0xFF)
+			return DC_STATUS_INVALIDARGS;
+		packet[0] = 0xFF;
+		packet[1] = 0x01;
+		packet[2] = isize + 1;
+		packet[3] = 0x00;
+		hlen = 4;
+	}
+	memcpy (packet + hlen, input, isize);
 
 	// Send the request packet.
-	status = shearwater_common_slip_write (device, packet, isize + 4);
+	status = shearwater_common_slip_write (device, packet, isize + hlen);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to send the request packet.");
 		return status;
@@ -365,6 +400,28 @@ shearwater_common_transfer (shearwater_common_device_t *device, const unsigned c
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (abstract->context, "Failed to receive the response packet.");
 		return status;
+	}
+
+	// AI-generated (Claude)
+	if (device->framing == SHEARWATER_FRAMING_PERDIX3) {
+		// Validate the packet header: 01 FF <length:24 be> <payload>
+		if (n < 5 || packet[0] != 0x01 || packet[1] != 0xFF) {
+			ERROR (abstract->context, "Invalid packet header.");
+			return DC_STATUS_PROTOCOL;
+		}
+
+		// Validate the packet length.
+		unsigned int length = (packet[2] << 16) | (packet[3] << 8) | packet[4];
+		if (length + 5 != n || length > osize) {
+			ERROR (abstract->context, "Invalid packet length.");
+			return DC_STATUS_PROTOCOL;
+		}
+
+		memcpy (output, packet + 5, length);
+		if (actual)
+			*actual = length;
+
+		return DC_STATUS_SUCCESS;
 	}
 
 	// Validate the packet header.
@@ -406,6 +463,21 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
 		(size >> 16) & 0xFF,
 		(size >>  8) & 0xFF,
 		(size      ) & 0xFF};
+	// The Perdix 3 uses a 16-bit size field (record type 0x24 instead of
+	// 0x34), so the requested size is capped at 0xFFFF. The download still
+	// terminates correctly, either by the exact size or by the final record
+	// of the compressed stream.
+	unsigned int size16 = (size > 0xFFFF) ? 0xFFFF : size;
+	unsigned char req_init_p3[] = {
+		0x35,
+		(compression ? 0x10 : 0x00),
+		0x24,
+		(address >> 24) & 0xFF,
+		(address >> 16) & 0xFF,
+		(address >>  8) & 0xFF,
+		(address      ) & 0xFF,
+		(size16 >> 8) & 0xFF,
+		(size16     ) & 0xFF};
 	unsigned char req_block[] = {0x36, 0x00};
 	unsigned char req_quit[] = {0x37};
 	unsigned char response[SZ_PACKET];
@@ -424,15 +496,30 @@ shearwater_common_download (shearwater_common_device_t *device, dc_buffer_t *buf
 	}
 
 	// Transfer the init request.
-	rc = shearwater_common_transfer (device, req_init, sizeof (req_init), response, 3, &n);
-	if (rc != DC_STATUS_SUCCESS) {
-		return rc;
-	}
+	// AI-generated (Claude)
+	if (device->framing == SHEARWATER_FRAMING_PERDIX3) {
+		rc = shearwater_common_transfer (device, req_init_p3, sizeof (req_init_p3), response, 4, &n);
+		if (rc != DC_STATUS_SUCCESS) {
+			return rc;
+		}
 
-	// Verify the init response.
-	if (n != 3 || response[0] != 0x75 || response[1] != 0x10 || response[2] > SZ_PACKET) {
-		ERROR (abstract->context, "Unexpected response packet.");
-		return DC_STATUS_PROTOCOL;
+		// Verify the init response: 75 20 <blocksize:16 be>
+		if (n != 4 || response[0] != 0x75 || response[1] != 0x20 ||
+			array_uint16_be (response + 2) > SZ_PACKET) {
+			ERROR (abstract->context, "Unexpected response packet.");
+			return DC_STATUS_PROTOCOL;
+		}
+	} else {
+		rc = shearwater_common_transfer (device, req_init, sizeof (req_init), response, 3, &n);
+		if (rc != DC_STATUS_SUCCESS) {
+			return rc;
+		}
+
+		// Verify the init response.
+		if (n != 3 || response[0] != 0x75 || response[1] != 0x10 || response[2] > SZ_PACKET) {
+			ERROR (abstract->context, "Unexpected response packet.");
+			return DC_STATUS_PROTOCOL;
+		}
 	}
 
 	// Update and emit a progress event.
@@ -776,6 +863,11 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 		break;
 	case 0xC0E0:
 		*model = TERN;
+		break;
+	case 0x39C2:
+		// value captured from a live Perdix 3
+		// (RDBI 0x8050 response) via an Android HCI snoop log.
+		*model = PERDIX3;
 		break;
 	default:
 		WARNING (device->base.context, "Unknown hardware type 0x%04x.", hardware);

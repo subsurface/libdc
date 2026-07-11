@@ -59,13 +59,24 @@ extern "C" {
 #define PERDIX2  11
 #define TERN     12
 #define PEREGRINE_TX 13
+#define PERDIX3  14
 
 #define NSTEPS    10000
 #define STEP(i,n) ((NSTEPS * (i) + (n) / 2) / (n))
 
+// The Perdix 3 keeps the classic Shearwater application protocol (RDBI/WDBI,
+// SLIP, block download), but changes the framing on BLE: the 2-byte
+// [nframes, index] prefix on every BLE packet is gone (raw SLIP stream), and
+// the transfer header uses a 24-bit big-endian payload length instead of the
+// 8-bit "length + 1" field: FF 01 <len24> <payload> (requests) and
+// 01 FF <len24> <payload> (responses).
+#define SHEARWATER_FRAMING_CLASSIC 0
+#define SHEARWATER_FRAMING_PERDIX3 1
+
 typedef struct shearwater_common_device_t {
 	dc_device_t base;
 	dc_iostream_t *iostream;
+	unsigned int framing;
 } shearwater_common_device_t;
 
 dc_status_t
