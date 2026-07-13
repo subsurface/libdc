@@ -392,6 +392,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Shearwater", "Tern",      DC_FAMILY_SHEARWATER_PETREL, 12, DC_TRANSPORT_BLE, dc_filter_shearwater},
 	{"Shearwater", "Tern TX",   DC_FAMILY_SHEARWATER_PETREL, 12, DC_TRANSPORT_BLE, dc_filter_shearwater},
 	{"Shearwater", "Peregrine TX", DC_FAMILY_SHEARWATER_PETREL, 13, DC_TRANSPORT_BLE, dc_filter_shearwater},
+	{"Shearwater", "Perdix 3",  DC_FAMILY_SHEARWATER_PETREL, 14, DC_TRANSPORT_BLE, dc_filter_shearwater},
 	/* Dive Rite NiTek Q */
 	{"Dive Rite", "NiTek Q",   DC_FAMILY_DIVERITE_NITEKQ, 0, DC_TRANSPORT_SERIAL, NULL},
 	/* Citizen Hyper Aqualand */
@@ -764,6 +765,7 @@ dc_filter_shearwater (const dc_descriptor_t *descriptor, dc_transport_t transpor
 		"NERD 2",
 		"Perdix",
 		"Perdix 2",
+		"Perdix 3",
 		"Teric",
 		"Peregrine",
 		"Peregrine TX",
