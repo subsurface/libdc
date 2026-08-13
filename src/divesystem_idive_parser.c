@@ -58,9 +58,7 @@
 #define IX3M2_ZHL16C   2
 #define IX3M2_VPM      3
 
-#define REC_SAMPLE 0
 #define REC_INFO   1
-#define REC_SAMPLE_APOS5_COMPAT 0x8006
 
 typedef struct divesystem_idive_parser_t divesystem_idive_parser_t;
 
@@ -450,19 +448,12 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		// Get the record type.
 		unsigned int type = ISIX3M(parser->model) ?
 			array_uint16_le (data + offset + 52) :
-			REC_SAMPLE;
-		// AI-generated (Claude)
-		// APOS5 uses 0x8006 for ordinary profile samples. Keep this alias
-		// narrow until the record type is confirmed by the vendor.
-		if (firmware_major >= 5 && type == REC_SAMPLE_APOS5_COMPAT)
-			type = REC_SAMPLE;
-		if (type != REC_SAMPLE) {
-			if (type == REC_INFO) {
-				altitude  = (signed int) array_uint32_le (data + offset + 40);
-				longitude = (signed int) array_uint32_le (data + offset + 44);
-				latitude  = (signed int) array_uint32_le (data + offset + 48);
-				have_location = 1;
-			}
+			0;
+		if (type == REC_INFO) {
+			altitude  = (signed int) array_uint32_le (data + offset + 40);
+			longitude = (signed int) array_uint32_le (data + offset + 44);
+			latitude  = (signed int) array_uint32_le (data + offset + 48);
+			have_location = 1;
 
 			// Skip non-sample records.
 			offset += samplesize;
