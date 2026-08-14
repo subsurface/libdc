@@ -60,6 +60,7 @@
 
 #define REC_SAMPLE 0
 #define REC_INFO   1
+#define REC_SAMPLE_APOS5_COMPAT 0x8006
 
 typedef struct divesystem_idive_parser_t divesystem_idive_parser_t;
 
@@ -464,6 +465,11 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		unsigned int type = ISIX3M(parser->model) ?
 			array_uint16_le (data + offset + 52) :
 			REC_SAMPLE;
+		// AI-generated (Claude)
+		// APOS5 uses 0x8006 for ordinary profile samples. Keep this alias
+		// narrow until the record type is confirmed by the vendor.
+		if (type == REC_SAMPLE_APOS5_COMPAT)
+			type = REC_SAMPLE;
 		if (type != REC_SAMPLE) {
 			if (type == REC_INFO) {
 				if (!have_location) {
