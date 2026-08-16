@@ -60,6 +60,7 @@
 
 #define REC_SAMPLE 0
 #define REC_INFO   1
+#define REC_SAMPLE_APOS5_COMPAT 0x8006
 
 typedef struct divesystem_idive_parser_t divesystem_idive_parser_t;
 
@@ -431,13 +432,15 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 	unsigned int have_bearing = 0;
 
 	unsigned int firmware = 0;
+	unsigned int firmware_major = 0;
 	unsigned int apos4 = 0;
 	unsigned int nsamples = array_uint16_le (data + 1);
 	unsigned int samplesize = SZ_SAMPLE_IDIVE;
 	if (ISIX3M(parser->model)) {
 		// Detect the APOS4 firmware.
 		firmware = array_uint32_le(data + 0x2A);
-		apos4 = (firmware / 10000000) >= 4;
+		firmware_major = firmware / 10000000;
+		apos4 = firmware_major >= 4;
 		if (apos4) {
 			// Dive downloaded and recorded with the APOS4 firmware.
 			samplesize = SZ_SAMPLE_IX3M_APOS4;
@@ -464,6 +467,11 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		unsigned int type = ISIX3M(parser->model) ?
 			array_uint16_le (data + offset + 52) :
 			REC_SAMPLE;
+		// AI-generated (Claude)
+		// APOS5 uses 0x8006 for ordinary profile samples. Keep this alias
+		// narrow until the record type is confirmed by the vendor.
+		if (firmware_major >= 5 && type == REC_SAMPLE_APOS5_COMPAT)
+			type = REC_SAMPLE;
 		if (type != REC_SAMPLE) {
 			if (type == REC_INFO) {
 				if (!have_location) {
