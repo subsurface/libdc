@@ -60,6 +60,10 @@
 
 #define REC_INFO   1
 
+#define TANK_VALID        0x8000
+#define TANK_RFCHANNEL    0x001F
+#define TANK_PRESSURE_MSB 0x0020
+
 typedef struct divesystem_idive_parser_t divesystem_idive_parser_t;
 
 typedef struct divesystem_idive_gasmix_t {
@@ -579,6 +583,14 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 			unsigned int id = data[offset + 47] & 0x0F;
 			unsigned int flags = data[offset + 47] & 0xF0;
 			unsigned int pressure = data[offset + 49];
+			unsigned int DC_ATTR_UNUSED rfchannel = 0;
+
+			if (type & TANK_VALID) {
+				rfchannel = type & TANK_RFCHANNEL;
+				if (type & TANK_PRESSURE_MSB) {
+					pressure |= 0x100;
+				}
+			}
 
 			if (flags & 0x20) {
 				// 300 bar transmitter.
