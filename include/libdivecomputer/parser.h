@@ -331,6 +331,7 @@ typedef union dc_sample_value_t {
 		unsigned int tts;
 	} deco;
 	unsigned int gasmix; /* Gas mix index */
+	dc_location_t location;
 } dc_sample_value_t;
 
 typedef struct dc_parser_t dc_parser_t;
