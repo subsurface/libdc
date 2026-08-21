@@ -846,8 +846,21 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 		*model = TERN;
 		break;
 	default:
-		WARNING (device->base.context, "Unknown hardware type 0x%04x.", hardware);
+		// Unknown hardware type: fall back to reading the model number directly from the device.
+		WARNING (device->base.context, "Unknown hardware type 0x%04x, falling back to ID_MODEL.", hardware);
+		{
+			unsigned char rsp_model = 0;
+			dc_status_t rc = shearwater_common_rdbi (device, ID_MODEL, &rsp_model, sizeof(rsp_model), NULL);
+			if (rc != DC_STATUS_SUCCESS) {
+				ERROR (device->base.context, "Failed to read the model number.");
+				return rc;
+			}
+			*model = rsp_model;
+		}
+		break;
 	}
 
 	return status;
 }
+
+

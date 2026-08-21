@@ -192,12 +192,8 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 
 	unsigned int model = 0;
 	rc = shearwater_common_get_model (&device->base, &model);
-	if (rc != DC_STATUS_SUCCESS) {
-		ERROR (abstract->context, "Failed to read the model number.");
+	if (rc != DC_STATUS_SUCCESS)
 		return rc;
-	}
-
-	HEXDUMP(abstract->context, DC_LOGLEVEL_DEBUG, "Model", &model, sizeof(model));
 
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
@@ -365,10 +361,8 @@ shearwater_petrel_device_timesync (dc_device_t *abstract, const dc_datetime_t *d
 
 	unsigned int model = 0;
 	status = shearwater_common_get_model (device, &model);
-	if (status != DC_STATUS_SUCCESS) {
-		ERROR (abstract->context, "Failed to read the model number.");
+	if (status != DC_STATUS_SUCCESS)
 		return status;
-	}
 
 	if (model == TERIC) {
 		return shearwater_common_timesync_utc (device, datetime);

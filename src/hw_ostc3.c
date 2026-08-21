@@ -866,18 +866,27 @@ hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, voi
 	// Download the compact logbook headers. If the firmware doesn't support
 	// compact headers yet, fallback to downloading the full logbook headers.
 	// This is slower, but also works for older firmware versions.
-	unsigned int compact = 1;
-	rc = hw_ostc3_transfer (device, &progress, COMPACT,
-              NULL, 0, header, RB_LOGBOOK_SIZE_COMPACT * RB_LOGBOOK_COUNT, NULL, NODELAY);
-	if (rc == DC_STATUS_UNSUPPORTED) {
-		compact = 0;
+	// The Frog always uses the full header format.
+	unsigned int compact = !device->frog;
+	if (compact) {
+		rc = hw_ostc3_transfer (device, &progress, COMPACT,
+		              NULL, 0, header, RB_LOGBOOK_SIZE_COMPACT * RB_LOGBOOK_COUNT, NULL, NODELAY);
+		if (rc == DC_STATUS_UNSUPPORTED) {
+			compact = 0;
+		} else if (rc != DC_STATUS_SUCCESS) {
+			ERROR (abstract->context, "Failed to read the header.");
+			free (header);
+			return rc;
+		}
+	}
+	if (!compact) {
 		rc = hw_ostc3_transfer (device, &progress, HEADER,
 		          NULL, 0, header, RB_LOGBOOK_SIZE_FULL * RB_LOGBOOK_COUNT, NULL, NODELAY);
-	}
-	if (rc != DC_STATUS_SUCCESS) {
-		ERROR (abstract->context, "Failed to read the header.");
-		free (header);
-		return rc;
+		if (rc != DC_STATUS_SUCCESS) {
+			ERROR (abstract->context, "Failed to read the header.");
+			free (header);
+			return rc;
+		}
 	}
 
 	// Get the correct header layout.
@@ -1025,10 +1034,10 @@ hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, voi
 
 		// Verify the header in the logbook and profile are identical.
 		if (memcmp (profile + layout->version, header + offset + logbook->version, 1) != 0 ||
-			compact ?
-			memcmp (profile + layout->fingerprint, header + offset + logbook->fingerprint, 10) != 0 ||
-			memcmp (profile + layout->number, header + offset + logbook->number, 2) != 0 :
-			memcmp (profile + layout->fingerprint, header + offset + layout->fingerprint, RB_LOGBOOK_SIZE_FULL - layout->fingerprint) != 0) {
+			(compact ?
+			 (memcmp (profile + layout->fingerprint, header + offset + logbook->fingerprint, 10) != 0 ||
+			  memcmp (profile + layout->number, header + offset + logbook->number, 2) != 0) :
+			  memcmp (profile + layout->fingerprint, header + offset + layout->fingerprint, RB_LOGBOOK_SIZE_FULL - layout->fingerprint) != 0)) {
 			ERROR (abstract->context, "Unexpected profile header.");
 			free (profile);
 			free (header);

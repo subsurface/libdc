@@ -48,10 +48,13 @@ typedef enum dc_sample_type_t {
 	DC_SAMPLE_DECO,
 	DC_SAMPLE_GASMIX,
 	DC_SAMPLE_TTS,		// time to surface in seconds
+	DC_SAMPLE_LOCATION,
 } dc_sample_type_t;
 
 // Make it easy to test support compile-time with "#ifdef DC_SAMPLE_TTS"
 #define DC_SAMPLE_TTS DC_SAMPLE_TTS
+// Make it easy to test support compile-time with "#ifdef DC_SAMPLE_LOCATION"
+#define DC_SAMPLE_LOCATION DC_SAMPLE_LOCATION
 
 typedef enum dc_field_type_t {
 	DC_FIELD_DIVETIME,
