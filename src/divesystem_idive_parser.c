@@ -20,6 +20,7 @@
  */
 
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "divesystem_idive.h"
 #include "context-private.h"
@@ -61,6 +62,7 @@
 #define REC_SAMPLE 0
 #define REC_INFO   1
 #define REC_SAMPLE_APOS5_COMPAT 0x8006
+#define REC_SAMPLE_APOS5_IX3M2  0x800E
 
 typedef struct divesystem_idive_parser_t divesystem_idive_parser_t;
 
@@ -472,6 +474,22 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		// narrow until the record type is confirmed by the vendor.
 		if (firmware_major >= 5 && type == REC_SAMPLE_APOS5_COMPAT)
 			type = REC_SAMPLE;
+		// AI-generated (Claude)
+		// APOS5 on iX3M2 (model range 0x60..0xFFF, observed 0x102) inserts one
+		// extra byte at record offset 0x0E, shifting the record-type marker
+		// from offset+52 to offset+53. Read both positions so that these
+		// records are correctly identified as profile samples.
+		// Time and depth fields are unaffected by the insertion; ancillary
+		// fields past offset 0x0E are not decoded yet, pending a full
+		// libdivecomputer-level log to confirm the new layout.
+		bool shifted_apos5 = false;
+		if (firmware_major >= 5 && ISIX3M2(parser->model) &&
+		    type != REC_SAMPLE &&
+		    offset + 53 + 1 <= size &&
+		    array_uint16_le(data + offset + 53) == REC_SAMPLE_APOS5_IX3M2) {
+			type = REC_SAMPLE;
+			shifted_apos5 = true;
+		}
 		if (type != REC_SAMPLE) {
 			if (type == REC_INFO) {
 				if (!have_location) {
@@ -604,7 +622,10 @@ divesystem_idive_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callba
 		if (callback) callback (DC_SAMPLE_CNS, &sample, userdata);
 
 		// Tank Pressure
-		if (samplesize == SZ_SAMPLE_IX3M_APOS4) {
+		// AI-generated (Claude)
+		// Ancillary fields (tank, bearing) use APOS4 offsets which are shifted
+		// for iX3M2 APOS5 records; skip them until the new layout is confirmed.
+		if (samplesize == SZ_SAMPLE_IX3M_APOS4 && !shifted_apos5) {
 			unsigned int id = data[offset + 47] & 0x0F;
 			unsigned int flags = data[offset + 47] & 0xF0;
 			unsigned int pressure = data[offset + 49];
