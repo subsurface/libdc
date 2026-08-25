@@ -30,16 +30,14 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#define WDBI_TIME_PACKET_SIZE 7
+
 #define ID_SERIAL    0x8010
 #define ID_FIRMWARE  0x8011
 #define ID_LOGUPLOAD 0x8021
 #define ID_HARDWARE  0x8050
-#define ID_LOCAL_TIME 0x9030
-#define ID_UTC_TIME  0x9031
-#define ID_LOCAL_TIME_OFFSET 0x9032
-#define ID_LOCAL_TIME_DST 0x9033
 
-#define WDBI_TIME_PACKET_SIZE 7
+#define ID_MODEL     0x8060
 
 #define ID_TIME_LOCAL  0x9030
 #define ID_TIME_UTC    0x9031
@@ -91,13 +89,11 @@ shearwater_common_timesync_local (shearwater_common_device_t *device, const dc_d
 dc_status_t
 shearwater_common_timesync_utc (shearwater_common_device_t *device, const dc_datetime_t *datetime);
 
-dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsigned int *model);
-
 dc_status_t shearwater_common_can_wdbi (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id);
 
 dc_status_t shearwater_common_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
 
-dc_status_t shearwater_common_read_model(shearwater_common_device_t *device, unsigned int *model);
+dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsigned int *model);
 
 #ifdef __cplusplus
 }
