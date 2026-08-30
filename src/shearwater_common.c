@@ -826,6 +826,10 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 	case 0xC964:
 		*model = PERDIX2;
 		break;
+	case 0x39C2:
+	case 0x4AB1:
+		*model = PERDIX3;
+		break;
 	case 0x1F0A:
 	case 0x0F0F:
 	case 0x1F10:
@@ -862,5 +866,4 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 
 	return status;
 }
-
 
