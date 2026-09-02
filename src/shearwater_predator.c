@@ -136,11 +136,14 @@ shearwater_predator_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	}
 
 	// Emit a device info event.
+	// devinfo_hw_id is not available from the Predator memory dump
+	// (no live RDBI 0x8050 read in this path); set to 0 (unknown).
 	unsigned char *data = dc_buffer_get_data (buffer);
-	dc_event_devinfo_t devinfo;
+	dc_event_devinfo_t devinfo = {0};
 	devinfo.model = data[0x2000D];
 	devinfo.firmware = bcd2dec (data[0x2000A]);
 	devinfo.serial = array_uint32_be (data + 0x20002);
+	devinfo.devinfo_hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return status;

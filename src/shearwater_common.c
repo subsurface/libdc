@@ -763,30 +763,32 @@ shearwater_common_timesync_utc (shearwater_common_device_t *device, const dc_dat
 	return status;
 }
 
-dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsigned int *model)
+/* Fork-local FWID->product mapping for consumer-side sub-model refinement.
+ *
+ * ID_MODEL (RDBI 0x8060) is the authoritative model source for libdc; this
+ * table supplements it on live download when a finer FWID distinction is
+ * needed (e.g. Petrel 1 vs Petrel 2, which both report ID_MODEL=PETREL=3).
+ * Best-effort only: the FWID (ID_HARDWARE, RDBI 0x8050) can change across
+ * firmware updates and the stored log format does not carry it.
+ *
+ * Do NOT use this as the primary model source. The FWID is passed to the
+ * consumer via devinfo.devinfo_hw_id and this table is provided for the
+ * consumer to map it back to a human-readable product name.
+ *
+ * Entries with "(Petrel 2 hardware)" below are Petrel 2 hardware IDs;
+ * their authoritative ID_MODEL value is PETREL (3), not a distinct constant.
+ */
+static unsigned int
+shearwater_fwid_to_product_version (unsigned int fwid)
 {
-	// Read the hardware type.
-	unsigned char rsp_hardware[2] = {0};
-	dc_status_t status = shearwater_common_rdbi (device, ID_HARDWARE, rsp_hardware, sizeof(rsp_hardware), NULL);
-	if (status != DC_STATUS_SUCCESS) {
-		ERROR (device->base.context, "Failed to read the hardware type.");
-		return status;
-	}
-
-	// Convert and map to the model number.
-	unsigned int hardware = array_uint16_be (rsp_hardware);
-
-	DEBUG(device->base.context, "Hardware type: 0x%04x", hardware);
-
-	switch (hardware) {
+	switch (fwid) {
 	case 0x0101:
 	case 0x0202:
-		*model = PREDATOR;
-		break;
+		return PREDATOR;
 	case 0x0404:
 	case 0x0909:
-		*model = PETREL;
-		break;
+		return PETREL;
+	/* Petrel 2 hardware — reports ID_MODEL=PETREL (3) */
 	case 0x0505:
 	case 0x0808:
 	case 0x0838:
@@ -795,77 +797,59 @@ dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsi
 	case 0x7828:
 	case 0x7B2C:
 	case 0x8838:
-		*model = PETREL2;
-		break;
+		return PETREL;
 	case 0xB407:
 	case 0xB429:
 	case 0xB469:
 	case 0x3C3D:
-		*model = PETREL3;
-		break;
+		return PETREL3;
 	case 0x0606:
 	case 0x0A0A:
-		*model = NERD;
-		break;
+		return NERD;
 	case 0x0E0D:
 	case 0x7E2D:
-		*model = NERD2;
-		break;
+		return NERD2;
 	case 0x0707:
-		*model = PERDIX;
-		break;
+		return PERDIX;
 	case 0x0C0D:
 	case 0x425B:
 	case 0x7C2D:
 	case 0x8D6C:
-		*model = PERDIXAI;
-		break;
+		return PERDIXAI;
 	case 0x704C:
 	case 0x924C:
 	case 0x9C64:
 	case 0xC407:
 	case 0xC429:
 	case 0xC964:
-		*model = PERDIX2;
-		break;
+		return PERDIX2;
 	case 0x39C2:
 	case 0x4AB1:
-		*model = PERDIX3;
-		break;
+		return PERDIX3;
 	case 0x1F0A:
 	case 0x1F0F:
 	case 0x0F0F:
 	case 0x1F10:
 	case 0x1F1A:
-		*model = TERIC;
-		break;
+		return TERIC;
 	case 0x1512:
 	case 0x1613:
 	case 0x2623:
 	case 0x63A5:
-		*model = PEREGRINE;
-		break;
+		return PEREGRINE;
 	case 0x1712:
 	case 0x813A:
-		*model = PEREGRINE_TX;
-		break;
+		return PEREGRINE_TX;
 	case 0xC0E0:
-		*model = TERN;
-		break;
+		return TERN;
 	default:
-		// Unknown hardware type: fall back to reading the model number directly from the device.
-		WARNING (device->base.context, "Unknown hardware type 0x%04x, falling back to ID_MODEL.", hardware);
-		{
-			unsigned char rsp_model = 0;
-			dc_status_t rc = shearwater_common_rdbi (device, ID_MODEL, &rsp_model, sizeof(rsp_model), NULL);
-			if (rc != DC_STATUS_SUCCESS) {
-				ERROR (device->base.context, "Failed to read the model number.");
-				return rc;
-			}
-			*model = rsp_model;
-		}
-		break;
+		return 0; /* Unknown FWID — consumer falls back to ID_MODEL. */
 	}
+}
 
-	return status;
+/* Suppress unused-function warning; shearwater_fwid_to_product_version() is
+ * a fork-local lookup helper reserved for consumer-side use in a follow-on
+ * change. It is not called from the main model-resolution path. */
+static inline void shearwater_fwid_suppress_unused (void) {
+	(void) shearwater_fwid_to_product_version;
 }

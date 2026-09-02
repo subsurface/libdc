@@ -46,6 +46,9 @@ extern "C" {
 
 #define PREDATOR 2
 #define PETREL   3
+/* PETREL2: Petrel 2 hardware reports ID_MODEL=PETREL (3); there is no
+ * distinct Product-Version value for it. FWID-based sub-model distinction
+ * is exposed via devinfo.devinfo_hw_id on live download. */
 #define PETREL2  PETREL
 #define NERD     4
 #define PERDIX   5
@@ -92,8 +95,6 @@ shearwater_common_timesync_utc (shearwater_common_device_t *device, const dc_dat
 dc_status_t shearwater_common_can_wdbi (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id);
 
 dc_status_t shearwater_common_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
-
-dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsigned int *model);
 
 #ifdef __cplusplus
 }

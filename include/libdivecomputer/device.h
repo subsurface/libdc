@@ -52,6 +52,13 @@ typedef struct dc_event_devinfo_t {
 	unsigned int model;
 	unsigned int firmware;
 	unsigned int serial;
+	/* Generic hardware identifier, 0 = unknown/not available.
+	 * On live download from devices that support it, this is populated
+	 * with the device's hardware type identifier (e.g. Shearwater FWID
+	 * from RDBI 0x8050). It supplements the coarse model field for
+	 * consumer-side sub-model differentiation. Consumers that do not use
+	 * this field are unaffected; the model field remains authoritative. */
+	unsigned int devinfo_hw_id;
 } dc_event_devinfo_t;
 
 typedef struct dc_event_clock_t {
