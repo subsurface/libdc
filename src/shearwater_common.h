@@ -46,7 +46,6 @@ extern "C" {
 
 #define PREDATOR 2
 #define PETREL   3
-#define PETREL2  PETREL
 #define NERD     4
 #define PERDIX   5
 #define PERDIXAI 6
@@ -58,6 +57,7 @@ extern "C" {
 #define TERN     12
 #define PEREGRINE_TX 13
 #define PERDIX3  14
+#define PETREL2  15
 
 #define NSTEPS    10000
 #define STEP(i,n) ((NSTEPS * (i) + (n) / 2) / (n))
