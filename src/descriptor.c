@@ -97,6 +97,38 @@ static const dc_iterator_vtable_t dc_descriptor_iterator_vtable = {
  * actually used to identify individual models, identical values are assigned.
  */
 
+/* Hardware-identifier to descriptor mapping.
+ *
+ * Some device families share a coarse model number (DC_EVENT_DEVINFO.model)
+ * across multiple marketed products; the hardware identifier (devinfo_hw_id)
+ * from DC_EVENT_DEVINFO can refine the selection to a specific descriptor.
+ * This table is best-effort: the FWID is only available on live download and
+ * may change across firmware updates. Consumers should treat a NULL result
+ * from dc_descriptor_find_by_hw_id() as "use the coarse model descriptor". */
+typedef struct {
+	dc_family_t family;
+	unsigned int model;
+	unsigned int hw_id;
+	const char *product;
+} dc_hw_id_entry_t;
+
+static const dc_hw_id_entry_t g_hw_id_map[] = {
+	/* Shearwater Petrel family.
+	 * Petrel 1 (model=3): hardware ids 0x0404, 0x0909 */
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0404, "Petrel"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0909, "Petrel"},
+	/* Petrel 2 (model=3): hardware ids 0x0505, 0x0808, 0x0838, 0x08A5,
+	 *                                   0x0B0B, 0x7828, 0x7B2C, 0x8838 */
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0505, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0808, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0838, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x08A5, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0B0B, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x7828, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x7B2C, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x8838, "Petrel 2"},
+};
+
 static const dc_descriptor_t g_descriptors[] = {
 	/* Suunto Solution */
 	{"Suunto", "Solution", DC_FAMILY_SUUNTO_SOLUTION, 0, DC_TRANSPORT_SERIAL, NULL},
@@ -1053,6 +1085,36 @@ void
 dc_descriptor_free (dc_descriptor_t *descriptor)
 {
 	return;
+}
+
+dc_descriptor_t *
+dc_descriptor_find_by_hw_id (dc_family_t family, unsigned int hw_id)
+{
+	if (hw_id == 0)
+		return NULL;
+
+	for (size_t i = 0; i < C_ARRAY_SIZE(g_hw_id_map); i++) {
+		if (g_hw_id_map[i].family != family || g_hw_id_map[i].hw_id != hw_id)
+			continue;
+
+		/* Matched — find the corresponding entry in g_descriptors[] by
+		 * family, model, and product name.  Returning a direct pointer
+		 * into the static table is safe: dc_descriptor_free() is a
+		 * no-op and g_descriptors[] has static storage duration. */
+		for (size_t j = 0; j < C_ARRAY_SIZE(g_descriptors); j++) {
+			if (g_descriptors[j].type == family &&
+			    g_descriptors[j].model == g_hw_id_map[i].model &&
+			    strcmp(g_descriptors[j].product, g_hw_id_map[i].product) == 0) {
+				return (dc_descriptor_t *) &g_descriptors[j];
+			}
+		}
+		/* hw_id matched the map but the descriptor was not found —
+		 * product name mismatch or g_descriptors[] was edited without
+		 * updating g_hw_id_map[]. */
+		return NULL;
+	}
+
+	return NULL;
 }
 
 const char *
