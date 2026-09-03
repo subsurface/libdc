@@ -36,6 +36,7 @@ dc_descriptor_get_type
 dc_descriptor_get_model
 dc_descriptor_get_transports
 dc_descriptor_filter
+dc_descriptor_find_by_hw_id
 
 dc_iostream_get_transport
 dc_iostream_set_timeout
