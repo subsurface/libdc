@@ -186,6 +186,7 @@ suunto_eon_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	devinfo.model = 0;
 	devinfo.firmware = 0;
 	devinfo.serial = array_convert_bcd2dec (answer + 244, 3);
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return DC_STATUS_SUCCESS;

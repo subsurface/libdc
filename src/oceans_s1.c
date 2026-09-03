@@ -575,6 +575,7 @@ oceans_s1_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, vo
 	devinfo.model = 0;
 	devinfo.firmware = major << 16 | minor;
 	devinfo.serial = 0;
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	dc_buffer_t *buffer = dc_buffer_new (4096);

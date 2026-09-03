@@ -377,6 +377,7 @@ liquivision_lynx_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	devinfo.model = array_uint16_le (device->info + 0);
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint32_le (device->more + 0);
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate the required amount of memory.
@@ -410,6 +411,7 @@ liquivision_lynx_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
 	devinfo.model = model;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint32_le (device->more + 0);
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the config segment.

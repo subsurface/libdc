@@ -100,7 +100,7 @@ static const dc_iterator_vtable_t dc_descriptor_iterator_vtable = {
 /* Hardware-identifier to descriptor mapping.
  *
  * Some device families share a coarse model number (DC_EVENT_DEVINFO.model)
- * across multiple marketed products; the hardware identifier (devinfo_hw_id)
+ * across multiple marketed products; the hardware identifier (hw_id)
  * from DC_EVENT_DEVINFO can refine the selection to a specific descriptor.
  * This table is best-effort: the FWID is only available on live download and
  * may change across firmware updates. Consumers should treat a NULL result

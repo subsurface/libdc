@@ -129,7 +129,7 @@ dc_descriptor_filter (const dc_descriptor_t *descriptor, dc_transport_t transpor
  *
  * Some device families share a coarse model number across multiple marketed
  * products. When a device reports a hardware identifier (via
- * DC_EVENT_DEVINFO.devinfo_hw_id), this function can find a more specific
+ * DC_EVENT_DEVINFO.hw_id), this function can find a more specific
  * descriptor than the model number alone provides. This is best-effort:
  * returns NULL if the hardware id is unknown or not in the table.
  *

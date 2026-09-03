@@ -418,6 +418,7 @@ divesoft_freedom_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
 	devinfo.model = rsp_version[0];
 	devinfo.firmware = array_uint24_be (rsp_version + 3);
 	devinfo.serial = array_convert_str2num (rsp_version + 10 + 5, 11);
+	devinfo.hw_id = 0;
 	device_event_emit(abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate memory for the dive list.

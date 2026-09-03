@@ -414,6 +414,7 @@ cressi_edy_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = 0;
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return device_dump_read (abstract, 0, dc_buffer_get_data (buffer),
@@ -438,6 +439,7 @@ cressi_edy_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, v
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = 0;
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the logbook data.

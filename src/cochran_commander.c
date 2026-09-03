@@ -937,7 +937,7 @@ cochran_commander_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 		devinfo.serial = array_uint32_word_be(data.config + layout->cf_serial_number);
 	else
 		devinfo.serial = array_uint32_le(data.config + layout->cf_serial_number);
-
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	unsigned int head_dive = 0, tail_dive = 0, dive_count = 0;

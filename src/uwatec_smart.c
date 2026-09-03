@@ -624,6 +624,7 @@ uwatec_smart_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	devinfo.model = model[0];
 	devinfo.firmware = bcd2dec (software[0]);
 	devinfo.serial = array_uint32_le (serial);
+	devinfo.hw_id = 0;
 	device_event_emit (&device->base, DC_EVENT_DEVINFO, &devinfo);
 
 	// Command parameters.

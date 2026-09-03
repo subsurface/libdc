@@ -58,7 +58,7 @@ typedef struct dc_event_devinfo_t {
 	 * from RDBI 0x8050). It supplements the coarse model field for
 	 * consumer-side sub-model differentiation. Consumers that do not use
 	 * this field are unaffected; the model field remains authoritative. */
-	unsigned int devinfo_hw_id;
+	unsigned int hw_id;
 } dc_event_devinfo_t;
 
 typedef struct dc_event_clock_t {

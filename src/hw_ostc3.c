@@ -854,6 +854,7 @@ hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, voi
 		else
 			devinfo.model = OSTC3;
 	}
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate memory.
@@ -1894,6 +1895,7 @@ hw_ostc3_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 		else
 			devinfo.model = OSTC3;
 	}
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate the required amount of memory.

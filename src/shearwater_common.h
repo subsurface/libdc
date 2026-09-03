@@ -48,7 +48,7 @@ extern "C" {
 #define PETREL   3
 /* PETREL2: Petrel 2 hardware reports ID_MODEL=PETREL (3); there is no
  * distinct Product-Version value for it. FWID-based sub-model distinction
- * is exposed via devinfo.devinfo_hw_id on live download. */
+ * is exposed via devinfo.hw_id on live download. */
 #define PETREL2  PETREL
 #define NERD     4
 #define PERDIX   5

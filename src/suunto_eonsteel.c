@@ -717,6 +717,7 @@ suunto_eonsteel_device_foreach(dc_device_t *abstract, dc_dive_callback_t callbac
 	devinfo.model = eon->model;
 	devinfo.firmware = array_uint32_be (eon->version + 0x20);
 	devinfo.serial = array_convert_str2num(eon->version + 0x10, 16);
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	rc = get_file_list(eon, &de);

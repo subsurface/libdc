@@ -460,6 +460,7 @@ divesystem_idive_device_foreach (dc_device_t *abstract, dc_dive_callback_t callb
 	devinfo.model = array_uint16_le (packet);
 	devinfo.firmware = array_uint32_le (packet + 2);
 	devinfo.serial = array_uint32_le (packet + 6);
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Emit a vendor event.

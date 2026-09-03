@@ -310,6 +310,7 @@ deepsix_excursion_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	devinfo.model = 0;
 	devinfo.firmware = array_uint16_be (rsp_software + 4);
 	devinfo.serial = array_convert_str2num (rsp_serial + 3, sizeof(rsp_serial) - 3);
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Firmware version 6+ uses the new commands.

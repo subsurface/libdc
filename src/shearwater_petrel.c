@@ -202,7 +202,7 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	// Attempt to read the hardware type (ID_HARDWARE, RDBI 0x8050) for
 	// consumer-side sub-model differentiation (e.g. Petrel 1 vs Petrel 2).
 	// Best-effort: FWID can change across firmware updates and stored logs
-	// do not carry it. Failure is non-fatal; devinfo_hw_id remains 0.
+	// do not carry it. Failure is non-fatal; hw_id remains 0.
 	unsigned char rsp_hardware[2] = {0};
 	unsigned int fwid = 0;
 	dc_status_t hw_rc = shearwater_common_rdbi (&device->base, ID_HARDWARE, rsp_hardware, sizeof(rsp_hardware), NULL);
@@ -216,7 +216,7 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	devinfo.model = rsp_model;
 	devinfo.firmware = firmware;
 	devinfo.serial = array_uint32_be (serial);
-	devinfo.devinfo_hw_id = fwid;
+	devinfo.hw_id = fwid;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the logbook type

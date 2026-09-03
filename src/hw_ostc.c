@@ -284,6 +284,7 @@ hw_ostc_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 		devinfo.model = 1; // OSTC Mk2
 	else
 		devinfo.model = 0; // OSTC
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return DC_STATUS_SUCCESS;

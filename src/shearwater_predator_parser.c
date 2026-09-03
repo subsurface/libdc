@@ -877,7 +877,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	// the coarse product family. This value is not the FWID; stored logs do not
 	// carry the FWID, so sub-model distinctions (e.g. Petrel 1 vs Petrel 2) are
 	// not recoverable on re-parse. Consumer-side refinement uses the FWID
-	// exposed via devinfo.devinfo_hw_id on live download.
+	// exposed via devinfo.hw_id on live download.
 	if (parser->final != UNDEFINED) {
 		parser->model = data[parser->final + 13];
 		DEBUG (abstract->context, "Device: model=%u, serial=%u, firmware=%u",

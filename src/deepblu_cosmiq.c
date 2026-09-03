@@ -408,6 +408,7 @@ deepblu_cosmiq_device_foreach (dc_device_t *abstract, dc_dive_callback_t callbac
 	devinfo.model = 0;
 	devinfo.firmware = fw[0] & 0x3F;
 	devinfo.serial = array_uint32_le (mac);
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	unsigned char ndives = 0;

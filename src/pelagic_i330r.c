@@ -593,6 +593,7 @@ pelagic_i330r_device_devinfo (dc_device_t *abstract, dc_event_progress_t *progre
 		bcd2dec (device->hwcal[12]) +
 		bcd2dec (device->hwcal[13]) * 100 +
 		bcd2dec (device->hwcal[14]) * 10000;
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return DC_STATUS_SUCCESS;

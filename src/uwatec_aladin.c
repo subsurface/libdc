@@ -249,6 +249,7 @@ uwatec_aladin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback
 	devinfo.model = data[HEADER + 0x7bc];
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint24_be (data + HEADER + 0x7ed);
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	rc = uwatec_aladin_extract_dives (abstract,

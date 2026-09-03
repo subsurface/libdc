@@ -383,6 +383,7 @@ cressi_leonardo_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	devinfo.model = data[0];
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint24_le (data + 1);
+	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return DC_STATUS_SUCCESS;
