@@ -233,10 +233,20 @@ cressi_goa_device_download (cressi_goa_device_t *device, dc_buffer_t *buffer, dc
 
 		if (transport == DC_TRANSPORT_BLE) {
 			// Read the data packet.
+			// On the first outer iteration (nbytes == 0) size has not yet been
+			// updated from the packet header, so always read a full SZ_DATA
+			// block.  On subsequent iterations cap the target to the number of
+			// remaining bytes so the BLE layer is not asked to read past the
+			// last partial packet into the 16-byte EOT end-of-transfer marker.
+			unsigned int target = SZ_DATA;
+			if (nbytes > 0 && (size - nbytes) < SZ_DATA) {
+				target = size - nbytes;
+			}
+
 			unsigned int packetsize = 0;
-			while (packetsize < SZ_DATA) {
+			while (packetsize < target) {
 				size_t len = 0;
-				status = dc_iostream_read (device->iostream, packet + 3 + packetsize, SZ_DATA - packetsize, &len);
+				status = dc_iostream_read (device->iostream, packet + 3 + packetsize, target - packetsize, &len);
 				if (status != DC_STATUS_SUCCESS) {
 					ERROR (abstract->context, "Failed to receive the answer.");
 					return status;
