@@ -194,6 +194,7 @@ struct dc_parser_sensor_calibration_t {
 static dc_status_t shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
+static dc_status_t shearwater_predator_parser_destroy (dc_parser_t *abstract);
 
 static dc_status_t shearwater_predator_parser_cache (shearwater_predator_parser_t *parser);
 
@@ -206,7 +207,7 @@ static const dc_parser_vtable_t shearwater_predator_parser_vtable = {
 	shearwater_predator_parser_get_datetime, /* datetime */
 	shearwater_predator_parser_get_field, /* fields */
 	shearwater_predator_parser_samples_foreach, /* samples_foreach */
-	NULL /* destroy */
+	shearwater_predator_parser_destroy /* destroy */
 };
 
 static const dc_parser_vtable_t shearwater_petrel_parser_vtable = {
@@ -218,7 +219,7 @@ static const dc_parser_vtable_t shearwater_petrel_parser_vtable = {
 	shearwater_predator_parser_get_datetime, /* datetime */
 	shearwater_predator_parser_get_field, /* fields */
 	shearwater_predator_parser_samples_foreach, /* samples_foreach */
-	NULL /* destroy */
+	shearwater_predator_parser_destroy /* destroy */
 };
 
 
@@ -239,6 +240,17 @@ shearwater_predator_find_gasmix (shearwater_predator_parser_t *parser, unsigned 
 	}
 
 	return i;
+}
+
+
+static dc_status_t
+shearwater_predator_parser_destroy (dc_parser_t *abstract)
+{
+	shearwater_predator_parser_t *parser = (shearwater_predator_parser_t *) abstract;
+
+	dc_field_cache_free (&parser->cache);
+
+	return DC_STATUS_SUCCESS;
 }
 
 
@@ -474,6 +486,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	if (parser->cached) {
 		return DC_STATUS_SUCCESS;
 	}
+	dc_field_cache_free (&parser->cache);
 	memset(&parser->cache, 0, sizeof(parser->cache));
 
 	// Log versions before 6 weren't reliably stored in the data, but

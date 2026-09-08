@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "platform.h"
@@ -118,4 +119,15 @@ dc_field_get(dc_field_cache_t *cache, dc_field_type_t type, unsigned int flags, 
 	}
 
 	return DC_STATUS_UNSUPPORTED;
+}
+
+void
+dc_field_cache_free (dc_field_cache_t *cache)
+{
+	for (unsigned int i = 0; i < MAXSTRINGS; i++) {
+		free ((char *) cache->strings[i].value);
+		cache->strings[i].value = NULL;
+		cache->strings[i].desc = NULL;
+	}
+	cache->initialized &= ~(1u << DC_FIELD_STRING);
 }
