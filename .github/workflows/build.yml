@@ -198,5 +198,6 @@ jobs:
       - run: autoreconf --install --force
       - run: ./configure
       - run: make
-      - name: Run build and distcheck (parser coverage requires sample fixtures wired in separately)
-        run: make distcheck
+      - run: make distcheck
+      - name: Run parse fixtures
+        run: test/run-parse.sh

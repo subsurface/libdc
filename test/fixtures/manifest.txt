@@ -1,0 +1,8 @@
+# Parse fixture manifest
+# Format: filename|vendor|product
+# Used by test/run-parse.sh to verify each blob with the correct descriptor.
+# All dives are the owner's own recordings, cleared for redistribution under
+# the library licence. No GPS or personal location data is present.
+shearwater_petrel2-0001.bin|Shearwater|Petrel 2
+hw_ostc5-0001.bin|Heinrichs Weikamp|OSTC 5
+garmin_descent_mk1-0001.bin|Garmin|Descent Mk1
