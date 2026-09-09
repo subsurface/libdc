@@ -1224,7 +1224,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				if ((status & PPO2_EXTERNAL) == 0) {
 					double calculated_ppo2 = data[offset + pnf + 6] / 100.0;
 
-					if (userdata) {
+					if (!callback && userdata) {
 						struct dc_parser_sensor_calibration_t *out = (struct dc_parser_sensor_calibration_t *)userdata;
 
 						out->external_ppo2_used = true;
