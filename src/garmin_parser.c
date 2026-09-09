@@ -366,6 +366,8 @@ garmin_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned c
 		return DC_STATUS_NOMEMORY;
 	}
 
+	memset(&parser->cache, 0, sizeof(parser->cache));
+
 	garmin_parser_set_data(parser, data, size);
 
 	*out = (dc_parser_t *) parser;

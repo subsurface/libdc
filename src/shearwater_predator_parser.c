@@ -279,6 +279,8 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, const
 		return DC_STATUS_NOMEMORY;
 	}
 
+	memset(&parser->cache, 0, sizeof(parser->cache));
+
 	// Set the default values.
 	parser->model = model;
 	parser->petrel = petrel;
