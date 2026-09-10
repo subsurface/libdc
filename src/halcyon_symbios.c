@@ -296,7 +296,7 @@ halcyon_symbios_download (halcyon_symbios_device_t *device, dc_event_progress_t 
 		unsigned int nretries = 0;
 		while ((status = halcyon_symbios_recv (device, block, payload, sizeof(payload), &len, NULL)) != DC_STATUS_SUCCESS) {
 			// Abort if the error is fatal.
-			if (status != DC_STATUS_PROTOCOL) {
+			if (status != DC_STATUS_PROTOCOL && status != DC_STATUS_TIMEOUT) {
 				ERROR (abstract->context, "Failed to receive the answer.");
 				goto error_exit;
 			}
@@ -396,8 +396,8 @@ halcyon_symbios_device_open (dc_device_t **out, dc_context_t *context, dc_iostre
 	device->iostream = iostream;
 	memset(device->fingerprint, 0, sizeof(device->fingerprint));
 
-	// Set the timeout for receiving data (3000ms).
-	status = dc_iostream_set_timeout (device->iostream, 3000);
+	// Set the timeout for receiving data (5000ms).
+	status = dc_iostream_set_timeout (device->iostream, 5000);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the timeout.");
 		goto error_free;
