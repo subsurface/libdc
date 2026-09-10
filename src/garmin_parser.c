@@ -327,6 +327,7 @@ static dc_status_t garmin_parser_set_data (garmin_parser_t *garmin, const unsign
 static dc_status_t garmin_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t garmin_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t garmin_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
+static dc_status_t garmin_parser_destroy (dc_parser_t *abstract);
 
 static const dc_parser_vtable_t garmin_parser_vtable = {
 	sizeof(garmin_parser_t),
@@ -337,8 +338,18 @@ static const dc_parser_vtable_t garmin_parser_vtable = {
 	garmin_parser_get_datetime, /* datetime */
 	garmin_parser_get_field, /* fields */
 	garmin_parser_samples_foreach, /* samples_foreach */
-	NULL /* destroy */
+	garmin_parser_destroy /* destroy */
 };
+
+static dc_status_t
+garmin_parser_destroy (dc_parser_t *abstract)
+{
+	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
+
+	dc_field_cache_free (&garmin->cache);
+
+	return DC_STATUS_SUCCESS;
+}
 
 dc_status_t
 garmin_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size)
@@ -354,6 +365,8 @@ garmin_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned c
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
+
+	memset(&parser->cache, 0, sizeof(parser->cache));
 
 	garmin_parser_set_data(parser, data, size);
 
