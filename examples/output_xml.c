@@ -28,6 +28,21 @@
 #include "output-private.h"
 #include "utils.h"
 
+// AI-generated (Claude)
+// Write a string to a FILE, replacing XML special characters with entities.
+static void
+xml_escape_text (FILE *ostream, const char *s)
+{
+	for (; *s; s++) {
+		switch (*s) {
+		case '&':  fputs ("&amp;",  ostream); break;
+		case '<':  fputs ("&lt;",   ostream); break;
+		case '>':  fputs ("&gt;",   ostream); break;
+		default:   fputc (*s,       ostream); break;
+		}
+	}
+}
+
 static dc_status_t dctool_xml_output_write (dctool_output_t *output, dc_parser_t *parser, const unsigned char data[], unsigned int size, const unsigned char fingerprint[], unsigned int fsize);
 static dc_status_t dctool_xml_output_free (dctool_output_t *output);
 
@@ -98,7 +113,7 @@ sample_cb (dc_sample_type_t type, const dc_sample_value_t *value, void *userdata
 		"safety stop (voluntary)", "safety stop (mandatory)", "deepstop",
 		"ceiling (safety stop)", "floor", "divetime", "maxdepth",
 		"OLF", "PO2", "airtime", "rgbm", "heading", "tissue level warning",
-		"gaschange2"};
+		"gaschange2", "string"};
 	static const char *decostop[] = {
 		"ndl", "safety", "deco", "deep"};
 
@@ -134,8 +149,17 @@ sample_cb (dc_sample_type_t type, const dc_sample_value_t *value, void *userdata
 		break;
 	case DC_SAMPLE_EVENT:
 		if (value->event.type != SAMPLE_EVENT_GASCHANGE && value->event.type != SAMPLE_EVENT_GASCHANGE2) {
-			fprintf (sampledata->ostream, "   <event type=\"%u\" time=\"%u\" flags=\"%u\" value=\"%u\">%s</event>\n",
-				value->event.type, value->event.time, value->event.flags, value->event.value, events[value->event.type]);
+			fprintf (sampledata->ostream, "   <event type=\"%u\" time=\"%u\" flags=\"%u\" value=\"%u\">",
+				value->event.type, value->event.time, value->event.flags, value->event.value);
+			if (value->event.type == SAMPLE_EVENT_STRING && value->event.name != NULL) {
+				// event.name is device-supplied text; XML-escape it before emitting.
+				xml_escape_text (sampledata->ostream, value->event.name);
+			} else if (value->event.type < sizeof (events) / sizeof (events[0])) {
+				fputs (events[value->event.type], sampledata->ostream);
+			} else {
+				fputs ("unknown", sampledata->ostream);
+			}
+			fputs ("</event>\n", sampledata->ostream);
 		}
 		break;
 	case DC_SAMPLE_RBT:
