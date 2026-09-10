@@ -307,6 +307,15 @@ halcyon_symbios_download (halcyon_symbios_device_t *device, dc_event_progress_t 
 				goto error_exit;
 			}
 
+			// If the error was a timeout, the packet may have arrived
+			// late and be sitting in the receive queue.  Flush it before
+			// requesting a re-transmission to avoid reading the stale
+			// copy instead of the retransmitted block.
+			if (status == DC_STATUS_TIMEOUT) {
+				dc_iostream_sleep (device->iostream, 300);
+				dc_iostream_purge (device->iostream, DC_DIRECTION_INPUT);
+			}
+
 			// Send a NAK to request a re-transmission.
 			status = halcyon_symbios_send (device, NAK, NULL, 0);
 			if (status != DC_STATUS_SUCCESS) {
