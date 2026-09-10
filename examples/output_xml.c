@@ -38,7 +38,7 @@ xml_escape_text (FILE *ostream, const char *s)
 		case '&':  fputs ("&amp;",  ostream); break;
 		case '<':  fputs ("&lt;",   ostream); break;
 		case '>':  fputs ("&gt;",   ostream); break;
-		default:   fputc (*s,       ostream); break;
+		default:   fputc ((unsigned char)*s, ostream); break;
 		}
 	}
 }
