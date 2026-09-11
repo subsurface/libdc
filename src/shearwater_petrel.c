@@ -212,11 +212,11 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	}
 
 	// Emit a device info event.
-	dc_event_devinfo_t devinfo = {0};
+	dc_event_devinfo_t devinfo;
 	devinfo.model = rsp_model;
 	devinfo.firmware = firmware;
 	devinfo.serial = array_uint32_be (serial);
-	devinfo.hw_id = fwid;
+	device_set_hw_id (abstract, fwid);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the logbook type

@@ -213,7 +213,6 @@ mares_darwin_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint16_be (data + 8);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return status;

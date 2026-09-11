@@ -491,7 +491,6 @@ halcyon_symbios_device_foreach (dc_device_t *abstract, dc_dive_callback_t callba
 	devinfo.model = info[5];
 	devinfo.firmware = array_uint24_be (info + 16);
 	devinfo.serial = array_uint32_le (info);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	DEBUG (abstract->context, "Device: model=%u, serial=%u, firmware=%u.%u.%u, hw=%u, bt=%u.%u, battery=%u, pressure=%u, errorbits=%u",

@@ -265,7 +265,6 @@ suunto_common2_device_foreach (dc_device_t *abstract, dc_dive_callback_t callbac
 	devinfo.model = device->version[0];
 	devinfo.firmware = array_uint24_be (device->version + 1);
 	devinfo.serial = array_convert_bin2dec (serial, 4);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the header bytes.

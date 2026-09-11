@@ -357,7 +357,6 @@ sporasub_sp2_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	devinfo.model = 0;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint16_be (device->version + 1);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Emit a vendor event.

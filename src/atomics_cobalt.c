@@ -333,7 +333,6 @@ atomics_cobalt_device_foreach (dc_device_t *abstract, dc_dive_callback_t callbac
 		devinfo.serial *= 10;
 		devinfo.serial += device->version[i] - '0';
 	}
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate a memory buffer.

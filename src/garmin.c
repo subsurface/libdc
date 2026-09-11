@@ -719,7 +719,6 @@ garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void 
 		if (devinfo_p) {
 			// first time we came through here, let's emit the
 			// devinfo and vendor events
-			devinfo_p->hw_id = 0;
 			device_event_emit (abstract, DC_EVENT_DEVINFO, devinfo_p);
 			devinfo_p = NULL;
 		}

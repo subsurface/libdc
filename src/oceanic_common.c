@@ -258,7 +258,6 @@ oceanic_common_device_devinfo (dc_device_t *abstract, dc_event_progress_t *progr
 			(id[11] & 0x0F) * 100000 + ((id[11] & 0xF0) >> 4) * 10000 +
 			(id[12] & 0x0F) * 1000   + ((id[12] & 0xF0) >> 4) * 100 +
 			(id[13] & 0x0F) * 10     + ((id[13] & 0xF0) >> 4) * 1;
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return status;

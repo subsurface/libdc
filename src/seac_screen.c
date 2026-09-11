@@ -492,7 +492,6 @@ seac_screen_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 		devinfo.firmware = array_uint32_le (device->info + 0x11C);
 	}
 	devinfo.serial = array_uint32_le (device->info + 0x10);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Emit a vendor event.
@@ -532,7 +531,6 @@ seac_screen_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, 
 		devinfo.firmware = array_uint32_le (device->info + 0x11C);
 	}
 	devinfo.serial = array_uint32_le (device->info + 0x010);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Emit a vendor event.

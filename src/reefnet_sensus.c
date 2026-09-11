@@ -242,7 +242,6 @@ reefnet_sensus_handshake (reefnet_sensus_device_t *device)
 	devinfo.model = handshake[2] - '0';
 	devinfo.firmware = handshake[3] - '0';
 	devinfo.serial = array_uint16_le (handshake + 6);
-	devinfo.hw_id = 0;
 	device_event_emit (&device->base, DC_EVENT_DEVINFO, &devinfo);
 
 	// Emit a vendor event.

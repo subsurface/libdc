@@ -572,7 +572,6 @@ cressi_goa_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, v
 	devinfo.model = model;
 	devinfo.firmware = firmware;
 	devinfo.serial = serial;
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate memory for the logbook data.

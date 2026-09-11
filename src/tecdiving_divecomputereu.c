@@ -451,7 +451,6 @@ tecdiving_divecomputereu_device_foreach (dc_device_t *abstract, dc_dive_callback
 	devinfo.model = 0;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint16_be (device->version + 0x22) << 16 | array_uint16_be (device->version + 0x26);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Emit a vendor event.

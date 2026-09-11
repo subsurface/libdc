@@ -822,7 +822,6 @@ mares_iconhd_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint32_le (data + 0x0C);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return status;
@@ -849,7 +848,6 @@ mares_iconhd_device_foreach_raw (dc_device_t *abstract, dc_dive_callback_t callb
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint32_le (serial);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Enable progress notifications.
@@ -1103,7 +1101,6 @@ mares_iconhd_device_foreach_object (dc_device_t *abstract, dc_dive_callback_t ca
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = serial;
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Erase the buffer.

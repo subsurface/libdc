@@ -559,7 +559,6 @@ mclean_extreme_device_foreach(dc_device_t *abstract, dc_dive_callback_t callback
 	devinfo.model = 0;
 	devinfo.firmware = array_uint32_le (firmware);
 	devinfo.serial = hashcode (serial, serial_len);
-	devinfo.hw_id = 0;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the computer configuration.

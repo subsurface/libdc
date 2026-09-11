@@ -88,6 +88,9 @@ dc_device_deallocate (dc_device_t *device);
 void
 device_event_emit (dc_device_t *device, dc_event_type_t event, const void *data);
 
+void
+device_set_hw_id (dc_device_t *device, unsigned int hw_id);
+
 int
 device_is_cancelled (dc_device_t *device);
 
