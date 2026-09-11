@@ -362,6 +362,7 @@ dc_parser_set_density (dc_parser_t *parser, double density);
 dc_status_t
 dc_parser_get_datetime (dc_parser_t *parser, dc_datetime_t *datetime);
 
+/* DC_FIELD_STRING values are caller-owned and must be freed after use. */
 dc_status_t
 dc_parser_get_field (dc_parser_t *parser, dc_field_type_t type, unsigned int flags, void *value);
 
