@@ -501,9 +501,10 @@ device_event_emit (dc_device_t *device, dc_event_type_t event, const void *data)
 	switch (event) {
 	case DC_EVENT_DEVINFO:
 	{
-		unsigned int hw_id = device->devinfo.hw_id;
-		device->devinfo = *(const dc_event_devinfo_t *) data;
-		device->devinfo.hw_id = hw_id;
+		const dc_event_devinfo_t *devinfo = (const dc_event_devinfo_t *) data;
+		device->devinfo.model = devinfo->model;
+		device->devinfo.firmware = devinfo->firmware;
+		device->devinfo.serial = devinfo->serial;
 		data = &device->devinfo;
 	}
 		break;
