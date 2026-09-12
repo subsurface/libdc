@@ -312,8 +312,17 @@ halcyon_symbios_download (halcyon_symbios_device_t *device, dc_event_progress_t 
 			// requesting a re-transmission to avoid reading the stale
 			// copy instead of the retransmitted block.
 			if (status == DC_STATUS_TIMEOUT) {
-				dc_iostream_sleep (device->iostream, 300);
-				dc_iostream_purge (device->iostream, DC_DIRECTION_INPUT);
+				status = dc_iostream_sleep (device->iostream, 300);
+				if (status != DC_STATUS_SUCCESS) {
+					ERROR (abstract->context, "Failed to wait for late data.");
+					goto error_exit;
+				}
+
+				status = dc_iostream_purge (device->iostream, DC_DIRECTION_INPUT);
+				if (status != DC_STATUS_SUCCESS) {
+					ERROR (abstract->context, "Failed to purge late data.");
+					goto error_exit;
+				}
 			}
 
 			// Send a NAK to request a re-transmission.
