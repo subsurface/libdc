@@ -312,8 +312,10 @@ halcyon_symbios_download (halcyon_symbios_device_t *device, dc_event_progress_t 
 			// requesting a re-transmission to avoid reading the stale
 			// copy instead of the retransmitted block.
 			if (status == DC_STATUS_TIMEOUT) {
-				status = dc_iostream_sleep (device->iostream, 300);
-				if (status != DC_STATUS_SUCCESS) {
+				// AI-generated (Claude)
+				// Poll processes transport events while waiting for late data.
+				status = dc_iostream_poll (device->iostream, 300);
+				if (status != DC_STATUS_SUCCESS && status != DC_STATUS_TIMEOUT) {
 					ERROR (abstract->context, "Failed to wait for late data.");
 					goto error_exit;
 				}
