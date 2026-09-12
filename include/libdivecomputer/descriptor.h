@@ -124,6 +124,26 @@ dc_descriptor_get_transports (const dc_descriptor_t *descriptor);
 int
 dc_descriptor_filter (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
+/**
+ * Find a descriptor by hardware identifier.
+ *
+ * Some device families share a coarse model number across multiple marketed
+ * products. When a device reports a hardware identifier (via
+ * DC_EVENT_DEVINFO.hw_id), this function can find a more specific
+ * descriptor than the model number alone provides. This is best-effort:
+ * returns NULL if the hardware id is unknown or not in the table.
+ *
+ * The returned descriptor is a direct reference to an internal table entry
+ * and must be released with dc_descriptor_free(), which is safe to call on
+ * such a reference.
+ *
+ * @param[in]  family  The device family type.
+ * @param[in]  hw_id   The hardware identifier from DC_EVENT_DEVINFO.
+ * @returns A descriptor on success, or NULL if no match.
+ */
+dc_descriptor_t *
+dc_descriptor_find_by_hw_id (dc_family_t family, unsigned int hw_id);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

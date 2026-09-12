@@ -190,16 +190,33 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 	// Convert to a number.
 	unsigned int firmware = str2num (rsp_firmware, rsp_firmware_length, 1);
 
-	unsigned int model = 0;
-	rc = shearwater_common_get_model (&device->base, &model);
-	if (rc != DC_STATUS_SUCCESS)
+	// Read the model number (ID_MODEL, RDBI 0x8060) — Product-Version byte,
+	// authoritative for the coarse product family (aligns with upstream libdc).
+	unsigned char rsp_model = 0;
+	rc = shearwater_common_rdbi (&device->base, ID_MODEL, &rsp_model, sizeof(rsp_model), NULL);
+	if (rc != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to read the model number.");
 		return rc;
+	}
+
+	// Attempt to read the hardware type (ID_HARDWARE, RDBI 0x8050) for
+	// consumer-side sub-model differentiation (e.g. Petrel 1 vs Petrel 2).
+	// Best-effort: FWID can change across firmware updates and stored logs
+	// do not carry it. Failure is non-fatal; hw_id remains 0.
+	unsigned char rsp_hardware[2] = {0};
+	unsigned int fwid = 0;
+	dc_status_t hw_rc = shearwater_common_rdbi (&device->base, ID_HARDWARE, rsp_hardware, sizeof(rsp_hardware), NULL);
+	if (hw_rc == DC_STATUS_SUCCESS) {
+		fwid = array_uint16_be (rsp_hardware);
+		DEBUG (abstract->context, "Hardware type (FWID): 0x%04x", fwid);
+	}
 
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
-	devinfo.model = model;
+	devinfo.model = rsp_model;
 	devinfo.firmware = firmware;
 	devinfo.serial = array_uint32_be (serial);
+	device_set_hw_id (abstract, fwid);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Read the logbook type
@@ -356,15 +373,17 @@ shearwater_petrel_device_foreach (dc_device_t *abstract, dc_dive_callback_t call
 static dc_status_t
 shearwater_petrel_device_timesync (dc_device_t *abstract, const dc_datetime_t *datetime)
 {
-	dc_status_t status = DC_STATUS_SUCCESS;
 	shearwater_common_device_t *device = (shearwater_common_device_t *) abstract;
 
-	unsigned int model = 0;
-	status = shearwater_common_get_model (device, &model);
-	if (status != DC_STATUS_SUCCESS)
+	// Read ID_MODEL (RDBI 0x8060) directly to determine time-sync variant.
+	unsigned char rsp_model = 0;
+	dc_status_t status = shearwater_common_rdbi (device, ID_MODEL, &rsp_model, sizeof(rsp_model), NULL);
+	if (status != DC_STATUS_SUCCESS) {
+		ERROR (abstract->context, "Failed to read the model number.");
 		return status;
+	}
 
-	if (model == TERIC) {
+	if (rsp_model == TERIC) {
 		return shearwater_common_timesync_utc (device, datetime);
 	} else {
 		return shearwater_common_timesync_local (device, datetime);

@@ -462,6 +462,13 @@ dc_device_close (dc_device_t *device)
 }
 
 
+// AI-generated (Claude)
+void
+device_set_hw_id (dc_device_t *device, unsigned int hw_id)
+{
+	device->devinfo.hw_id = hw_id;
+}
+
 void
 device_event_emit (dc_device_t *device, dc_event_type_t event, const void *data)
 {
@@ -493,7 +500,13 @@ device_event_emit (dc_device_t *device, dc_event_type_t event, const void *data)
 	// Cache the event data.
 	switch (event) {
 	case DC_EVENT_DEVINFO:
-		device->devinfo = *(const dc_event_devinfo_t *) data;
+	{
+		const dc_event_devinfo_t *devinfo = (const dc_event_devinfo_t *) data;
+		device->devinfo.model = devinfo->model;
+		device->devinfo.firmware = devinfo->firmware;
+		device->devinfo.serial = devinfo->serial;
+		data = &device->devinfo;
+	}
 		break;
 	case DC_EVENT_CLOCK:
 		device->clock = *(const dc_event_clock_t *) data;
