@@ -127,6 +127,20 @@ static const dc_hw_id_entry_t g_hw_id_map[] = {
 	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x7828, "Petrel 2"},
 	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x7B2C, "Petrel 2"},
 	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x8838, "Petrel 2"},
+	/* HW OSTC3: preserve the descriptor resolution used before model IDs
+	 * followed the protocol semantics. Duplicate legacy IDs retain the first
+	 * matching descriptor from the former table. */
+	{DC_FAMILY_HW_OSTC3, 0,    0x11,   "OSTC Nano"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x13,   "OSTC Plus"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x1A,   "OSTC Plus"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x1B,   "OSTC 2"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x05,   "OSTC cR"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x07,   "OSTC cR"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x12,   "OSTC Sport"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x33,   "OSTC 2 TR"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x0A,   "OSTC 3"},
+	{DC_FAMILY_HW_OSTC3, 0x43, 0x3B43, "OSTC 4"},
+	{DC_FAMILY_HW_OSTC3, 0x44, 0x3B44, "OSTC 5"},
 };
 
 static const dc_descriptor_t g_descriptors[] = {
@@ -363,22 +377,15 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Mares", "Puck Pro EZ",       DC_FAMILY_MARES_ICONHD , 0x35, DC_TRANSPORT_BLE, dc_filter_mares},
 	{"Mares", "Puck Pro Ultra",    DC_FAMILY_MARES_ICONHD , 0x35, DC_TRANSPORT_BLE, dc_filter_mares},
 	/* Heinrichs Weikamp */
-	/* Current models */
-	{"Heinrichs Weikamp", "OSTC Nano",  DC_FAMILY_HW_OSTC3, 0x11, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 5",     DC_FAMILY_HW_OSTC3, 0x3B44, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x1A, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x11, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x1B, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	/* Historic models */
-	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x3B43, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x12, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 2 TR",  DC_FAMILY_HW_OSTC3, 0x33, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 2 TR",  DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Nano",  DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x43, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 5",     DC_FAMILY_HW_OSTC3, 0x44, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC 2N",  DC_FAMILY_HW_OSTC, 2, DC_TRANSPORT_SERIAL, NULL},
 	{"Heinrichs Weikamp", "OSTC 2C",  DC_FAMILY_HW_OSTC, 3, DC_TRANSPORT_SERIAL, NULL},
 	{"Heinrichs Weikamp", "OSTC Mk2", DC_FAMILY_HW_OSTC, 1, DC_TRANSPORT_SERIAL, NULL},

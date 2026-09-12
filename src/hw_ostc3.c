@@ -700,11 +700,12 @@ hw_ostc3_device_init (hw_ostc3_device_t *device, hw_ostc3_state_t state)
 		device->hardware = hardware_prefix;
 		device->feature = array_uint16_be(hardware2 + 2);
 		device->firmware = array_uint16_be (version + 2);
+		device->model = 0;
 	} else {
 		device->hardware = (hardware_prefix << 8) | hardware2[4];
 		device->firmware = array_uint16_le (version + 2);
+		device->model = hardware2[4];
 	}
-	device->model = hardware2[4];
 	device->serial = array_uint16_le (version + 0);
 
 	DEBUG (abstract->context, "Device: hardware=%04x, feature=%04x, model=%02x",
@@ -818,8 +819,9 @@ hw_ostc3_device_hardware (dc_device_t *abstract, unsigned char data[], unsigned 
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
 
-	// Send the command.
-	rc = hw_ostc3_device_id (device, data, size);
+	// Send the requested command without synthesising a HARDWARE2 reply.
+	const unsigned char cmd = size == SZ_HARDWARE2 ? HARDWARE2 : HARDWARE;
+	rc = hw_ostc3_transfer (device, NULL, cmd, NULL, 0, data, size, NULL, NODELAY);
 	if (rc != DC_STATUS_SUCCESS)
 		return rc;
 
@@ -843,17 +845,10 @@ hw_ostc3_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, voi
 
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
+	device_set_hw_id (abstract, device->hardware);
 	devinfo.firmware = device->firmware;
 	devinfo.serial = device->serial;
-	if (device->hardware != UNKNOWN) {
-		devinfo.model = device->hardware;
-	} else {
-		// Fallback to the serial number.
-		if (devinfo.serial > 10000)
-			devinfo.model = SPORT;
-		else
-			devinfo.model = OSTC3;
-	}
+	devinfo.model = device->model;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate memory.
@@ -1883,17 +1878,10 @@ hw_ostc3_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 
 	// Emit a device info event.
 	dc_event_devinfo_t devinfo;
+	device_set_hw_id (abstract, device->hardware);
 	devinfo.firmware = device->firmware;
 	devinfo.serial = device->serial;
-	if (device->hardware != UNKNOWN) {
-		devinfo.model = device->hardware;
-	} else {
-		// Fallback to the serial number.
-		if (devinfo.serial > 10000)
-			devinfo.model = SPORT;
-		else
-			devinfo.model = OSTC3;
-	}
+	devinfo.model = device->model;
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Allocate the required amount of memory.
