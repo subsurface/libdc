@@ -524,6 +524,7 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 			break;
 		fprintf (output->ostream, "<extradata key='%s' value='%s' />\n",
 			str.desc, str.value);
+		free ((void *) str.value);
 	}
 
 	// Parse the GPS location.
