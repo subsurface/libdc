@@ -386,6 +386,8 @@ dc_parser_get_device_info (dc_parser_t *parser, dc_event_devinfo_t *devinfo)
 	if (parser == NULL || devinfo == NULL)
 		return DC_STATUS_INVALIDARGS;
 
+	memset(devinfo, 0, sizeof(*devinfo));
+
 	if (parser->vtable->type == DC_FAMILY_GARMIN) {
 		garmin_parser_is_dive(parser, devinfo);
 		return DC_STATUS_SUCCESS;
