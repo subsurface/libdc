@@ -174,6 +174,7 @@ struct shearwater_predator_parser_t {
 	unsigned int calibrated;
 	double calibration[3];
 	bool needs_divecan_calibration_estimate;
+	bool external_ppo2_used;
 	unsigned int divemode;
 	unsigned int serial;
 	unsigned int units;
@@ -185,7 +186,6 @@ struct shearwater_predator_parser_t {
 };
 
 struct dc_parser_sensor_calibration_t {
-	bool external_ppo2_used;
 	double sum_ppo2;
 	double sum_calculated_ppo2;
 	unsigned int ppo2_sample_count;
@@ -197,6 +197,8 @@ static dc_status_t shearwater_predator_parser_samples_foreach (dc_parser_t *abst
 static dc_status_t shearwater_predator_parser_destroy (dc_parser_t *abstract);
 
 static dc_status_t shearwater_predator_parser_cache (shearwater_predator_parser_t *parser);
+static dc_status_t shearwater_predator_parser_calibration_prepass (shearwater_predator_parser_t *parser, struct dc_parser_sensor_calibration_t *calibration);
+static dc_status_t shearwater_predator_parser_samples_foreach_internal (shearwater_predator_parser_t *parser, dc_sample_callback_t callback, void *userdata, struct dc_parser_sensor_calibration_t *calibration);
 
 static const dc_parser_vtable_t shearwater_predator_parser_vtable = {
 	sizeof(shearwater_predator_parser_t),
@@ -327,6 +329,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, const
 		parser->calibration[i] = 0.0;
 	}
 	parser->needs_divecan_calibration_estimate = false;
+	parser->external_ppo2_used = false;
 	parser->units = METRIC;
 	parser->density = DEF_DENSITY_SALT;
 	parser->atmospheric = DEF_ATMOSPHERIC / (BAR / 1000);
@@ -966,7 +969,9 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	}
 
 	struct dc_parser_sensor_calibration_t userdata = { 0 };
-	dc_status_t rc = shearwater_predator_parser_samples_foreach(abstract, NULL, (void *)&userdata);
+	dc_status_t rc = DC_STATUS_SUCCESS;
+	if (shearwater_predator_is_ccr(divemode))
+		rc = shearwater_predator_parser_calibration_prepass(parser, &userdata);
 
 	bool calibrated = false;
 	if (parser->needs_divecan_calibration_estimate) {
@@ -989,7 +994,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	}
 
 	if (!calibrated) {
-		add_sensor_state(parser, userdata.external_ppo2_used);
+		add_sensor_state(parser, parser->external_ppo2_used);
 	}
 
 	static const char *name = "Divemode";
@@ -1160,18 +1165,12 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 }
 
 
+// AI-generated (Claude)
 static dc_status_t
-shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
+shearwater_predator_parser_samples_foreach_internal (shearwater_predator_parser_t *parser, dc_sample_callback_t callback, void *userdata, struct dc_parser_sensor_calibration_t *calibration)
 {
-	shearwater_predator_parser_t *parser = (shearwater_predator_parser_t *) abstract;
-
-	const unsigned char *data = abstract->data;
-	unsigned int size = abstract->size;
-
-	// Cache the parser data.
-	dc_status_t rc = shearwater_predator_parser_cache (parser);
-	if (rc != DC_STATUS_SUCCESS)
-		return rc;
+	const unsigned char *data = parser->base.data;
+	unsigned int size = parser->base.size;
 
 	// Previous gas mix.
 	unsigned int o2_previous = UNDEFINED, he_previous = UNDEFINED, dil_previous = UNDEFINED;
@@ -1244,10 +1243,8 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				if ((status & PPO2_EXTERNAL) == 0) {
 					double calculated_ppo2 = data[offset + pnf + 6] / 100.0;
 
-					if (!callback && userdata) {
-						struct dc_parser_sensor_calibration_t *out = (struct dc_parser_sensor_calibration_t *)userdata;
-
-						out->external_ppo2_used = true;
+					if (calibration) {
+						parser->external_ppo2_used = true;
 
 						if (parser->needs_divecan_calibration_estimate) {
 							double ppo2_sum = 0.0;
@@ -1269,9 +1266,9 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 
 							double ppo2 = ppo2_sum / ppo2_count;
 
-							out->sum_ppo2 += ppo2;
-							out->sum_calculated_ppo2 += calculated_ppo2;
-							out->ppo2_sample_count++;
+							calibration->sum_ppo2 += ppo2;
+							calibration->sum_calculated_ppo2 += calculated_ppo2;
+							calibration->ppo2_sample_count++;
 						}
 					}
 
@@ -1327,7 +1324,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				(o2 != 0 || he != 0)) {
 				unsigned int idx = shearwater_predator_find_gasmix (parser, o2, he, ccr);
 				if (idx >= parser->ngasmixes) {
-					ERROR (abstract->context, "Invalid gas mix.");
+					ERROR (parser->base.context, "Invalid gas mix.");
 					return DC_STATUS_DATAFORMAT;
 				}
 
@@ -1489,4 +1486,24 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 	}
 
 	return DC_STATUS_SUCCESS;
+}
+
+
+static dc_status_t
+shearwater_predator_parser_calibration_prepass (shearwater_predator_parser_t *parser, struct dc_parser_sensor_calibration_t *calibration)
+{
+	return shearwater_predator_parser_samples_foreach_internal(parser, NULL, NULL, calibration);
+}
+
+
+static dc_status_t
+shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
+{
+	shearwater_predator_parser_t *parser = (shearwater_predator_parser_t *) abstract;
+
+	dc_status_t rc = shearwater_predator_parser_cache (parser);
+	if (rc != DC_STATUS_SUCCESS)
+		return rc;
+
+	return shearwater_predator_parser_samples_foreach_internal(parser, callback, userdata, NULL);
 }
