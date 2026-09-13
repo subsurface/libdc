@@ -540,12 +540,25 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Halcyon", "Symbios Handset", DC_FAMILY_HALCYON_SYMBIOS, 7, DC_TRANSPORT_BLE, dc_filter_halcyon},
 
 	// Not merged upstream yet
-	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model) */
-	/* for the Mk1 we are using the model of the global model */
-	/* for the Mk2/Mk3 we are using the model of the Mk2 global model */
-	/* see garmin_parser.c for a more comprehensive list of models */
-	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, NULL},
-	{"Garmin", "Descent Mk2(i)/Mk3(i)(S)/G1/G2/X50i", DC_FAMILY_GARMIN, 3258, DC_TRANSPORT_USBSTORAGE, NULL},
+	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model). */
+	{"Garmin", "Descent™ G1 / G1 Solar", DC_FAMILY_GARMIN, 4005, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ G2", DC_FAMILY_GARMIN, 4588, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ Mk1 APAC", DC_FAMILY_GARMIN, 2991, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ Mk2(i)", DC_FAMILY_GARMIN, 3258, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ Mk2(i) APAC", DC_FAMILY_GARMIN, 3702, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ Mk2 S", DC_FAMILY_GARMIN, 3542, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ Mk2 S APAC", DC_FAMILY_GARMIN, 3930, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ Mk3(i) 43mm", DC_FAMILY_GARMIN, 4222, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ Mk3(i) 51mm", DC_FAMILY_GARMIN, 4223, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "Descent™ X50i", DC_FAMILY_GARMIN, 4518, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "fēnix® 8 43mm", DC_FAMILY_GARMIN, 4534, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "fēnix® 8 47mm / 51mm / tactix® 8 47mm / 51mm / quatix® 8 47mm / 51mm APAC", DC_FAMILY_GARMIN, 4536, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "fēnix® 8 47mm / 51mm / tactix® 8 47mm / 51mm / quatix® 8 47mm / 51mm", DC_FAMILY_GARMIN, 4775, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "fēnix® 8 Pro 47mm / 51mm / MicroLED / quatix® 8 Pro 47mm / 51mm", DC_FAMILY_GARMIN, 4631, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "fēnix® 8 Solar 47mm", DC_FAMILY_GARMIN, 4532, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "fēnix® 8 Solar 51mm / tactix® 8 Solar 51mm APAC", DC_FAMILY_GARMIN, 4533, DC_TRANSPORT_USBSTORAGE, NULL},
+	{"Garmin", "fēnix® 8 Solar 51mm / tactix® 8 Solar 51mm", DC_FAMILY_GARMIN, 4776, DC_TRANSPORT_USBSTORAGE, NULL},
 	{"FIT", "File import", DC_FAMILY_GARMIN, 0, DC_TRANSPORT_USBSTORAGE, NULL },
 };
 
