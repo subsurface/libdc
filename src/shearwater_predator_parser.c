@@ -969,7 +969,9 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	}
 
 	struct dc_parser_sensor_calibration_t userdata = { 0 };
-	dc_status_t rc = shearwater_predator_parser_calibration_prepass(parser, &userdata);
+	dc_status_t rc = DC_STATUS_SUCCESS;
+	if (shearwater_predator_is_ccr(divemode))
+		rc = shearwater_predator_parser_calibration_prepass(parser, &userdata);
 
 	bool calibrated = false;
 	if (parser->needs_divecan_calibration_estimate) {
