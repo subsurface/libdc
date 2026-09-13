@@ -381,6 +381,22 @@ dc_parser_get_datetime (dc_parser_t *parser, dc_datetime_t *datetime)
 }
 
 dc_status_t
+dc_parser_get_device_info (dc_parser_t *parser, dc_event_devinfo_t *devinfo)
+{
+	if (parser == NULL || devinfo == NULL)
+		return DC_STATUS_INVALIDARGS;
+
+	memset(devinfo, 0, sizeof(*devinfo));
+
+	if (parser->vtable->type == DC_FAMILY_GARMIN) {
+		garmin_parser_is_dive(parser, devinfo);
+		return DC_STATUS_SUCCESS;
+	}
+
+	return DC_STATUS_UNSUPPORTED;
+}
+
+dc_status_t
 dc_parser_get_field (dc_parser_t *parser, dc_field_type_t type, unsigned int flags, void *value)
 {
 	if (parser == NULL)
