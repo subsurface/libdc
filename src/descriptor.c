@@ -30,6 +30,7 @@
 #include "iterator-private.h"
 #include "platform.h"
 #include "array.h"
+#include "garmin-models.h"
 
 #define DC_FILTER_INTERNAL(key, values, isnullterminated, match) \
 	dc_filter_internal( \
@@ -546,13 +547,11 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Halcyon", "Symbios HUD",     DC_FAMILY_HALCYON_SYMBIOS, 1, DC_TRANSPORT_BLE, dc_filter_halcyon},
 	{"Halcyon", "Symbios Handset", DC_FAMILY_HALCYON_SYMBIOS, 7, DC_TRANSPORT_BLE, dc_filter_halcyon},
 
-	// Not merged upstream yet
-	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model) */
-	/* for the Mk1 we are using the model of the global model */
-	/* for the Mk2/Mk3 we are using the model of the Mk2 global model */
-	/* see garmin_parser.c for a more comprehensive list of models */
-	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, NULL},
-	{"Garmin", "Descent Mk2(i)/Mk3(i)(S)/G1/G2/X50i", DC_FAMILY_GARMIN, 3258, DC_TRANSPORT_USBSTORAGE, NULL},
+	/* Garmin */
+#define GARMIN_DESCRIPTOR(name, id, mtp_capable) {"Garmin", name, DC_FAMILY_GARMIN, id, DC_TRANSPORT_USBSTORAGE, NULL},
+	GARMIN_MODEL_LIST(GARMIN_DESCRIPTOR)
+#undef GARMIN_DESCRIPTOR
+	/* Generic FIT file import, not a hardware model. */
 	{"FIT", "File import", DC_FAMILY_GARMIN, 0, DC_TRANSPORT_USBSTORAGE, NULL },
 };
 

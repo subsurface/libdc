@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "garmin.h"
+#include "garmin-models.h"
 #include "context-private.h"
 #include "parser-private.h"
 #include "array.h"
@@ -1660,6 +1661,19 @@ garmin_parser_is_dive (dc_parser_t *abstract, dc_event_devinfo_t *devinfo_p)
 			return 1;
 		return 0;
 	}
+}
+
+// AI-generated (Claude)
+dc_status_t
+garmin_parser_get_device_info (dc_parser_t *abstract, dc_event_devinfo_t *devinfo)
+{
+	garmin_parser_t *garmin = (garmin_parser_t *) abstract;
+
+	devinfo->firmware = garmin->dive.firmware;
+	devinfo->serial = garmin->dive.serial;
+	devinfo->model = garmin->dive.product;
+
+	return DC_STATUS_SUCCESS;
 }
 
 static void add_sensor_string(garmin_parser_t *garmin, const char *desc, const struct garmin_sensor *sensor)

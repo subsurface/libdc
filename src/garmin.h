@@ -22,8 +22,6 @@
 #ifndef GARMIN_H
 #define GARMIN_H
 
-#include <stdbool.h>
-
 #include <libdivecomputer/context.h>
 #include <libdivecomputer/iostream.h>
 #include <libdivecomputer/device.h>
@@ -33,19 +31,14 @@
 extern "C" {
 #endif /* __cplusplus */
 
-typedef struct {
-	const char *name;
-	int id;
-	bool mtp_capable;
-} garmin_model_t;
-
-extern const garmin_model_t garmin_models[];
-
 dc_status_t
 garmin_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream, unsigned int model);
 
 dc_status_t
 garmin_parser_create (dc_parser_t **parser, dc_context_t *context, const unsigned char data[], size_t size);
+
+dc_status_t
+garmin_parser_get_device_info (dc_parser_t *abstract, dc_event_devinfo_t *devinfo);
 
 // we need to be able to call into the parser to check if the
 // files that we find are actual dives

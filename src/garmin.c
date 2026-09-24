@@ -56,6 +56,7 @@
 
 #include "platform.h"
 #include "garmin.h"
+#include "garmin-models.h"
 #include "context-private.h"
 #include "device-private.h"
 #include "array.h"
@@ -64,8 +65,6 @@
 #include "libmtp.h"
 
 #define GARMIN_VENDOR      0x091E
-
-#define DESCENT_MK2        3258
 
 // deal with ancient libmpt found on older Linux distros
 #ifndef LIBMTP_FILES_AND_FOLDERS_ROOT
@@ -84,30 +83,33 @@ typedef struct garmin_device_t {
 #endif
 } garmin_device_t;
 
-// Ids can be found at https://developer.garmin.com/connect-iq/device-reference/
-// (look for 'Part Number')
-
+#define GARMIN_MODEL(name, id, mtp_capable) {name, id, mtp_capable},
 const garmin_model_t garmin_models[] = {
-	{ "Descent™ G1 / G1 Solar", 4005, true },
-	{ "Descent™ G2", 4588, true },
-	{ "Descent™ Mk1", 2859, false },
-	{ "Descent™ Mk1 APAC", 2991, false },
-	{ "Descent™ Mk2(i)", 3258, true },
-	{ "Descent™ Mk2(i) APAC", 3702, true },
-	{ "Descent™ Mk2 S", 3542, true },
-	{ "Descent™ Mk2 S APAC", 3930, true },
-	{ "Descent™ Mk3(i) 43mm", 4222, true },
-	{ "Descent™ Mk3(i) 51mm", 4223, true },
-	{ "Descent™ X50i", 4518, true },
-	{ "fēnix® 8 43mm", 4534, true },
-	{ "fēnix® 8 47mm / 51mm / tactix® 8 47mm / 51mm / quatix® 8 47mm / 51mm APAC", 4536, true },
-	{ "fēnix® 8 47mm / 51mm / tactix® 8 47mm / 51mm / quatix® 8 47mm / 51mm", 4775, true },
-	{ "fēnix® 8 Pro 47mm / 51mm / MicroLED / quatix® 8 Pro 47mm / 51mm", 4631, true },
-	{ "fēnix® 8 Solar 47mm", 4532, true },
-	{ "fēnix® 8 Solar 51mm / tactix® 8 Solar 51mm APAC", 4533, true },
-	{ "fēnix® 8 Solar 51mm / tactix® 8 Solar 51mm", 4776, true },
+	GARMIN_MODEL_LIST(GARMIN_MODEL)
 	{ NULL, 0, false }
 };
+#undef GARMIN_MODEL
+
+// AI-generated (Claude)
+#ifdef HAVE_LIBMTP
+static const garmin_model_t *garmin_model_find(unsigned int id)
+{
+	unsigned int i;
+
+	for (i = 0; garmin_models[i].name; i++)
+		if (garmin_models[i].id == id)
+			return &garmin_models[i];
+
+	return NULL;
+}
+
+static bool garmin_model_is_mtp_capable(unsigned int id)
+{
+	const garmin_model_t *model = garmin_model_find(id);
+
+	return model && model->mtp_capable;
+}
+#endif
 
 static dc_status_t garmin_device_set_fingerprint (dc_device_t *abstract, const unsigned char data[], unsigned int size);
 static dc_status_t garmin_device_foreach (dc_device_t *abstract, dc_dive_callback_t callback, void *userdata);
@@ -146,10 +148,8 @@ garmin_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_t *ios
 	device->model = model;
 
 #ifdef HAVE_LIBMTP
-	// for a Descent Mk2/Mk2i, we have to use MTP to access its storage;
-	// for Garmin devices, the model number corresponds to the lower three nibbles of the USB product ID
-	// in order to have only one entry for the Mk2, we don't use the Mk2/APAC model number in our code
-	device->use_mtp = model == DESCENT_MK2;
+	// Garmin USB product IDs are 0x4000 | FIT model IDs.
+	device->use_mtp = garmin_model_is_mtp_capable(model);
 	device->mtp_device = NULL;
 #endif
 
@@ -428,23 +428,15 @@ mtp_get_file_list(dc_device_t *abstract, struct file_list *files)
 	/* iterate through connected MTP devices */
 	for (i = 0; i < numrawdevices; i++) {
 		LIBMTP_devicestorage_t *storage;
-		// we only want to read from a Garmin Descent Mk2 device at this point
+		// We only read supported Garmin devices at this point.
 		if (rawdevices[i].device_entry.vendor_id != GARMIN_VENDOR) {
 			DEBUG(abstract->context, "Garmin/mtp: skipping raw device %04x/%04x",
 			      rawdevices[i].device_entry.vendor_id, rawdevices[i].device_entry.product_id);
 			continue;
 		}
 
-		bool mtp_capable = false;
-		for (unsigned j = 0; garmin_models[j].name; j++) {
-			if ((garmin_models[j].id | 0x4000) == rawdevices[i].device_entry.product_id) {
-				mtp_capable = garmin_models[j].mtp_capable;
-
-				break;
-			}
-		}
-
-		if (!mtp_capable) {
+		if (!(rawdevices[i].device_entry.product_id & 0x4000u) ||
+		    !garmin_model_is_mtp_capable(rawdevices[i].device_entry.product_id & ~0x4000u)) {
 			DEBUG(abstract->context, "Garmin/mtp: skipping Garmin raw device %04x/%04x, as it is not a dive computer / does not support MTP",
 			      rawdevices[i].device_entry.vendor_id, rawdevices[i].device_entry.product_id);
 			continue;

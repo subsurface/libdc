@@ -97,7 +97,7 @@ libdivecomputer_la_SOURCES = \
 libdivecomputer_la_SOURCES += \
 	usb_storage.c \
 	field-cache.h field-cache.c \
-	garmin.h garmin.c garmin_parser.c
+	garmin.h garmin-models.h garmin.c garmin_parser.c
 
 if OS_WIN32
 libdivecomputer_la_SOURCES += serial_win32.c
