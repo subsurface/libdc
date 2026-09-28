@@ -770,10 +770,16 @@ dc_filter_suunto (const dc_descriptor_t *descriptor, dc_transport_t transport, c
 		"EON Steel Black",
 	};
 
+	/* Both arrays are indexed by descriptor model number.
+	 * Select only the entry for this specific descriptor. */
+	unsigned int model = dc_descriptor_get_model (descriptor);
+	if (model >= C_ARRAY_SIZE (usbhid) || model >= C_ARRAY_SIZE (bluetooth))
+		return 0;
+
 	if (transport == DC_TRANSPORT_USBHID) {
-		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usbhid);
+		return dc_match_usbhid (userdata, &usbhid[model]);
 	} else if (transport == DC_TRANSPORT_BLE) {
-		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_prefix);
+		return dc_match_prefix (userdata, &bluetooth[model]);
 	}
 
 	return 1;
