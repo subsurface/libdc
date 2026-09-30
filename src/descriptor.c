@@ -66,9 +66,6 @@ static int dc_filter_cressi (const dc_descriptor_t *descriptor, dc_transport_t t
 static int dc_filter_halcyon (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 static int dc_filter_seac (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
-// Not merged upstream yet
-static int dc_filter_garmin (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
-
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
 struct dc_descriptor_t {
