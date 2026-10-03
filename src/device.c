@@ -505,6 +505,8 @@ device_event_emit (dc_device_t *device, dc_event_type_t event, const void *data)
 		device->devinfo.model = devinfo->model;
 		device->devinfo.firmware = devinfo->firmware;
 		device->devinfo.serial = devinfo->serial;
+		memcpy (device->devinfo.product_name, devinfo->product_name,
+			sizeof (device->devinfo.product_name));
 		data = &device->devinfo;
 	}
 		break;
