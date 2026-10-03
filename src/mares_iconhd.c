@@ -192,6 +192,7 @@ mares_iconhd_get_model (mares_iconhd_device_t *device)
 		{"Smart Apnea", SMARTAPNEA},
 		{"Icon HD",     ICONHD},
 		{"Icon AIR",    ICONHDNET},
+		{"Puck Pro U",  PUCK4},
 		{"Puck Pro",    PUCKPRO},
 		{"Nemo Wide 2", NEMOWIDE2},
 		{"Genius",      GENIUS},
@@ -208,7 +209,6 @@ mares_iconhd_get_model (mares_iconhd_device_t *device)
 		{"Puck4",       PUCK4},
 		{"Puck Lite",   PUCK4},
 		{"Puck",        PUCK4},
-		{"Puck Pro U",  PUCK4},
 	};
 
 	// Check the product name in the version packet against the list
