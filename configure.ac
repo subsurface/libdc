@@ -264,6 +264,7 @@ AC_CONFIG_FILES([
    doc/doxygen.cfg
    doc/man/Makefile
    examples/Makefile
+   test/Makefile
 ])
 AC_OUTPUT
 AC_MSG_NOTICE([

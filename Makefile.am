@@ -8,6 +8,8 @@ if ENABLE_DOC
 SUBDIRS += doc
 endif
 
+SUBDIRS += test
+
 AM_MAKEFLAGS = -s
 ACLOCAL_AMFLAGS = -I m4
 
@@ -25,4 +27,5 @@ EXTRA_DIST = \
 	test/fixtures/manifest.txt \
 	test/fixtures/shearwater_petrel2-0001.bin \
 	test/fixtures/hw_ostc5-0001.bin \
-	test/fixtures/garmin_descent_mk1-0001.bin
+	test/fixtures/garmin_descent_mk1-0001.bin \
+	test/test_descriptor_product_name.c
