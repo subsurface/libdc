@@ -48,6 +48,10 @@ typedef struct dc_event_progress_t {
 	unsigned int maximum;
 } dc_event_progress_t;
 
+/* Maximum length of the product_name field in dc_event_devinfo_t,
+ * including the NUL terminator. */
+#define DC_DEVINFO_PRODUCT_NAME_SIZE 17
+
 typedef struct dc_event_devinfo_t {
 	unsigned int model;
 	unsigned int firmware;
@@ -59,6 +63,12 @@ typedef struct dc_event_devinfo_t {
 	 * consumer-side sub-model differentiation. Consumers that do not use
 	 * this field are unaffected; the model field remains authoritative. */
 	unsigned int hw_id;
+	/* Raw product-name string from the device's version packet, NUL-terminated.
+	 * Empty string when not available or not applicable for this device family.
+	 * Populated only on live download; use dc_descriptor_find_by_product_name()
+	 * to map this to a refined descriptor. The model field remains the
+	 * authoritative parser-layout selector. */
+	char product_name[DC_DEVINFO_PRODUCT_NAME_SIZE];
 } dc_event_devinfo_t;
 
 typedef struct dc_event_clock_t {
