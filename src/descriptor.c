@@ -1126,6 +1126,68 @@ dc_descriptor_find_by_hw_id (dc_family_t family, unsigned int hw_id)
 	return NULL;
 }
 
+/* Product-name to descriptor mapping for Mares Icon HD.
+ *
+ * The mares_iconhd driver reads a product-name string from offset 0x46 of
+ * the version packet and maps it to a coarse numeric model. Several marketed
+ * products share one numeric model; this table maps the confirmed firmware
+ * product-name strings to the specific descriptor product name, allowing
+ * consumers to refine the display label beyond the coarse model.
+ *
+ * Evidence: mares_iconhd.c mares_iconhd_get_model() table. Only strings
+ * that unambiguously identify a single marketed product are listed. */
+typedef struct {
+	dc_family_t family;
+	unsigned int model;
+	const char *firmware_name;
+	const char *descriptor_product;
+} dc_product_name_entry_t;
+
+static const dc_product_name_entry_t g_product_name_map[] = {
+	/* PUCKPRO (0x18): "Puck Pro" firmware name — both "Puck Pro" and "Puck Pro +"
+	 * share model 0x18. The version-packet name "Puck Pro" identifies the base
+	 * variant. No confirmed firmware name for the + variant is known; it falls
+	 * back to the coarse model ("Puck Pro"). */
+	{DC_FAMILY_MARES_ICONHD, 0x18, "Puck Pro",   "Puck Pro"},
+	/* PUCK4 (0x35): four marketed products share this model. The firmware
+	 * product-name strings below are taken directly from the mares_iconhd
+	 * matching table and map to specific descriptor product names. */
+	{DC_FAMILY_MARES_ICONHD, 0x35, "Puck4",      "Puck 4"},
+	{DC_FAMILY_MARES_ICONHD, 0x35, "Puck Lite",  "Puck Lite"},
+	{DC_FAMILY_MARES_ICONHD, 0x35, "Puck Pro U", "Puck Pro Ultra"},
+	/* "Puck" (0x35) is ambiguous — the BLE advertisement prefix "Puck" matches
+	 * multiple variants; no single descriptor product is confirmed. Not mapped. */
+};
+
+dc_descriptor_t *
+dc_descriptor_find_by_product_name (dc_family_t family, unsigned int model, const char *product_name)
+{
+	if (product_name == NULL || product_name[0] == '\0')
+		return NULL;
+
+	for (size_t i = 0; i < C_ARRAY_SIZE(g_product_name_map); i++) {
+		if (g_product_name_map[i].family != family ||
+		    g_product_name_map[i].model  != model  ||
+		    strcmp(g_product_name_map[i].firmware_name, product_name) != 0)
+			continue;
+
+		/* Matched — find the descriptor by family, model, and product name. */
+		for (size_t j = 0; j < C_ARRAY_SIZE(g_descriptors); j++) {
+			if (g_descriptors[j].type  == family &&
+			    g_descriptors[j].model == model  &&
+			    strcmp(g_descriptors[j].product,
+			           g_product_name_map[i].descriptor_product) == 0) {
+				return (dc_descriptor_t *) &g_descriptors[j];
+			}
+		}
+		/* firmware_name matched but descriptor product not found — g_descriptors[]
+		 * may have been edited without updating g_product_name_map[]. */
+		return NULL;
+	}
+
+	return NULL;
+}
+
 const char *
 dc_descriptor_get_vendor (const dc_descriptor_t *descriptor)
 {

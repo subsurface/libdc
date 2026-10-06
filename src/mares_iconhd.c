@@ -192,6 +192,7 @@ mares_iconhd_get_model (mares_iconhd_device_t *device)
 		{"Smart Apnea", SMARTAPNEA},
 		{"Icon HD",     ICONHD},
 		{"Icon AIR",    ICONHDNET},
+		{"Puck Pro U",  PUCK4},
 		{"Puck Pro",    PUCKPRO},
 		{"Nemo Wide 2", NEMOWIDE2},
 		{"Genius",      GENIUS},
@@ -208,7 +209,6 @@ mares_iconhd_get_model (mares_iconhd_device_t *device)
 		{"Puck4",       PUCK4},
 		{"Puck Lite",   PUCK4},
 		{"Puck",        PUCK4},
-		{"Puck Pro U",  PUCK4},
 	};
 
 	// Check the product name in the version packet against the list
@@ -222,6 +222,23 @@ mares_iconhd_get_model (mares_iconhd_device_t *device)
 	}
 
 	return model;
+}
+
+static void
+mares_iconhd_fill_product_name (const mares_iconhd_device_t *device, dc_event_devinfo_t *devinfo)
+{
+	/* Copy at most DC_DEVINFO_PRODUCT_NAME_SIZE-1 bytes from the version packet
+	 * product-name field (offset 0x46, up to 16 bytes) and NUL-terminate.
+	 * The buffer is already zeroed by the caller initialising devinfo to {0}. */
+	const unsigned char *src = device->version + 0x46;
+	unsigned int n = sizeof (devinfo->product_name) - 1;
+	unsigned int i;
+	for (i = 0; i < n; i++) {
+		if (src[i] == '\0')
+			break;
+		devinfo->product_name[i] = (char) src[i];
+	}
+	devinfo->product_name[i] = '\0';
 }
 
 static dc_status_t
@@ -818,10 +835,11 @@ mares_iconhd_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 
 	// Emit a device info event.
 	unsigned char *data = dc_buffer_get_data (buffer);
-	dc_event_devinfo_t devinfo;
+	dc_event_devinfo_t devinfo = {0};
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint32_le (data + 0x0C);
+	mares_iconhd_fill_product_name (device, &devinfo);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return status;
@@ -844,10 +862,11 @@ mares_iconhd_device_foreach_raw (dc_device_t *abstract, dc_dive_callback_t callb
 	}
 
 	// Emit a device info event.
-	dc_event_devinfo_t devinfo;
+	dc_event_devinfo_t devinfo = {0};
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint32_le (serial);
+	mares_iconhd_fill_product_name (device, &devinfo);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Enable progress notifications.
@@ -1097,10 +1116,11 @@ mares_iconhd_device_foreach_object (dc_device_t *abstract, dc_dive_callback_t ca
 	unsigned int serial = array_convert_str2num (dc_buffer_get_data (buffer) + 10, 6);
 
 	// Emit a device info event.
-	dc_event_devinfo_t devinfo;
+	dc_event_devinfo_t devinfo = {0};
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = serial;
+	mares_iconhd_fill_product_name (device, &devinfo);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Erase the buffer.
