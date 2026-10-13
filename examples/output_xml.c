@@ -414,7 +414,7 @@ dctool_xml_output_write (dctool_output_t *abstract, dc_parser_t *parser, const u
 				tank.gasmix);
 		}
 		if (tank.usage) {
-			const char *usage[] = {"none", "oxygen", "diluent", "sidemount"};
+			const char *usage[] = {"none", "sidemount", "included", "excluded"};
 			fprintf (output->ostream,
 				"   <usage>%s</usage>\n",
 				usage[tank.usage]);
