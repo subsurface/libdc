@@ -54,6 +54,13 @@ struct garmin_sensor {
 	unsigned int sensor_id;
 	const char *sensor_name;
 	unsigned char sensor_enabled, sensor_units, sensor_used_for_gas_rate;
+	// SENSOR_PROFILE field 78 (used_for_gas_rate) is only decoded when
+	// the log actually contains it: the field-decoding machinery drops
+	// absent/invalid (0xff) values before the handler runs, and this
+	// whole struct is memset to zero otherwise. So a raw 0 is ambiguous
+	// between "device said not counted" and "device said nothing", and
+	// we need this separate flag to tell the two apart.
+	unsigned char sensor_used_for_gas_rate_valid;
 	unsigned int sensor_rated_pressure, sensor_reserve_pressure, sensor_volume;
 };
 
@@ -855,7 +862,9 @@ DECLARE_FIELD(SENSOR_PROFILE, volume, UINT16)
 }
 DECLARE_FIELD(SENSOR_PROFILE, used_for_gas_rate, ENUM)
 {
-	current_sensor(garmin)->sensor_used_for_gas_rate = data;
+	struct garmin_sensor *sensor = current_sensor(garmin);
+	sensor->sensor_used_for_gas_rate = data;
+	sensor->sensor_used_for_gas_rate_valid = 1;
 }
 
 DECLARE_FIELD(TANK_UPDATE, sensor, UINT32Z)
@@ -1725,12 +1734,28 @@ garmin_parser_set_data (garmin_parser_t *garmin, const unsigned char *data, unsi
 
 	add_gps_string(garmin, "Record GPS", &garmin->gps.RECORD);
 
-	// We have no idea about gas mixes vs tanks
+	// We have no idea about gas mixes vs tanks, so for now the only
+	// DC_FIELD_TANK member we report is "usage": whether the dive
+	// computer counted this tank pod's gas towards the diver's own
+	// consumption (SENSOR_PROFILE field 78, "used for SAC calculations").
+	// Volume/type/workpressure are left at their field-cache defaults.
+	//
+	// The index here matches the one used for DC_SAMPLE_PRESSURE
+	// (see find_tank_index()): both walk garmin->dive.sensor[].
 	for (int i = 0; i < garmin->dive.nr_sensor; i++) {
-		// DC_ASSIGN_IDX(garmin->cache, tankinfo, i, ..);
-		// DC_ASSIGN_IDX(garmin->cache, tanksize, i, ..);
-		// DC_ASSIGN_IDX(garmin->cache, tankworkingpressure, i, ..);
+		const struct garmin_sensor *sensor = garmin->dive.sensor + i;
+		dc_tank_usage_t usage = DC_TANK_USAGE_NONE;
+
+		// Field 78 is only decoded when it is actually present in the
+		// log; a sensor that never saw it must stay NONE here, never
+		// EXCLUDED.
+		if (sensor->sensor_used_for_gas_rate_valid)
+			usage = sensor->sensor_used_for_gas_rate ? DC_TANK_USAGE_INCLUDED : DC_TANK_USAGE_EXCLUDED;
+
+		garmin->cache.tankusage[i] = usage;
 	}
+	if (garmin->dive.nr_sensor)
+		garmin->cache.initialized |= 1u << DC_FIELD_TANK;
 
 	// Hate hate hate gasmix vs tank counts.
 	//
