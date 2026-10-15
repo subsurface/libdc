@@ -746,11 +746,22 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 					gasmix[i].enabled = (state & (1 << i)) != 0;
 				}
 
-				unsigned int gtrmode = data[offset + 29];
-				if (popcount(gtrmode) >= 2) {
-					for (unsigned int i = 0; i < 4; ++i) {
-						if (gtrmode & (1 << i)) {
-							tank[i].usage = DC_TANK_USAGE_SIDEMOUNT;
+				// GTR (Gas Time Remaining) mode, used here only to detect
+				// sidemount tanks. This byte immediately follows the AI
+				// mode byte and, like it, requires the wireless air
+				// integration transmitters, so it is only meaningful once
+				// AI support appears (logversion >= 7). Before log version
+				// 13 the only defined values were 0/1/2 (off/T1/T2), which
+				// never satisfy the sidemount popcount check below; from
+				// version 13 onward, multiple transmitter bits can be
+				// combined to flag sidemount configurations.
+				if (logversion >= 7) {
+					unsigned int gtrmode = data[offset + 29];
+					if (popcount(gtrmode) >= 2) {
+						for (unsigned int i = 0; i < 4; ++i) {
+							if (gtrmode & (1 << i)) {
+								tank[i].usage = DC_TANK_USAGE_SIDEMOUNT;
+							}
 						}
 					}
 				}
