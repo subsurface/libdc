@@ -230,8 +230,14 @@ typedef unsigned int dc_tankinfo_t;
  */
 
 typedef enum dc_tank_usage_t {
-	DC_TANK_USAGE_NONE,
+	DC_TANK_USAGE_NONE,       /* Not specified, or unknown. */
 	DC_TANK_USAGE_SIDEMOUNT,
+	DC_TANK_USAGE_INCLUDED,   /* The dive computer counts this tank towards
+	                             the diver's own gas consumption. */
+	DC_TANK_USAGE_EXCLUDED,   /* The dive computer does not count this tank
+	                             towards the diver's own gas consumption
+	                             (for example a buddy's or a stage/deco
+	                             bottle that is tracked but not included). */
 } dc_tank_usage_t;
 
 typedef struct dc_tank_t {

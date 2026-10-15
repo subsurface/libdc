@@ -124,6 +124,9 @@ dc_field_get(dc_field_cache_t *cache, dc_field_type_t type, unsigned int flags, 
 		tank->gasmix = flags;
 		tank->workpressure = cache->tankworkingpressure[flags];
 		tank->type = cache->tankinfo[flags];
+		tank->usage = cache->tankusage[flags];
+		tank->beginpressure = 0;
+		tank->endpressure = 0;
 
 		return DC_STATUS_SUCCESS;
 	case DC_FIELD_STRING:
