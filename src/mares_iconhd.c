@@ -541,8 +541,6 @@ mares_iconhd_read_object(mares_iconhd_device_t *device, dc_event_progress_t *pro
 			return DC_STATUS_PROTOCOL;
 		}
 
-		length--;
-
 		// Verify the packet header.
 		if ((rsp_segment[0] & 0xF0) >> 4 != toggle) {
 			if (npackets == 0 && mares_iconhd_freedive_unavailable (device->model,
@@ -551,6 +549,8 @@ mares_iconhd_read_object(mares_iconhd_device_t *device, dc_event_progress_t *pro
 			ERROR (abstract->context, "Unexpected packet header (%02x).", rsp_segment[0]);
 			return DC_STATUS_PROTOCOL;
 		}
+
+		length--;
 
 		// Append the payload to the output buffer.
 		if (!dc_buffer_append (buffer, rsp_segment + 1, length)) {
