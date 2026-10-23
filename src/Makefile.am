@@ -48,7 +48,7 @@ libdivecomputer_la_SOURCES = \
 	mares_nemo.h mares_nemo.c mares_nemo_parser.c \
 	mares_puck.h mares_puck.c \
 	mares_darwin.h mares_darwin.c mares_darwin_parser.c \
-	mares_iconhd.h mares_iconhd.c mares_iconhd_parser.c \
+	mares_iconhd.h mares_iconhd_freedive.h mares_iconhd.c mares_iconhd_parser.c \
 	ihex.h ihex.c \
 	hw_ostc.h hw_ostc.c hw_ostc_parser.c \
 	hw_ostc3.h hw_ostc3.c \

@@ -29,6 +29,7 @@
 #include "rbstream.h"
 #include "platform.h"
 #include "packet.h"
+#include "mares_iconhd_freedive.h"
 
 #define ISINSTANCE(device) dc_device_isinstance((device), &mares_iconhd_device_vtable)
 
@@ -49,7 +50,6 @@
 #define QUAD      0x29
 #define HORIZON   0x2C
 #define PUCKAIR2  0x2D
-#define SIRIUS    0x2F
 #define QUADCI    0x31
 #define QUAD2     0x32
 #define SIRIUS_L  0x33
@@ -102,9 +102,7 @@
 #define OBJ_DEVICE_SERIAL 0x04
 #define OBJ_LOGBOOK       0x2008
 #define OBJ_LOGBOOK_COUNT 0x01
-#define OBJ_DIVE          0x3000
 #define OBJ_DIVE_HEADER   0x02
-#define OBJ_DIVE_DATA     0x03
 
 #define AIR       0
 #define GAUGE     1
@@ -547,6 +545,9 @@ mares_iconhd_read_object(mares_iconhd_device_t *device, dc_event_progress_t *pro
 
 		// Verify the packet header.
 		if ((rsp_segment[0] & 0xF0) >> 4 != toggle) {
+			if (npackets == 0 && mares_iconhd_freedive_unavailable (device->model,
+					dc_buffer_get_data (buffer), dc_buffer_get_size (buffer), index, subindex, rsp_segment, length))
+				return DC_STATUS_UNSUPPORTED;
 			ERROR (abstract->context, "Unexpected packet header (%02x).", rsp_segment[0]);
 			return DC_STATUS_PROTOCOL;
 		}
@@ -1169,6 +1170,13 @@ mares_iconhd_device_foreach_object (dc_device_t *abstract, dc_dive_callback_t ca
 
 		// Read the dive data.
 		rc = mares_iconhd_read_object (device, &progress, buffer, OBJ_DIVE + i, OBJ_DIVE_DATA);
+		if (rc == DC_STATUS_UNSUPPORTED) {
+			INFO (abstract->context, "Skipping Sirius freedive without downloadable data (%u).", i);
+			progress.current += NSTEPS;
+			device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
+			rc = DC_STATUS_SUCCESS;
+			continue;
+		}
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to read the dive data.");
 			break;
