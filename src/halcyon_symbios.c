@@ -296,7 +296,7 @@ halcyon_symbios_download (halcyon_symbios_device_t *device, dc_event_progress_t 
 		unsigned int nretries = 0;
 		while ((status = halcyon_symbios_recv (device, block, payload, sizeof(payload), &len, NULL)) != DC_STATUS_SUCCESS) {
 			// Abort if the error is fatal.
-			if (status != DC_STATUS_PROTOCOL) {
+			if (status != DC_STATUS_PROTOCOL && status != DC_STATUS_TIMEOUT) {
 				ERROR (abstract->context, "Failed to receive the answer.");
 				goto error_exit;
 			}
@@ -305,6 +305,26 @@ halcyon_symbios_download (halcyon_symbios_device_t *device, dc_event_progress_t 
 			if (nretries++ >= MAXRETRIES) {
 				ERROR (abstract->context, "Reached the maximum number of retries.");
 				goto error_exit;
+			}
+
+			// If the error was a timeout, the packet may have arrived
+			// late and be sitting in the receive queue.  Flush it before
+			// requesting a re-transmission to avoid reading the stale
+			// copy instead of the retransmitted block.
+			if (status == DC_STATUS_TIMEOUT) {
+				// AI-generated (Claude)
+				// Poll processes transport events while waiting for late data.
+				status = dc_iostream_poll (device->iostream, 300);
+				if (status != DC_STATUS_SUCCESS && status != DC_STATUS_TIMEOUT) {
+					ERROR (abstract->context, "Failed to wait for late data.");
+					goto error_exit;
+				}
+
+				status = dc_iostream_purge (device->iostream, DC_DIRECTION_INPUT);
+				if (status != DC_STATUS_SUCCESS) {
+					ERROR (abstract->context, "Failed to purge late data.");
+					goto error_exit;
+				}
 			}
 
 			// Send a NAK to request a re-transmission.
@@ -396,8 +416,8 @@ halcyon_symbios_device_open (dc_device_t **out, dc_context_t *context, dc_iostre
 	device->iostream = iostream;
 	memset(device->fingerprint, 0, sizeof(device->fingerprint));
 
-	// Set the timeout for receiving data (3000ms).
-	status = dc_iostream_set_timeout (device->iostream, 3000);
+	// Set the timeout for receiving data (5000ms).
+	status = dc_iostream_set_timeout (device->iostream, 5000);
 	if (status != DC_STATUS_SUCCESS) {
 		ERROR (context, "Failed to set the timeout.");
 		goto error_free;

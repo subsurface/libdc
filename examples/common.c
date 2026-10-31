@@ -103,7 +103,7 @@ static const backend_table_t g_backends[] = {
 	{"symbios",     DC_FAMILY_HALCYON_SYMBIOS,     1},
 
 	// Not merged upstream yet
-	{"descentmk1",  DC_FAMILY_GARMIN,              0},
+	{"descentmk1",  DC_FAMILY_GARMIN,              2859},
 };
 
 static const transport_table_t g_transports[] = {

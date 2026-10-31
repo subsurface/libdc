@@ -42,7 +42,6 @@
 #include "mares_iconhd.h"
 #include "mares_nemo.h"
 #include "mares_puck.h"
-#include "hw_frog.h"
 #include "hw_ostc.h"
 #include "hw_ostc3.h"
 #include "cressi_edy.h"
@@ -379,6 +378,22 @@ dc_parser_get_datetime (dc_parser_t *parser, dc_datetime_t *datetime)
 		return DC_STATUS_UNSUPPORTED;
 
 	return parser->vtable->datetime (parser, datetime);
+}
+
+dc_status_t
+dc_parser_get_device_info (dc_parser_t *parser, dc_event_devinfo_t *devinfo)
+{
+	if (parser == NULL || devinfo == NULL)
+		return DC_STATUS_INVALIDARGS;
+
+	memset (devinfo, 0, sizeof (*devinfo));
+
+	switch (parser->vtable->type) {
+	case DC_FAMILY_GARMIN:
+		return garmin_parser_get_device_info (parser, devinfo);
+	default:
+		return DC_STATUS_UNSUPPORTED;
+	}
 }
 
 dc_status_t

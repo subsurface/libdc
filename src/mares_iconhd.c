@@ -29,6 +29,7 @@
 #include "rbstream.h"
 #include "platform.h"
 #include "packet.h"
+#include "mares_iconhd_freedive.h"
 
 #define ISINSTANCE(device) dc_device_isinstance((device), &mares_iconhd_device_vtable)
 
@@ -49,9 +50,9 @@
 #define QUAD      0x29
 #define HORIZON   0x2C
 #define PUCKAIR2  0x2D
-#define SIRIUS    0x2F
 #define QUADCI    0x31
 #define QUAD2     0x32
+#define SIRIUS_L  0x33
 #define PUCK4     0x35
 
 #define ISSMART(model) ( \
@@ -66,6 +67,7 @@
 	(model) == SIRIUS || \
 	(model) == QUADCI || \
 	(model) == QUAD2 || \
+	(model) == SIRIUS_L || \
 	(model) == PUCK4)
 
 #define ISSIRIUS(model) ( \
@@ -73,6 +75,7 @@
 	(model) == SIRIUS || \
 	(model) == QUADCI || \
 	(model) == QUAD2 || \
+	(model) == SIRIUS_L || \
 	(model) == PUCK4)
 
 #define MAXRETRIES 4
@@ -99,9 +102,7 @@
 #define OBJ_DEVICE_SERIAL 0x04
 #define OBJ_LOGBOOK       0x2008
 #define OBJ_LOGBOOK_COUNT 0x01
-#define OBJ_DIVE          0x3000
 #define OBJ_DIVE_HEADER   0x02
-#define OBJ_DIVE_DATA     0x03
 
 #define AIR       0
 #define GAUGE     1
@@ -189,6 +190,7 @@ mares_iconhd_get_model (mares_iconhd_device_t *device)
 		{"Smart Apnea", SMARTAPNEA},
 		{"Icon HD",     ICONHD},
 		{"Icon AIR",    ICONHDNET},
+		{"Puck Pro U",  PUCK4},
 		{"Puck Pro",    PUCKPRO},
 		{"Nemo Wide 2", NEMOWIDE2},
 		{"Genius",      GENIUS},
@@ -199,12 +201,12 @@ mares_iconhd_get_model (mares_iconhd_device_t *device)
 		{"Horizon",     HORIZON},
 		{"Puck Air 2",  PUCKAIR2},
 		{"Sirius",      SIRIUS},
+		{"Sirius L",    SIRIUS_L},
 		{"Quad Ci",     QUADCI},
 		{"Quad2",       QUAD2},
 		{"Puck4",       PUCK4},
 		{"Puck Lite",   PUCK4},
 		{"Puck",        PUCK4},
-		{"Puck Pro U",  PUCK4},
 	};
 
 	// Check the product name in the version packet against the list
@@ -218,6 +220,23 @@ mares_iconhd_get_model (mares_iconhd_device_t *device)
 	}
 
 	return model;
+}
+
+static void
+mares_iconhd_fill_product_name (const mares_iconhd_device_t *device, dc_event_devinfo_t *devinfo)
+{
+	/* Copy at most DC_DEVINFO_PRODUCT_NAME_SIZE-1 bytes from the version packet
+	 * product-name field (offset 0x46, up to 16 bytes) and NUL-terminate.
+	 * The buffer is already zeroed by the caller initialising devinfo to {0}. */
+	const unsigned char *src = device->version + 0x46;
+	unsigned int n = sizeof (devinfo->product_name) - 1;
+	unsigned int i;
+	for (i = 0; i < n; i++) {
+		if (src[i] == '\0')
+			break;
+		devinfo->product_name[i] = (char) src[i];
+	}
+	devinfo->product_name[i] = '\0';
 }
 
 static dc_status_t
@@ -522,13 +541,16 @@ mares_iconhd_read_object(mares_iconhd_device_t *device, dc_event_progress_t *pro
 			return DC_STATUS_PROTOCOL;
 		}
 
-		length--;
-
 		// Verify the packet header.
 		if ((rsp_segment[0] & 0xF0) >> 4 != toggle) {
+			if (npackets == 0 && mares_iconhd_freedive_unavailable (device->model,
+					dc_buffer_get_data (buffer), dc_buffer_get_size (buffer), index, subindex, rsp_segment, length))
+				return DC_STATUS_UNSUPPORTED;
 			ERROR (abstract->context, "Unexpected packet header (%02x).", rsp_segment[0]);
 			return DC_STATUS_PROTOCOL;
 		}
+
+		length--;
 
 		// Append the payload to the output buffer.
 		if (!dc_buffer_append (buffer, rsp_segment + 1, length)) {
@@ -675,6 +697,7 @@ mares_iconhd_device_open (dc_device_t **out, dc_context_t *context, dc_iostream_
 	case SIRIUS:
 	case QUADCI:
 	case QUAD2:
+	case SIRIUS_L:
 	case PUCK4:
 		device->layout = &mares_genius_layout;
 		device->packetsize = 4096;
@@ -813,10 +836,11 @@ mares_iconhd_device_dump (dc_device_t *abstract, dc_buffer_t *buffer)
 
 	// Emit a device info event.
 	unsigned char *data = dc_buffer_get_data (buffer);
-	dc_event_devinfo_t devinfo;
+	dc_event_devinfo_t devinfo = {0};
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint32_le (data + 0x0C);
+	mares_iconhd_fill_product_name (device, &devinfo);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	return status;
@@ -839,10 +863,11 @@ mares_iconhd_device_foreach_raw (dc_device_t *abstract, dc_dive_callback_t callb
 	}
 
 	// Emit a device info event.
-	dc_event_devinfo_t devinfo;
+	dc_event_devinfo_t devinfo = {0};
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = array_uint32_le (serial);
+	mares_iconhd_fill_product_name (device, &devinfo);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Enable progress notifications.
@@ -882,7 +907,7 @@ mares_iconhd_device_foreach_raw (dc_device_t *abstract, dc_dive_callback_t callb
 		device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
 		eop = array_uint32_le (pointer);
-		if (eop != 0xFFFFFFFF)
+		if (eop >= layout->rb_profile_begin && eop < layout->rb_profile_end)
 			break;
 	}
 	if (eop < layout->rb_profile_begin || eop >= layout->rb_profile_end) {
@@ -1092,10 +1117,11 @@ mares_iconhd_device_foreach_object (dc_device_t *abstract, dc_dive_callback_t ca
 	unsigned int serial = array_convert_str2num (dc_buffer_get_data (buffer) + 10, 6);
 
 	// Emit a device info event.
-	dc_event_devinfo_t devinfo;
+	dc_event_devinfo_t devinfo = {0};
 	devinfo.model = device->model;
 	devinfo.firmware = 0;
 	devinfo.serial = serial;
+	mares_iconhd_fill_product_name (device, &devinfo);
 	device_event_emit (abstract, DC_EVENT_DEVINFO, &devinfo);
 
 	// Erase the buffer.
@@ -1144,6 +1170,13 @@ mares_iconhd_device_foreach_object (dc_device_t *abstract, dc_dive_callback_t ca
 
 		// Read the dive data.
 		rc = mares_iconhd_read_object (device, &progress, buffer, OBJ_DIVE + i, OBJ_DIVE_DATA);
+		if (rc == DC_STATUS_UNSUPPORTED) {
+			INFO (abstract->context, "Skipping Sirius freedive without downloadable data (%u).", i);
+			progress.current += NSTEPS;
+			device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
+			rc = DC_STATUS_SUCCESS;
+			continue;
+		}
 		if (rc != DC_STATUS_SUCCESS) {
 			ERROR (abstract->context, "Failed to read the dive data.");
 			break;

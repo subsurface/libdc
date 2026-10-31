@@ -135,7 +135,7 @@ static const seac_screen_layout_t layout_screen = {
 
 static const seac_screen_layout_t layout_tablet = {
 	0x0A0000, /* rb_profile_begin */
-	0x200000, /* rb_profile_end */
+	0x400000, /* rb_profile_end */
 };
 
 static dc_status_t

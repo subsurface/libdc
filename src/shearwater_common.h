@@ -30,16 +30,14 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#define WDBI_TIME_PACKET_SIZE 7
+
 #define ID_SERIAL    0x8010
 #define ID_FIRMWARE  0x8011
 #define ID_LOGUPLOAD 0x8021
 #define ID_HARDWARE  0x8050
-#define ID_LOCAL_TIME 0x9030
-#define ID_UTC_TIME  0x9031
-#define ID_LOCAL_TIME_OFFSET 0x9032
-#define ID_LOCAL_TIME_DST 0x9033
 
-#define WDBI_TIME_PACKET_SIZE 7
+#define ID_MODEL     0x8060
 
 #define ID_TIME_LOCAL  0x9030
 #define ID_TIME_UTC    0x9031
@@ -48,6 +46,9 @@ extern "C" {
 
 #define PREDATOR 2
 #define PETREL   3
+/* PETREL2: Petrel 2 hardware reports ID_MODEL=PETREL (3); there is no
+ * distinct Product-Version value for it. FWID-based sub-model distinction
+ * is exposed via devinfo.hw_id on live download. */
 #define PETREL2  PETREL
 #define NERD     4
 #define PERDIX   5
@@ -59,6 +60,7 @@ extern "C" {
 #define PERDIX2  11
 #define TERN     12
 #define PEREGRINE_TX 13
+#define PERDIX3  14
 
 #define NSTEPS    10000
 #define STEP(i,n) ((NSTEPS * (i) + (n) / 2) / (n))
@@ -66,10 +68,11 @@ extern "C" {
 typedef struct shearwater_common_device_t {
 	dc_device_t base;
 	dc_iostream_t *iostream;
+	unsigned int protocol;
 } shearwater_common_device_t;
 
 dc_status_t
-shearwater_common_setup (shearwater_common_device_t *device, dc_context_t *context, dc_iostream_t *iostream);
+shearwater_common_setup (shearwater_common_device_t *device, dc_context_t *context, dc_iostream_t *iostream, unsigned int model);
 
 dc_status_t
 shearwater_common_transfer (shearwater_common_device_t *device, const unsigned char input[], unsigned int isize, unsigned char output[], unsigned int osize, unsigned int *actual);
@@ -89,13 +92,9 @@ shearwater_common_timesync_local (shearwater_common_device_t *device, const dc_d
 dc_status_t
 shearwater_common_timesync_utc (shearwater_common_device_t *device, const dc_datetime_t *datetime);
 
-dc_status_t shearwater_common_get_model(shearwater_common_device_t *device, unsigned int *model);
-
 dc_status_t shearwater_common_can_wdbi (shearwater_common_device_t *device, dc_buffer_t *buffer, unsigned int id);
 
 dc_status_t shearwater_common_device_timesync(dc_device_t *abstract, const dc_datetime_t *datetime);
-
-dc_status_t shearwater_common_read_model(shearwater_common_device_t *device, unsigned int *model);
 
 #ifdef __cplusplus
 }

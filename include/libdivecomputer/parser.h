@@ -48,10 +48,13 @@ typedef enum dc_sample_type_t {
 	DC_SAMPLE_DECO,
 	DC_SAMPLE_GASMIX,
 	DC_SAMPLE_TTS,		// time to surface in seconds
+	DC_SAMPLE_LOCATION,
 } dc_sample_type_t;
 
 // Make it easy to test support compile-time with "#ifdef DC_SAMPLE_TTS"
 #define DC_SAMPLE_TTS DC_SAMPLE_TTS
+// Make it easy to test support compile-time with "#ifdef DC_SAMPLE_LOCATION"
+#define DC_SAMPLE_LOCATION DC_SAMPLE_LOCATION
 
 typedef enum dc_field_type_t {
 	DC_FIELD_DIVETIME,
@@ -227,8 +230,14 @@ typedef unsigned int dc_tankinfo_t;
  */
 
 typedef enum dc_tank_usage_t {
-	DC_TANK_USAGE_NONE,
+	DC_TANK_USAGE_NONE,       /* Not specified, or unknown. */
 	DC_TANK_USAGE_SIDEMOUNT,
+	DC_TANK_USAGE_INCLUDED,   /* The dive computer counts this tank towards
+	                             the diver's own gas consumption. */
+	DC_TANK_USAGE_EXCLUDED,   /* The dive computer does not count this tank
+	                             towards the diver's own gas consumption
+	                             (for example a buddy's or a stage/deco
+	                             bottle that is tracked but not included). */
 } dc_tank_usage_t;
 
 typedef struct dc_tank_t {
@@ -331,6 +340,7 @@ typedef union dc_sample_value_t {
 		unsigned int tts;
 	} deco;
 	unsigned int gasmix; /* Gas mix index */
+	dc_location_t location;
 } dc_sample_value_t;
 
 typedef struct dc_parser_t dc_parser_t;
@@ -358,6 +368,11 @@ dc_parser_set_density (dc_parser_t *parser, double density);
 dc_status_t
 dc_parser_get_datetime (dc_parser_t *parser, dc_datetime_t *datetime);
 
+/* Returns parser-provided device information when available. */
+dc_status_t
+dc_parser_get_device_info (dc_parser_t *parser, dc_event_devinfo_t *devinfo);
+
+/* DC_FIELD_STRING values are caller-owned and must be freed after use. */
 dc_status_t
 dc_parser_get_field (dc_parser_t *parser, dc_field_type_t type, unsigned int flags, void *value);
 

@@ -36,7 +36,7 @@ extern "C" {
 #define ISHWOS4(hardware) (((hardware) >> 8) == OSTC4_5_PREFIX)
 
 dc_status_t
-hw_ostc3_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream);
+hw_ostc3_device_open (dc_device_t **device, dc_context_t *context, dc_iostream_t *iostream, unsigned int frog);
 
 dc_status_t
 hw_ostc3_parser_create (dc_parser_t **out, dc_context_t *context, const unsigned char data[], size_t size, unsigned int model, unsigned int serial);

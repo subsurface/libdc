@@ -30,6 +30,7 @@
 #include "iterator-private.h"
 #include "platform.h"
 #include "array.h"
+#include "garmin-models.h"
 
 #define DC_FILTER_INTERNAL(key, values, isnullterminated, match) \
 	dc_filter_internal( \
@@ -65,9 +66,6 @@ static int dc_filter_cressi (const dc_descriptor_t *descriptor, dc_transport_t t
 static int dc_filter_halcyon (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 static int dc_filter_seac (const dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
 
-// Not merged upstream yet
-static int dc_filter_garmin (dc_descriptor_t *descriptor, dc_transport_t transport, const void *userdata);
-
 static dc_status_t dc_descriptor_iterator_next (dc_iterator_t *iterator, void *item);
 
 struct dc_descriptor_t {
@@ -96,6 +94,52 @@ static const dc_iterator_vtable_t dc_descriptor_iterator_vtable = {
  * artifical number (starting at zero) is assigned.  If the model number isn't
  * actually used to identify individual models, identical values are assigned.
  */
+
+/* Hardware-identifier to descriptor mapping.
+ *
+ * Some device families share a coarse model number (DC_EVENT_DEVINFO.model)
+ * across multiple marketed products; the hardware identifier (hw_id)
+ * from DC_EVENT_DEVINFO can refine the selection to a specific descriptor.
+ * This table is best-effort: the FWID is only available on live download and
+ * may change across firmware updates. Consumers should treat a NULL result
+ * from dc_descriptor_find_by_hw_id() as "use the coarse model descriptor". */
+typedef struct {
+	dc_family_t family;
+	unsigned int model;
+	unsigned int hw_id;
+	const char *product;
+} dc_hw_id_entry_t;
+
+static const dc_hw_id_entry_t g_hw_id_map[] = {
+	/* Shearwater Petrel family.
+	 * Petrel 1 (model=3): hardware ids 0x0404, 0x0909 */
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0404, "Petrel"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0909, "Petrel"},
+	/* Petrel 2 (model=3): hardware ids 0x0505, 0x0808, 0x0838, 0x08A5,
+	 *                                   0x0B0B, 0x7828, 0x7B2C, 0x8838 */
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0505, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0808, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0838, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x08A5, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x0B0B, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x7828, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x7B2C, "Petrel 2"},
+	{DC_FAMILY_SHEARWATER_PETREL, 3, 0x8838, "Petrel 2"},
+	/* HW OSTC3: preserve the descriptor resolution used before model IDs
+	 * followed the protocol semantics. Duplicate legacy IDs retain the first
+	 * matching descriptor from the former table. */
+	{DC_FAMILY_HW_OSTC3, 0,    0x11,   "OSTC Nano"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x13,   "OSTC Plus"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x1A,   "OSTC Plus"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x1B,   "OSTC 2"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x05,   "OSTC cR"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x07,   "OSTC cR"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x12,   "OSTC Sport"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x33,   "OSTC 2 TR"},
+	{DC_FAMILY_HW_OSTC3, 0,    0x0A,   "OSTC 3"},
+	{DC_FAMILY_HW_OSTC3, 0x43, 0x3B43, "OSTC 4"},
+	{DC_FAMILY_HW_OSTC3, 0x44, 0x3B44, "OSTC 5"},
+};
 
 static const dc_descriptor_t g_descriptors[] = {
 	/* Suunto Solution */
@@ -325,27 +369,21 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Mares", "Sirius",            DC_FAMILY_MARES_ICONHD , 0x2F, DC_TRANSPORT_BLE, dc_filter_mares},
 	{"Mares", "Quad Ci",           DC_FAMILY_MARES_ICONHD , 0x31, DC_TRANSPORT_BLE, dc_filter_mares},
 	{"Mares", "Quad 2",            DC_FAMILY_MARES_ICONHD , 0x32, DC_TRANSPORT_BLE, dc_filter_mares},
+	{"Mares", "Sirius L",          DC_FAMILY_MARES_ICONHD , 0x33, DC_TRANSPORT_BLE, dc_filter_mares},
 	{"Mares", "Puck 4",            DC_FAMILY_MARES_ICONHD , 0x35, DC_TRANSPORT_BLE, dc_filter_mares},
 	{"Mares", "Puck Lite",         DC_FAMILY_MARES_ICONHD , 0x35, DC_TRANSPORT_BLE, dc_filter_mares},
 	{"Mares", "Puck Pro EZ",       DC_FAMILY_MARES_ICONHD , 0x35, DC_TRANSPORT_BLE, dc_filter_mares},
 	{"Mares", "Puck Pro Ultra",    DC_FAMILY_MARES_ICONHD , 0x35, DC_TRANSPORT_BLE, dc_filter_mares},
 	/* Heinrichs Weikamp */
-	/* Current models */
-	{"Heinrichs Weikamp", "OSTC Nano",  DC_FAMILY_HW_OSTC3, 0x11, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 5",     DC_FAMILY_HW_OSTC3, 0x3B44, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0x1A, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x11, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0x1B, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	/* Historic models */
-	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x3B43, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x05, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0x07, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x12, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0x13, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 2 TR",  DC_FAMILY_HW_OSTC3, 0x33, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
-	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0x0A, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 2",     DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 2 TR",  DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 3",     DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC cR",    DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Plus",  DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Sport", DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC Nano",  DC_FAMILY_HW_OSTC3, 0, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 4",     DC_FAMILY_HW_OSTC3, 0x43, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
+	{"Heinrichs Weikamp", "OSTC 5",     DC_FAMILY_HW_OSTC3, 0x44, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLUETOOTH | DC_TRANSPORT_BLE, dc_filter_hw},
 	{"Heinrichs Weikamp", "OSTC 2N",  DC_FAMILY_HW_OSTC, 2, DC_TRANSPORT_SERIAL, NULL},
 	{"Heinrichs Weikamp", "OSTC 2C",  DC_FAMILY_HW_OSTC, 3, DC_TRANSPORT_SERIAL, NULL},
 	{"Heinrichs Weikamp", "OSTC Mk2", DC_FAMILY_HW_OSTC, 1, DC_TRANSPORT_SERIAL, NULL},
@@ -366,6 +404,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Cressi", "Leonardo 2.0", DC_FAMILY_CRESSI_GOA, 3, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_cressi},
 	{"Cressi", "Donatello",    DC_FAMILY_CRESSI_GOA, 4, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_cressi},
 	{"Cressi", "Michelangelo", DC_FAMILY_CRESSI_GOA, 5, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_cressi},
+	{"Cressi", "Raffaello",     DC_FAMILY_CRESSI_GOA, 6, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_cressi},
 	{"Cressi", "Neon",     DC_FAMILY_CRESSI_GOA, 9, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_cressi},
 	{"Cressi", "Nepto",    DC_FAMILY_CRESSI_GOA, 10, DC_TRANSPORT_SERIAL | DC_TRANSPORT_BLE, dc_filter_cressi},
 	/* Zeagle N2iTiON3 */
@@ -392,6 +431,7 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Shearwater", "Tern",      DC_FAMILY_SHEARWATER_PETREL, 12, DC_TRANSPORT_BLE, dc_filter_shearwater},
 	{"Shearwater", "Tern TX",   DC_FAMILY_SHEARWATER_PETREL, 12, DC_TRANSPORT_BLE, dc_filter_shearwater},
 	{"Shearwater", "Peregrine TX", DC_FAMILY_SHEARWATER_PETREL, 13, DC_TRANSPORT_BLE, dc_filter_shearwater},
+	{"Shearwater", "Perdix 3",  DC_FAMILY_SHEARWATER_PETREL, 14, DC_TRANSPORT_BLE, dc_filter_shearwater},
 	/* Dive Rite NiTek Q */
 	{"Dive Rite", "NiTek Q",   DC_FAMILY_DIVERITE_NITEKQ, 0, DC_TRANSPORT_SERIAL, NULL},
 	/* Citizen Hyper Aqualand */
@@ -504,13 +544,11 @@ static const dc_descriptor_t g_descriptors[] = {
 	{"Halcyon", "Symbios HUD",     DC_FAMILY_HALCYON_SYMBIOS, 1, DC_TRANSPORT_BLE, dc_filter_halcyon},
 	{"Halcyon", "Symbios Handset", DC_FAMILY_HALCYON_SYMBIOS, 7, DC_TRANSPORT_BLE, dc_filter_halcyon},
 
-	// Not merged upstream yet
-	/* Garmin -- model numbers as defined in FIT format; USB product id is (0x4000 | model) */
-	/* for the Mk1 we are using the model of the global model */
-	/* for the Mk2/Mk3 we are using the model of the Mk2 global model */
-	/* see garmin_parser.c for a more comprehensive list of models */
-	{"Garmin", "Descent Mk1", DC_FAMILY_GARMIN, 2859, DC_TRANSPORT_USBSTORAGE, NULL},
-	{"Garmin", "Descent Mk2(i)/Mk3(i)(S)/G1/G2/X50i", DC_FAMILY_GARMIN, 3258, DC_TRANSPORT_USBSTORAGE, NULL},
+	/* Garmin */
+#define GARMIN_DESCRIPTOR(name, id, mtp_capable) {"Garmin", name, DC_FAMILY_GARMIN, id, DC_TRANSPORT_USBSTORAGE, NULL},
+	GARMIN_MODEL_LIST(GARMIN_DESCRIPTOR)
+#undef GARMIN_DESCRIPTOR
+	/* Generic FIT file import, not a hardware model. */
 	{"FIT", "File import", DC_FAMILY_GARMIN, 0, DC_TRANSPORT_USBSTORAGE, NULL },
 };
 
@@ -729,10 +767,16 @@ dc_filter_suunto (const dc_descriptor_t *descriptor, dc_transport_t transport, c
 		"EON Steel Black",
 	};
 
+	/* Both arrays are indexed by descriptor model number.
+	 * Select only the entry for this specific descriptor. */
+	unsigned int model = dc_descriptor_get_model (descriptor);
+	if (model >= C_ARRAY_SIZE (usbhid) || model >= C_ARRAY_SIZE (bluetooth))
+		return 0;
+
 	if (transport == DC_TRANSPORT_USBHID) {
-		return DC_FILTER_INTERNAL (userdata, usbhid, 0, dc_match_usbhid);
+		return dc_match_usbhid (userdata, &usbhid[model]);
 	} else if (transport == DC_TRANSPORT_BLE) {
-		return DC_FILTER_INTERNAL (userdata, bluetooth, 0, dc_match_prefix);
+		return dc_match_prefix (userdata, &bluetooth[model]);
 	}
 
 	return 1;
@@ -764,6 +808,7 @@ dc_filter_shearwater (const dc_descriptor_t *descriptor, dc_transport_t transpor
 		"NERD 2",
 		"Perdix",
 		"Perdix 2",
+		"Perdix 3",
 		"Teric",
 		"Peregrine",
 		"Peregrine TX",
@@ -798,6 +843,7 @@ dc_filter_mares (const dc_descriptor_t *descriptor, dc_transport_t transport, co
 		"Mares bluelink pro",
 		"Mares Genius",
 		"Sirius",
+		"Sirius L",
 		"Quad Ci",
 		"Quad2",
 		"Puck4",
@@ -957,6 +1003,7 @@ dc_filter_cressi (const dc_descriptor_t *descriptor, dc_transport_t transport, c
 		3,  // Leonardo 2.0
 		4,  // Donatello
 		5,  // Michelangelo
+		6,  // Raffaello
 		9,  // Neon
 		10, // Nepto
 	};
@@ -1047,6 +1094,98 @@ void
 dc_descriptor_free (dc_descriptor_t *descriptor)
 {
 	return;
+}
+
+dc_descriptor_t *
+dc_descriptor_find_by_hw_id (dc_family_t family, unsigned int hw_id)
+{
+	if (hw_id == 0)
+		return NULL;
+
+	for (size_t i = 0; i < C_ARRAY_SIZE(g_hw_id_map); i++) {
+		if (g_hw_id_map[i].family != family || g_hw_id_map[i].hw_id != hw_id)
+			continue;
+
+		/* Matched — find the corresponding entry in g_descriptors[] by
+		 * family, model, and product name.  Returning a direct pointer
+		 * into the static table is safe: dc_descriptor_free() is a
+		 * no-op and g_descriptors[] has static storage duration. */
+		for (size_t j = 0; j < C_ARRAY_SIZE(g_descriptors); j++) {
+			if (g_descriptors[j].type == family &&
+			    g_descriptors[j].model == g_hw_id_map[i].model &&
+			    strcmp(g_descriptors[j].product, g_hw_id_map[i].product) == 0) {
+				return (dc_descriptor_t *) &g_descriptors[j];
+			}
+		}
+		/* hw_id matched the map but the descriptor was not found —
+		 * product name mismatch or g_descriptors[] was edited without
+		 * updating g_hw_id_map[]. */
+		return NULL;
+	}
+
+	return NULL;
+}
+
+/* Product-name to descriptor mapping for Mares Icon HD.
+ *
+ * The mares_iconhd driver reads a product-name string from offset 0x46 of
+ * the version packet and maps it to a coarse numeric model. Several marketed
+ * products share one numeric model; this table maps the confirmed firmware
+ * product-name strings to the specific descriptor product name, allowing
+ * consumers to refine the display label beyond the coarse model.
+ *
+ * Evidence: mares_iconhd.c mares_iconhd_get_model() table. Only strings
+ * that unambiguously identify a single marketed product are listed. */
+typedef struct {
+	dc_family_t family;
+	unsigned int model;
+	const char *firmware_name;
+	const char *descriptor_product;
+} dc_product_name_entry_t;
+
+static const dc_product_name_entry_t g_product_name_map[] = {
+	/* PUCKPRO (0x18): "Puck Pro" firmware name — both "Puck Pro" and "Puck Pro +"
+	 * share model 0x18. The version-packet name "Puck Pro" identifies the base
+	 * variant. No confirmed firmware name for the + variant is known; it falls
+	 * back to the coarse model ("Puck Pro"). */
+	{DC_FAMILY_MARES_ICONHD, 0x18, "Puck Pro",   "Puck Pro"},
+	/* PUCK4 (0x35): four marketed products share this model. The firmware
+	 * product-name strings below are taken directly from the mares_iconhd
+	 * matching table and map to specific descriptor product names. */
+	{DC_FAMILY_MARES_ICONHD, 0x35, "Puck4",      "Puck 4"},
+	{DC_FAMILY_MARES_ICONHD, 0x35, "Puck Lite",  "Puck Lite"},
+	{DC_FAMILY_MARES_ICONHD, 0x35, "Puck Pro U", "Puck Pro Ultra"},
+	/* "Puck" (0x35) is ambiguous — the BLE advertisement prefix "Puck" matches
+	 * multiple variants; no single descriptor product is confirmed. Not mapped. */
+};
+
+dc_descriptor_t *
+dc_descriptor_find_by_product_name (dc_family_t family, unsigned int model, const char *product_name)
+{
+	if (product_name == NULL || product_name[0] == '\0')
+		return NULL;
+
+	for (size_t i = 0; i < C_ARRAY_SIZE(g_product_name_map); i++) {
+		if (g_product_name_map[i].family != family ||
+		    g_product_name_map[i].model  != model  ||
+		    strcmp(g_product_name_map[i].firmware_name, product_name) != 0)
+			continue;
+
+		/* Matched — find the descriptor by family, model, and product name. */
+		for (size_t j = 0; j < C_ARRAY_SIZE(g_descriptors); j++) {
+			if (g_descriptors[j].type  == family &&
+			    g_descriptors[j].model == model  &&
+			    strcmp(g_descriptors[j].product,
+			           g_product_name_map[i].descriptor_product) == 0) {
+				return (dc_descriptor_t *) &g_descriptors[j];
+			}
+		}
+		/* firmware_name matched but descriptor product not found — g_descriptors[]
+		 * may have been edited without updating g_product_name_map[]. */
+		return NULL;
+	}
+
+	return NULL;
 }
 
 const char *

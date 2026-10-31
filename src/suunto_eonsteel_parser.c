@@ -1501,6 +1501,7 @@ suunto_eonsteel_parser_destroy(dc_parser_t *parser)
 {
 	suunto_eonsteel_parser_t *eon = (suunto_eonsteel_parser_t *) parser;
 
+	dc_field_cache_free (&eon->cache);
 	desc_free(eon->type_desc, MAXTYPE);
 
 	return DC_STATUS_SUCCESS;

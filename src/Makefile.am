@@ -48,10 +48,9 @@ libdivecomputer_la_SOURCES = \
 	mares_nemo.h mares_nemo.c mares_nemo_parser.c \
 	mares_puck.h mares_puck.c \
 	mares_darwin.h mares_darwin.c mares_darwin_parser.c \
-	mares_iconhd.h mares_iconhd.c mares_iconhd_parser.c \
+	mares_iconhd.h mares_iconhd_freedive.h mares_iconhd.c mares_iconhd_parser.c \
 	ihex.h ihex.c \
 	hw_ostc.h hw_ostc.c hw_ostc_parser.c \
-	hw_frog.h hw_frog.c \
 	hw_ostc3.h hw_ostc3.c \
 	aes.h aes.c \
 	cressi_edy.h cressi_edy.c cressi_edy_parser.c \
@@ -98,7 +97,7 @@ libdivecomputer_la_SOURCES = \
 libdivecomputer_la_SOURCES += \
 	usb_storage.c \
 	field-cache.h field-cache.c \
-	garmin.h garmin.c garmin_parser.c
+	garmin.h garmin-models.h garmin.c garmin_parser.c
 
 if OS_WIN32
 libdivecomputer_la_SOURCES += serial_win32.c

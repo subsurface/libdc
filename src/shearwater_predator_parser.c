@@ -117,10 +117,14 @@
 
 #define SENSOR_CALIBRATION_DEFAULT 2100
 
-#define UNDEFINED 0xFFFFFFFF
+#define GNSS_NOSAT    0
+#define GNSS_NOFIX    1
+#define GNSS_FIX_2D   2
+#define GNSS_FIX_3D   3
+#define GNSS_UNKNOWN  0xFF
+#define GNSS_DISABLED 0x10
 
-#define GNSS_FIX_2D 2
-#define GNSS_FIX_3D 3
+#define UNDEFINED 0xFFFFFFFF
 
 typedef struct shearwater_predator_parser_t shearwater_predator_parser_t;
 
@@ -159,6 +163,7 @@ struct shearwater_predator_parser_t {
 	unsigned int opening[NRECORDS];
 	unsigned int closing[NRECORDS];
 	unsigned int final;
+	unsigned int nsamples;
 	unsigned int ngasmixes;
 	unsigned int ntanks;
 	shearwater_predator_gasmix_t gasmix[NGASMIXES];
@@ -169,6 +174,7 @@ struct shearwater_predator_parser_t {
 	unsigned int calibrated;
 	double calibration[3];
 	bool needs_divecan_calibration_estimate;
+	bool external_ppo2_used;
 	unsigned int divemode;
 	unsigned int serial;
 	unsigned int units;
@@ -180,7 +186,6 @@ struct shearwater_predator_parser_t {
 };
 
 struct dc_parser_sensor_calibration_t {
-	bool external_ppo2_used;
 	double sum_ppo2;
 	double sum_calculated_ppo2;
 	unsigned int ppo2_sample_count;
@@ -189,8 +194,11 @@ struct dc_parser_sensor_calibration_t {
 static dc_status_t shearwater_predator_parser_get_datetime (dc_parser_t *abstract, dc_datetime_t *datetime);
 static dc_status_t shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, unsigned int flags, void *value);
 static dc_status_t shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata);
+static dc_status_t shearwater_predator_parser_destroy (dc_parser_t *abstract);
 
 static dc_status_t shearwater_predator_parser_cache (shearwater_predator_parser_t *parser);
+static dc_status_t shearwater_predator_parser_calibration_prepass (shearwater_predator_parser_t *parser, struct dc_parser_sensor_calibration_t *calibration);
+static dc_status_t shearwater_predator_parser_samples_foreach_internal (shearwater_predator_parser_t *parser, dc_sample_callback_t callback, void *userdata, struct dc_parser_sensor_calibration_t *calibration);
 
 static const dc_parser_vtable_t shearwater_predator_parser_vtable = {
 	sizeof(shearwater_predator_parser_t),
@@ -201,7 +209,7 @@ static const dc_parser_vtable_t shearwater_predator_parser_vtable = {
 	shearwater_predator_parser_get_datetime, /* datetime */
 	shearwater_predator_parser_get_field, /* fields */
 	shearwater_predator_parser_samples_foreach, /* samples_foreach */
-	NULL /* destroy */
+	shearwater_predator_parser_destroy /* destroy */
 };
 
 static const dc_parser_vtable_t shearwater_petrel_parser_vtable = {
@@ -213,7 +221,7 @@ static const dc_parser_vtable_t shearwater_petrel_parser_vtable = {
 	shearwater_predator_parser_get_datetime, /* datetime */
 	shearwater_predator_parser_get_field, /* fields */
 	shearwater_predator_parser_samples_foreach, /* samples_foreach */
-	NULL /* destroy */
+	shearwater_predator_parser_destroy /* destroy */
 };
 
 
@@ -234,6 +242,17 @@ shearwater_predator_find_gasmix (shearwater_predator_parser_t *parser, unsigned 
 	}
 
 	return i;
+}
+
+
+static dc_status_t
+shearwater_predator_parser_destroy (dc_parser_t *abstract)
+{
+	shearwater_predator_parser_t *parser = (shearwater_predator_parser_t *) abstract;
+
+	dc_field_cache_free (&parser->cache);
+
+	return DC_STATUS_SUCCESS;
 }
 
 
@@ -261,6 +280,8 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, const
 		ERROR (context, "Failed to allocate memory.");
 		return DC_STATUS_NOMEMORY;
 	}
+
+	memset(&parser->cache, 0, sizeof(parser->cache));
 
 	// Set the default values.
 	parser->model = model;
@@ -308,6 +329,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, const
 		parser->calibration[i] = 0.0;
 	}
 	parser->needs_divecan_calibration_estimate = false;
+	parser->external_ppo2_used = false;
 	parser->units = METRIC;
 	parser->density = DEF_DENSITY_SALT;
 	parser->atmospheric = DEF_ATMOSPHERIC / (BAR / 1000);
@@ -469,6 +491,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	if (parser->cached) {
 		return DC_STATUS_SUCCESS;
 	}
+	dc_field_cache_free (&parser->cache);
 	memset(&parser->cache, 0, sizeof(parser->cache));
 
 	// Log versions before 6 weren't reliably stored in the data, but
@@ -541,6 +564,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 		}
 	}
 
+	unsigned int nsamples = 0;
 	unsigned int offset = headersize;
 	unsigned int length = size - footersize;
 	unsigned int sub_mode = SM_OC_REC;
@@ -558,6 +582,9 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 
 		if (type == LOG_RECORD_DIVE_SAMPLE ||
 			type == LOG_RECORD_AVELO_SAMPLE) {
+			// Number of samples.
+			nsamples++;
+
 			// Status flags.
 			unsigned int status = 0;
 			unsigned int ccr = 0;
@@ -719,11 +746,22 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 					gasmix[i].enabled = (state & (1 << i)) != 0;
 				}
 
-				unsigned int gtrmode = data[offset + 29];
-				if (popcount(gtrmode) >= 2) {
-					for (unsigned int i = 0; i < 4; ++i) {
-						if (gtrmode & (1 << i)) {
-							tank[i].usage = DC_TANK_USAGE_SIDEMOUNT;
+				// GTR (Gas Time Remaining) mode, used here only to detect
+				// sidemount tanks. This byte immediately follows the AI
+				// mode byte and, like it, requires the wireless air
+				// integration transmitters, so it is only meaningful once
+				// AI support appears (logversion >= 7). Before log version
+				// 13 the only defined values were 0/1/2 (off/T1/T2), which
+				// never satisfy the sidemount popcount check below; from
+				// version 13 onward, multiple transmitter bits can be
+				// combined to flag sidemount configurations.
+				if (logversion >= 7) {
+					unsigned int gtrmode = data[offset + 29];
+					if (popcount(gtrmode) >= 2) {
+						for (unsigned int i = 0; i < 4; ++i) {
+							if (gtrmode & (1 << i)) {
+								tank[i].usage = DC_TANK_USAGE_SIDEMOUNT;
+							}
 						}
 					}
 				}
@@ -849,6 +887,11 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	}
 
 	// Get the correct model number from the final block.
+	// Product-Version byte from the device's final record — authoritative for
+	// the coarse product family. This value is not the FWID; stored logs do not
+	// carry the FWID, so sub-model distinctions (e.g. Petrel 1 vs Petrel 2) are
+	// not recoverable on re-parse. Consumer-side refinement uses the FWID
+	// exposed via devinfo.hw_id on live download.
 	if (parser->final != UNDEFINED) {
 		parser->model = data[parser->final + 13];
 		DEBUG (abstract->context, "Device: model=%u, serial=%u, firmware=%u",
@@ -895,6 +938,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 			parser->tankidx[i] = UNDEFINED;
 		}
 	}
+	parser->nsamples = nsamples;
 	parser->aimode = aimode;
 	parser->hpccr = hpccr;
 	parser->divemode = divemode;
@@ -936,7 +980,9 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	}
 
 	struct dc_parser_sensor_calibration_t userdata = { 0 };
-	dc_status_t rc = shearwater_predator_parser_samples_foreach(abstract, NULL, (void *)&userdata);
+	dc_status_t rc = DC_STATUS_SUCCESS;
+	if (shearwater_predator_is_ccr(divemode))
+		rc = shearwater_predator_parser_calibration_prepass(parser, &userdata);
 
 	bool calibrated = false;
 	if (parser->needs_divecan_calibration_estimate) {
@@ -959,7 +1005,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	}
 
 	if (!calibrated) {
-		add_sensor_state(parser, userdata.external_ppo2_used);
+		add_sensor_state(parser, parser->external_ppo2_used);
 	}
 
 	static const char *name = "Divemode";
@@ -1002,7 +1048,6 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 
 	unsigned int decomodel_idx = parser->pnf ? parser->opening[2] + 18 : 67;
 	unsigned int gf_idx        = parser->pnf ? parser->opening[0] +  4 : 4;
-	int latitude = 0, longitude = 0;
 
 	dc_gasmix_t *gasmix = (dc_gasmix_t *) value;
 	dc_tank_t *tank = (dc_tank_t *) value;
@@ -1108,15 +1153,17 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			if (parser->opening[9] == UNDEFINED || parser->aimode != AI_ON_GPS)
 				return DC_STATUS_UNSUPPORTED;
 
-			unsigned int gnss_status = data[parser->opening[9] + 16];
-			if (!(gnss_status == GNSS_FIX_2D || gnss_status == GNSS_FIX_3D))
-				return DC_STATUS_UNSUPPORTED;
+			{
+				unsigned int gnss_status = data[parser->opening[9] + 16];
+				if (!(gnss_status == GNSS_FIX_2D || gnss_status == GNSS_FIX_3D))
+					return DC_STATUS_UNSUPPORTED;
 
-			latitude  = (signed int) array_uint32_be (data + parser->opening[9] + 21);
-			longitude = (signed int) array_uint32_be (data + parser->opening[9] + 25);
-			location->latitude  = latitude  / 100000.0;
-			location->longitude = longitude / 100000.0;
-			location->altitude  = 0.0;
+				signed int latitude  = (signed int) array_uint32_be (data + parser->opening[9] + 21);
+				signed int longitude = (signed int) array_uint32_be (data + parser->opening[9] + 25);
+				location->latitude  = latitude  / 100000.0;
+				location->longitude = longitude / 100000.0;
+				location->altitude  = 0.0;
+			}
 			break;
 		case DC_FIELD_STRING:
 			return dc_field_get_string(&parser->cache, flags, string);
@@ -1129,18 +1176,12 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 }
 
 
+// AI-generated (Claude)
 static dc_status_t
-shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
+shearwater_predator_parser_samples_foreach_internal (shearwater_predator_parser_t *parser, dc_sample_callback_t callback, void *userdata, struct dc_parser_sensor_calibration_t *calibration)
 {
-	shearwater_predator_parser_t *parser = (shearwater_predator_parser_t *) abstract;
-
-	const unsigned char *data = abstract->data;
-	unsigned int size = abstract->size;
-
-	// Cache the parser data.
-	dc_status_t rc = shearwater_predator_parser_cache (parser);
-	if (rc != DC_STATUS_SUCCESS)
-		return rc;
+	const unsigned char *data = parser->base.data;
+	unsigned int size = parser->base.size;
 
 	// Previous gas mix.
 	unsigned int o2_previous = UNDEFINED, he_previous = UNDEFINED, dil_previous = UNDEFINED;
@@ -1152,6 +1193,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 		interval = array_uint16_be (data + parser->opening[5] + 23);
 	}
 
+	unsigned int nsamples = 0;
 	unsigned int pnf = parser->pnf;
 	unsigned int offset = parser->headersize;
 	unsigned int length = size - parser->footersize;
@@ -1169,6 +1211,9 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 
 		if (type == LOG_RECORD_DIVE_SAMPLE ||
 			type == LOG_RECORD_AVELO_SAMPLE) {
+			// Number of samples.
+			nsamples++;
+
 			// Time (seconds).
 			time += interval;
 			sample.time = time;
@@ -1209,10 +1254,8 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				if ((status & PPO2_EXTERNAL) == 0) {
 					double calculated_ppo2 = data[offset + pnf + 6] / 100.0;
 
-					if (userdata) {
-						struct dc_parser_sensor_calibration_t *out = (struct dc_parser_sensor_calibration_t *)userdata;
-
-						out->external_ppo2_used = true;
+					if (calibration) {
+						parser->external_ppo2_used = true;
 
 						if (parser->needs_divecan_calibration_estimate) {
 							double ppo2_sum = 0.0;
@@ -1234,9 +1277,9 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 
 							double ppo2 = ppo2_sum / ppo2_count;
 
-							out->sum_ppo2 += ppo2;
-							out->sum_calculated_ppo2 += calculated_ppo2;
-							out->ppo2_sample_count++;
+							calibration->sum_ppo2 += ppo2;
+							calibration->sum_calculated_ppo2 += calculated_ppo2;
+							calibration->ppo2_sample_count++;
 						}
 					}
 
@@ -1292,7 +1335,7 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				(o2 != 0 || he != 0)) {
 				unsigned int idx = shearwater_predator_find_gasmix (parser, o2, he, ccr);
 				if (idx >= parser->ngasmixes) {
-					ERROR (abstract->context, "Invalid gas mix.");
+					ERROR (parser->base.context, "Invalid gas mix.");
 					return DC_STATUS_DATAFORMAT;
 				}
 
@@ -1356,6 +1399,21 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 				if (data[offset + pnf + 21] < 0xF0) {
 					sample.rbt = data[offset + pnf + 21];
 					if (callback) callback (DC_SAMPLE_RBT, &sample, userdata);
+				}
+			}
+
+			if (nsamples == 1 || nsamples == parser->nsamples) {
+				unsigned int record = nsamples == 1 ? parser->opening[9] : parser->closing[9];
+				if (record != UNDEFINED && parser->logversion >= 17) {
+					unsigned int gnss = data[record + 16];
+					int latitude  = (signed int) array_uint32_be (data + record + 21);
+					int longitude = (signed int) array_uint32_be (data + record + 25);
+					if (gnss == GNSS_FIX_2D || gnss == GNSS_FIX_3D) {
+						sample.location.latitude  = latitude  / 100000.0;
+						sample.location.longitude = longitude / 100000.0;
+						sample.location.altitude  = 0.0;
+						if (callback) callback (DC_SAMPLE_LOCATION, &sample, userdata);
+					}
 				}
 			}
 		} else if (type == LOG_RECORD_DIVE_SAMPLE_EXT) {
@@ -1439,4 +1497,24 @@ shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_cal
 	}
 
 	return DC_STATUS_SUCCESS;
+}
+
+
+static dc_status_t
+shearwater_predator_parser_calibration_prepass (shearwater_predator_parser_t *parser, struct dc_parser_sensor_calibration_t *calibration)
+{
+	return shearwater_predator_parser_samples_foreach_internal(parser, NULL, NULL, calibration);
+}
+
+
+static dc_status_t
+shearwater_predator_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callback_t callback, void *userdata)
+{
+	shearwater_predator_parser_t *parser = (shearwater_predator_parser_t *) abstract;
+
+	dc_status_t rc = shearwater_predator_parser_cache (parser);
+	if (rc != DC_STATUS_SUCCESS)
+		return rc;
+
+	return shearwater_predator_parser_samples_foreach_internal(parser, callback, userdata, NULL);
 }

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -66,6 +66,18 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <!-- Enable libmtp support when the vcpkg port is present, unless explicitly overridden.
+       libmtp is x64-only until 32-bit vcpkg triplet support is confirmed. -->
+  <PropertyGroup>
+    <EnableLibmtp Condition="'$(EnableLibmtp)'=='' and '$(VCPKG_ROOT)'!='' and '$(Platform)'!='Win32' and Exists('$(VCPKG_ROOT)\installed\x64-windows\include\libmtp.h')">true</EnableLibmtp>
+    <EnableLibmtp Condition="'$(EnableLibmtp)'==''">false</EnableLibmtp>
+    <LibmtpPreprocessor Condition="'$(EnableLibmtp)'=='true'">HAVE_LIBMTP;</LibmtpPreprocessor>
+    <LibmtpIncludes Condition="'$(EnableLibmtp)'=='true'">$(VCPKG_ROOT)\installed\x64-windows\include;</LibmtpIncludes>
+    <!-- ole32, portabledeviceguids, and propsys are Windows SDK components required by libmtp on Windows. -->
+    <LibmtpLibs Condition="'$(EnableLibmtp)'=='true'">libmtp.lib;ole32.lib;portabledeviceguids.lib;propsys.lib;</LibmtpLibs>
+    <LibmtpLibDirs Condition="'$(EnableLibmtp)'=='true' and '$(Configuration)'=='Debug'">$(VCPKG_ROOT)\installed\x64-windows\debug\lib;</LibmtpLibDirs>
+    <LibmtpLibDirs Condition="'$(EnableLibmtp)'=='true' and '$(Configuration)'!='Debug'">$(VCPKG_ROOT)\installed\x64-windows\lib;</LibmtpLibDirs>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)$(PlatformTarget)\$(Configuration)\bin\</OutDir>
@@ -89,14 +101,15 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUG;_WINDOWS;_USRDLL;LIBDIVECOMPUTER_EXPORTS;ENABLE_LOGGING;HAVE_VERSION_SUFFIX;HAVE_AF_IRDA_H;HAVE_WS2BTH_H;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..\include;$(LibmtpIncludes)%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUG;_WINDOWS;_USRDLL;LIBDIVECOMPUTER_EXPORTS;ENABLE_LOGGING;HAVE_VERSION_SUFFIX;HAVE_AF_IRDA_H;HAVE_WS2BTH_H;$(LibmtpPreprocessor)%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader />
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;$(LibmtpLibs)%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(LibmtpLibDirs)%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>$(OutDir)libdivecomputer.def</ModuleDefinitionFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -108,15 +121,16 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUG;_WINDOWS;_USRDLL;LIBDIVECOMPUTER_EXPORTS;ENABLE_LOGGING;HAVE_VERSION_SUFFIX;HAVE_AF_IRDA_H;HAVE_WS2BTH_H;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..\include;$(LibmtpIncludes)%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_DEBUG;_WINDOWS;_USRDLL;LIBDIVECOMPUTER_EXPORTS;ENABLE_LOGGING;HAVE_VERSION_SUFFIX;HAVE_AF_IRDA_H;HAVE_WS2BTH_H;$(LibmtpPreprocessor)%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;$(LibmtpLibs)%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(LibmtpLibDirs)%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>$(OutDir)libdivecomputer.def</ModuleDefinitionFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -129,15 +143,16 @@
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <AdditionalIncludeDirectories>..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_WINDOWS;_USRDLL;LIBDIVECOMPUTER_EXPORTS;ENABLE_LOGGING;HAVE_VERSION_SUFFIX;HAVE_AF_IRDA_H;HAVE_WS2BTH_H;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..\include;$(LibmtpIncludes)%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_WINDOWS;_USRDLL;LIBDIVECOMPUTER_EXPORTS;ENABLE_LOGGING;HAVE_VERSION_SUFFIX;HAVE_AF_IRDA_H;HAVE_WS2BTH_H;$(LibmtpPreprocessor)%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <PrecompiledHeader />
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;$(LibmtpLibs)%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(LibmtpLibDirs)%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>$(OutDir)libdivecomputer.def</ModuleDefinitionFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -152,8 +167,8 @@
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <AdditionalIncludeDirectories>..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_WINDOWS;_USRDLL;LIBDIVECOMPUTER_EXPORTS;ENABLE_LOGGING;HAVE_VERSION_SUFFIX;HAVE_AF_IRDA_H;HAVE_WS2BTH_H;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..\include;$(LibmtpIncludes)%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;NDEBUG;_WINDOWS;_USRDLL;LIBDIVECOMPUTER_EXPORTS;ENABLE_LOGGING;HAVE_VERSION_SUFFIX;HAVE_AF_IRDA_H;HAVE_WS2BTH_H;$(LibmtpPreprocessor)%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <PrecompiledHeader>
       </PrecompiledHeader>
@@ -161,7 +176,8 @@
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;$(LibmtpLibs)%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(LibmtpLibDirs)%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>$(OutDir)libdivecomputer.def</ModuleDefinitionFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -213,7 +229,6 @@
     <ClCompile Include="..\..\src\halcyon_symbios.c" />
     <ClCompile Include="..\..\src\halcyon_symbios_parser.c" />
     <ClCompile Include="..\..\src\hdlc.c" />
-    <ClCompile Include="..\..\src\hw_frog.c" />
     <ClCompile Include="..\..\src\hw_ostc.c" />
     <ClCompile Include="..\..\src\hw_ostc3.c" />
     <ClCompile Include="..\..\src\hw_ostc_parser.c" />
@@ -305,7 +320,6 @@
     <ClInclude Include="..\..\include\libdivecomputer\descriptor.h" />
     <ClInclude Include="..\..\include\libdivecomputer\device.h" />
     <ClInclude Include="..\..\include\libdivecomputer\divesystem_idive.h" />
-    <ClInclude Include="..\..\include\libdivecomputer\hw_frog.h" />
     <ClInclude Include="..\..\include\libdivecomputer\hw_ostc.h" />
     <ClInclude Include="..\..\include\libdivecomputer\hw_ostc3.h" />
     <ClInclude Include="..\..\include\libdivecomputer\ioctl.h" />
@@ -348,7 +362,6 @@
     <ClInclude Include="..\..\src\garmin.h" />
     <ClInclude Include="..\..\src\halcyon_symbios.h" />
     <ClInclude Include="..\..\src\hdlc.h" />
-    <ClInclude Include="..\..\src\hw_frog.h" />
     <ClInclude Include="..\..\src\hw_ostc.h" />
     <ClInclude Include="..\..\src\hw_ostc3.h" />
     <ClInclude Include="..\..\src\ihex.h" />

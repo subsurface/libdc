@@ -39,6 +39,7 @@ dc_status_t dc_field_add_string(dc_field_cache_t *, const char *desc, const char
 dc_status_t dc_field_add_string_fmt(dc_field_cache_t *, const char *desc, const char *fmt, ...);
 dc_status_t dc_field_get_string(dc_field_cache_t *, unsigned idx, dc_field_string_t *value);
 dc_status_t dc_field_get(dc_field_cache_t *, dc_field_type_t, unsigned int, void *);
+void dc_field_cache_free (dc_field_cache_t *);
 
 /*
  * Macro to make it easy to set DC_FIELD_xyz values.

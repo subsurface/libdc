@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "platform.h"
@@ -57,11 +58,25 @@ dc_status_t dc_field_get_string(dc_field_cache_t *cache, unsigned idx, dc_field_
 	if (idx < MAXSTRINGS) {
 		dc_field_string_t *res = cache->strings+idx;
 		if (res->desc && res->value) {
-			*value = *res;
+			value->desc = res->desc;
+			value->value = strdup(res->value);
+			if (!value->value)
+				return DC_STATUS_NOMEMORY;
 			return DC_STATUS_SUCCESS;
 		}
 	}
 	return DC_STATUS_UNSUPPORTED;
+}
+
+void
+dc_field_cache_free (dc_field_cache_t *cache)
+{
+	for (unsigned int i = 0; i < MAXSTRINGS; i++) {
+		free ((char *) cache->strings[i].value);
+		cache->strings[i].value = NULL;
+		cache->strings[i].desc = NULL;
+	}
+	cache->initialized &= ~(1u << DC_FIELD_STRING);
 }
 
 
@@ -109,6 +124,9 @@ dc_field_get(dc_field_cache_t *cache, dc_field_type_t type, unsigned int flags, 
 		tank->gasmix = flags;
 		tank->workpressure = cache->tankworkingpressure[flags];
 		tank->type = cache->tankinfo[flags];
+		tank->usage = cache->tankusage[flags];
+		tank->beginpressure = 0;
+		tank->endpressure = 0;
 
 		return DC_STATUS_SUCCESS;
 	case DC_FIELD_STRING:
