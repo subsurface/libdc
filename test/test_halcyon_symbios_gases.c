@@ -1,4 +1,5 @@
 /* Synthetic Symbios records: no device logs or identifying data. */
+#include <math.h>
 #include <stdio.h>
 
 #include <libdivecomputer/descriptor.h>
@@ -7,6 +8,9 @@
 
 #define GAS(id, o2, he, enabled) 0x11, 8, id, o2, he, enabled, 0, 0
 #define TRANSMITTER(id, serial) 0x06, 12, id, 0, 0, 0, 0xD2, 0x04, serial, 0, 0, 0
+
+/* dc_descriptor_get_model() value for the "Symbios Handset", see descriptor.c. */
+#define HANDSET_MODEL_SYMBIOS 7
 
 typedef struct samples_t {
 	unsigned int gases[16];
@@ -27,7 +31,7 @@ handset_descriptor (void)
 		return NULL;
 	while (dc_iterator_next (iterator, &item) == DC_STATUS_SUCCESS) {
 		if (dc_descriptor_get_type (item) == DC_FAMILY_HALCYON_SYMBIOS &&
-			dc_descriptor_get_model (item) == 7) {
+			dc_descriptor_get_model (item) == HANDSET_MODEL_SYMBIOS) {
 			descriptor = item;
 			break;
 		}
@@ -60,8 +64,8 @@ check_mix (dc_parser_t *parser, unsigned int index, unsigned int oxygen, unsigne
 {
 	dc_gasmix_t mix;
 	check ("mix field", dc_parser_get_field (parser, DC_FIELD_GASMIX, index, &mix) == DC_STATUS_SUCCESS);
-	check ("oxygen fraction", mix.oxygen == oxygen / 100.0);
-	check ("helium fraction", mix.helium == helium / 100.0);
+	check ("oxygen fraction", fabs (mix.oxygen - oxygen / 100.0) < 1e-9);
+	check ("helium fraction", fabs (mix.helium - helium / 100.0) < 1e-9);
 }
 
 static void
@@ -124,6 +128,22 @@ main (void)
 		TRANSMITTER (2, 1), TRANSMITTER (5, 2),
 		0x02, 4, 36, 0 /* Gas-switch record retains its independent path. */
 	};
+	/*
+	 * Expected gas count of 8: 7 distinct ids registered from "linkage"
+	 * (0, 2, 4, 5, 6, 7, 8, at indices 0-6) plus one more gas mix
+	 * synthesized by the trailing ID_GAS_SWITCH record, which always uses
+	 * its own untagged id and is appended as index 7. Ids 0, 2 and 4 are
+	 * registered because they are enabled; ids 5, 7 and 8 are registered
+	 * regardless of their enable byte because ids >= NGAS_SLOTS are
+	 * diluents, which skip the enable check; id 6 is both enabled and a
+	 * diluent.
+	 *
+	 * Expected sample indices {0, 1, 3, 7}: index 0 comes from the
+	 * repeated GAS(0, 21, 0, 1) record re-confirming the already
+	 * registered gas 0; index 1 and 3 come from TRANSMITTER(2, 1) and
+	 * TRANSMITTER(5, 2) selecting gases 2 and 5; index 7 comes from the
+	 * trailing gas-switch record.
+	 */
 	static const unsigned int linkage_samples[] = {0, 1, 3, 7};
 	/* Gas1 is disabled in its config but later reported by a transmitter;
 	 * it must resolve instead of being rejected, and only becomes part of
