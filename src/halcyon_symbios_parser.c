@@ -354,7 +354,6 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 
 	unsigned int have_time = 0;
 	unsigned int have_depth = 0;
-	unsigned int have_gasmix = 0;
 
 	unsigned int time = 0;
 	unsigned int offset = 0;
@@ -473,7 +472,10 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			unsigned int transmitter = array_uint16_le (data + offset + 8);
 			dc_tank_usage_t usage = DC_TANK_USAGE_NONE;
 
-			if (have_gasmix && gasmix_id_previous != gas_id) {
+			// Every configured gas (enabled or not) is recorded in
+			// gasconfig[], so checking it covers both an already exposed
+			// gas and one only resolvable through this transmitter.
+			if (ngasconfig > 0 && gasmix_id_previous != gas_id) {
 				unsigned int idx = 0;
 				while (idx < ngasmixes) {
 					if (gas_id == gasmix[idx].id)
@@ -702,7 +704,6 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 					gasmix[ngasmixes].oxygen = o2;
 					gasmix[ngasmixes].helium = he;
 					ngasmixes++;
-					have_gasmix = 1;
 				} else {
 					if (gasmix[idx].oxygen != o2 ||
 						gasmix[idx].helium != he) {

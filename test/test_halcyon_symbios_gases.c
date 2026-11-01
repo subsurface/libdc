@@ -138,6 +138,12 @@ main (void)
 	static const unsigned char deferred_conflict[] = {
 		GAS (0, 21, 0, 1), GAS (1, 32, 0, 0), GAS (1, 50, 0, 0)
 	};
+	/* The only configured gas is disabled, so no enabled or diluent gas is
+	 * ever registered; its transmitter must still resolve it instead of
+	 * leaving the tank's gas mix unknown. */
+	static const unsigned char disabled_only[] = {
+		GAS (0, 21, 0, 0), TRANSMITTER (0, 9)
+	};
 	dc_parser_t *parser = NULL;
 	dc_descriptor_t *descriptor = handset_descriptor ();
 	static const unsigned char short_config[] = {0x11, 7, 0, 21, 0, 1, 0};
@@ -147,6 +153,10 @@ main (void)
 	dc_tank_t deferred_tank;
 	dc_parser_t *conflict_parser = NULL;
 	dc_descriptor_t *conflict_descriptor = handset_descriptor ();
+	dc_parser_t *disabled_only_parser = NULL;
+	dc_descriptor_t *disabled_only_descriptor = handset_descriptor ();
+	unsigned int disabled_only_count = 0;
+	dc_tank_t disabled_only_tank;
 
 	check_profile (native_pattern, sizeof (native_pattern), 4, native_samples, 1);
 	check_profile (linkage, sizeof (linkage), 8, linkage_samples, 4);
@@ -178,6 +188,19 @@ main (void)
 	if (conflict_parser) {
 		check ("reject conflicting retained configuration", dc_parser_samples_foreach (conflict_parser, NULL, NULL) == DC_STATUS_DATAFORMAT);
 		dc_parser_destroy (conflict_parser);
+	}
+
+	check ("handset descriptor (disabled only)", disabled_only_descriptor != NULL);
+	if (disabled_only_descriptor) {
+		check ("create disabled-only parser", dc_parser_new2 (&disabled_only_parser, NULL, disabled_only_descriptor, disabled_only, sizeof (disabled_only)) == DC_STATUS_SUCCESS);
+		dc_descriptor_free (disabled_only_descriptor);
+	}
+	if (disabled_only_parser) {
+		check ("resolve transmitter without a prior enabled gas", dc_parser_samples_foreach (disabled_only_parser, NULL, NULL) == DC_STATUS_SUCCESS);
+		check ("disabled-only gas count field", dc_parser_get_field (disabled_only_parser, DC_FIELD_GASMIX_COUNT, 0, &disabled_only_count) == DC_STATUS_SUCCESS);
+		check ("disabled-only gas count", disabled_only_count == 1);
+		check ("disabled-only tank gasmix", dc_parser_get_field (disabled_only_parser, DC_FIELD_TANK, 0, &disabled_only_tank) == DC_STATUS_SUCCESS && disabled_only_tank.gasmix == 0);
+		dc_parser_destroy (disabled_only_parser);
 	}
 
 	return failures != 0;
