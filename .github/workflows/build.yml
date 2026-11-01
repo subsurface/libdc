@@ -22,7 +22,7 @@ jobs:
       CC: ${{ matrix.compiler }}
 
     steps:
-      - uses: actions/checkout@v6.1.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Install dependencies
@@ -57,7 +57,7 @@ jobs:
       CC: ${{ matrix.compiler }}
 
     steps:
-      - uses: actions/checkout@v6.1.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Install dependencies
@@ -87,7 +87,7 @@ jobs:
         arch: [i686, x86_64]
 
     steps:
-      - uses: actions/checkout@v6.1.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Install dependencies
@@ -151,7 +151,7 @@ jobs:
       CONFIGURATION: Release
 
     steps:
-      - uses: actions/checkout@v6.1.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: msys2/setup-msys2@v2.33.0
@@ -176,7 +176,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6.1.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - run: |
@@ -203,7 +203,7 @@ jobs:
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
 
     steps:
-      - uses: actions/checkout@v6.1.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Install dependencies
