@@ -125,9 +125,20 @@ main (void)
 		0x02, 4, 36, 0 /* Gas-switch record retains its independent path. */
 	};
 	static const unsigned int linkage_samples[] = {0, 1, 3, 7};
+	/* Gas1 is disabled in its config but later reported by a transmitter;
+	 * it must resolve instead of being rejected, and only becomes part of
+	 * the exposed gas list once referenced. */
+	static const unsigned char deferred[] = {
+		GAS (0, 21, 0, 1), GAS (1, 32, 0, 0),
+		TRANSMITTER (1, 5)
+	};
 	dc_parser_t *parser = NULL;
 	dc_descriptor_t *descriptor = handset_descriptor ();
 	static const unsigned char short_config[] = {0x11, 7, 0, 21, 0, 1, 0};
+	dc_parser_t *deferred_parser = NULL;
+	dc_descriptor_t *deferred_descriptor = handset_descriptor ();
+	unsigned int deferred_count = 0;
+	dc_tank_t deferred_tank;
 
 	check_profile (native_pattern, sizeof (native_pattern), 4, native_samples, 1);
 	check_profile (linkage, sizeof (linkage), 8, linkage_samples, 4);
@@ -137,5 +148,19 @@ main (void)
 		check ("reject short gas config", dc_parser_samples_foreach (parser, NULL, NULL) == DC_STATUS_DATAFORMAT);
 		dc_parser_destroy (parser);
 	}
+
+	check ("handset descriptor (deferred)", deferred_descriptor != NULL);
+	if (deferred_descriptor) {
+		check ("create deferred parser", dc_parser_new2 (&deferred_parser, NULL, deferred_descriptor, deferred, sizeof (deferred)) == DC_STATUS_SUCCESS);
+		dc_descriptor_free (deferred_descriptor);
+	}
+	if (deferred_parser) {
+		check ("resolve deferred transmitter", dc_parser_samples_foreach (deferred_parser, NULL, NULL) == DC_STATUS_SUCCESS);
+		check ("deferred gas count field", dc_parser_get_field (deferred_parser, DC_FIELD_GASMIX_COUNT, 0, &deferred_count) == DC_STATUS_SUCCESS);
+		check ("deferred gas count", deferred_count == 2);
+		check ("deferred tank gasmix", dc_parser_get_field (deferred_parser, DC_FIELD_TANK, 0, &deferred_tank) == DC_STATUS_SUCCESS && deferred_tank.gasmix == 1);
+		dc_parser_destroy (deferred_parser);
+	}
+
 	return failures != 0;
 }

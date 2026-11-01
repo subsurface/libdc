@@ -339,6 +339,11 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 	unsigned int ngasmixes = 0;
 	unsigned int ntanks = 0;
 	halcyon_symbios_gasmix_t gasmix[NGASMIXES] = {0};
+	// Every configured gas slot (enabled or disabled), kept so a later
+	// ID_GAS_TRANSMITTER record can still resolve a disabled slot instead
+	// of failing, even though disabled slots are not exposed in gasmix[].
+	halcyon_symbios_gasmix_t gasconfig[NGASMIXES] = {0};
+	unsigned int ngasconfig = 0;
 	halcyon_symbios_tank_t tank[NTANKS] = {0};
 	unsigned int gasmix_id_previous = UNDEFINED;
 	unsigned int gasmix_idx = DC_GASMIX_UNKNOWN;
@@ -476,8 +481,28 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 					idx++;
 				}
 				if (idx >= ngasmixes) {
-					ERROR (abstract->context, "Invalid gas mix id (%u).", gas_id);
-					return DC_STATUS_DATAFORMAT;
+					// Not yet exposed, because the gas slot was disabled
+					// when its ID_GAS_CONFIG record was parsed. A
+					// transmitter still reporting it means it is in use
+					// after all, so resolve it from the retained
+					// configuration instead of failing outright.
+					unsigned int cfgidx = 0;
+					while (cfgidx < ngasconfig) {
+						if (gas_id == gasconfig[cfgidx].id)
+							break;
+						cfgidx++;
+					}
+					if (cfgidx >= ngasconfig) {
+						ERROR (abstract->context, "Invalid gas mix id (%u).", gas_id);
+						return DC_STATUS_DATAFORMAT;
+					}
+					if (ngasmixes >= NGASMIXES) {
+						ERROR (abstract->context, "Maximum number of gas mixes reached.");
+						return DC_STATUS_NOMEMORY;
+					}
+					idx = ngasmixes;
+					gasmix[idx] = gasconfig[cfgidx];
+					ngasmixes++;
 				}
 				sample.gasmix = idx;
 				if (callback) callback(DC_SAMPLE_GASMIX, &sample, userdata);
@@ -632,6 +657,27 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			unsigned int id = data[offset + 2];
 			unsigned int o2 = data[offset + 3];
 			unsigned int he = data[offset + 4];
+			if (o2 != 0 || he != 0) {
+				// Record every configured slot, including disabled ones,
+				// so a later ID_GAS_TRANSMITTER record can still resolve
+				// it instead of failing with DC_STATUS_DATAFORMAT.
+				unsigned int cfgidx = 0;
+				while (cfgidx < ngasconfig) {
+					if (id == gasconfig[cfgidx].id)
+						break;
+					cfgidx++;
+				}
+				if (cfgidx >= ngasconfig) {
+					if (ngasconfig >= NGASMIXES) {
+						ERROR (abstract->context, "Maximum number of gas mixes reached.");
+						return DC_STATUS_NOMEMORY;
+					}
+					gasconfig[ngasconfig].id = id;
+					gasconfig[ngasconfig].oxygen = o2;
+					gasconfig[ngasconfig].helium = he;
+					ngasconfig++;
+				}
+			}
 			if ((o2 != 0 || he != 0) &&
 				(id >= NGAS_SLOTS || data[offset + 5] != 0)) {
 				unsigned int idx = 0;
