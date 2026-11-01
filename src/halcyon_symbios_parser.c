@@ -676,6 +676,13 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 					gasconfig[ngasconfig].oxygen = o2;
 					gasconfig[ngasconfig].helium = he;
 					ngasconfig++;
+				} else if (gasconfig[cfgidx].oxygen != o2 ||
+					gasconfig[cfgidx].helium != he) {
+					ERROR (abstract->context, "Gas mix %u changed (%u/%u -> %u/%u).",
+						gasconfig[cfgidx].id,
+						gasconfig[cfgidx].oxygen, gasconfig[cfgidx].helium,
+						o2, he);
+					return DC_STATUS_DATAFORMAT;
 				}
 			}
 			if ((o2 != 0 || he != 0) &&

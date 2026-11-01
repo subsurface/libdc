@@ -132,6 +132,12 @@ main (void)
 		GAS (0, 21, 0, 1), GAS (1, 32, 0, 0),
 		TRANSMITTER (1, 5)
 	};
+	/* Gas1 is disabled and reconfigured with a different oxygen percentage
+	 * before ever being referenced; the conflicting retained configuration
+	 * must still be rejected, instead of silently keeping the first one. */
+	static const unsigned char deferred_conflict[] = {
+		GAS (0, 21, 0, 1), GAS (1, 32, 0, 0), GAS (1, 50, 0, 0)
+	};
 	dc_parser_t *parser = NULL;
 	dc_descriptor_t *descriptor = handset_descriptor ();
 	static const unsigned char short_config[] = {0x11, 7, 0, 21, 0, 1, 0};
@@ -139,6 +145,8 @@ main (void)
 	dc_descriptor_t *deferred_descriptor = handset_descriptor ();
 	unsigned int deferred_count = 0;
 	dc_tank_t deferred_tank;
+	dc_parser_t *conflict_parser = NULL;
+	dc_descriptor_t *conflict_descriptor = handset_descriptor ();
 
 	check_profile (native_pattern, sizeof (native_pattern), 4, native_samples, 1);
 	check_profile (linkage, sizeof (linkage), 8, linkage_samples, 4);
@@ -160,6 +168,16 @@ main (void)
 		check ("deferred gas count", deferred_count == 2);
 		check ("deferred tank gasmix", dc_parser_get_field (deferred_parser, DC_FIELD_TANK, 0, &deferred_tank) == DC_STATUS_SUCCESS && deferred_tank.gasmix == 1);
 		dc_parser_destroy (deferred_parser);
+	}
+
+	check ("handset descriptor (conflict)", conflict_descriptor != NULL);
+	if (conflict_descriptor) {
+		check ("create conflict parser", dc_parser_new2 (&conflict_parser, NULL, conflict_descriptor, deferred_conflict, sizeof (deferred_conflict)) == DC_STATUS_SUCCESS);
+		dc_descriptor_free (conflict_descriptor);
+	}
+	if (conflict_parser) {
+		check ("reject conflicting retained configuration", dc_parser_samples_foreach (conflict_parser, NULL, NULL) == DC_STATUS_DATAFORMAT);
+		dc_parser_destroy (conflict_parser);
 	}
 
 	return failures != 0;
