@@ -73,6 +73,7 @@
 
 #define NGASMIXES 10
 #define NTANKS    10
+#define NGAS_SLOTS 5 /* Record IDs 0-4 (GAS1-GAS5) are gas slots; IDs >= 5 are diluents. */
 
 #define TRANSMITTER_ID (1u << 16)
 
@@ -631,7 +632,8 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 			unsigned int id = data[offset + 2];
 			unsigned int o2 = data[offset + 3];
 			unsigned int he = data[offset + 4];
-			if (o2 != 0 || he != 0) {
+			if ((o2 != 0 || he != 0) &&
+				(id >= NGAS_SLOTS || data[offset + 5] != 0)) {
 				unsigned int idx = 0;
 				while (idx < ngasmixes) {
 					if (id == gasmix[idx].id)
