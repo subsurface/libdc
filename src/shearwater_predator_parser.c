@@ -578,7 +578,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	// The gas mix in use and the tank pressures of every sample, used to work
 	// out which gas mix each tank is on once all samples have been seen.
 	unsigned int maxsamples = length > offset ? (length - offset) / parser->samplesize : 0;
-	unsigned int *trace_gas = (unsigned int *) malloc ((maxsamples + 1) * sizeof (unsigned int));
+	unsigned int *trace_gas = (unsigned int *) calloc (maxsamples + 1, sizeof (unsigned int));
 	unsigned int *trace_pressure = (unsigned int *) calloc ((maxsamples + 1) * NTANKS, sizeof (unsigned int));
 	if (trace_gas == NULL || trace_pressure == NULL) {
 		ERROR (abstract->context, "Failed to allocate memory.");
@@ -961,24 +961,26 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	}
 
 	// AI-generated (Claude)
-	// The begin pressure is the highest reading, not the first one: a stage
-	// with its valve closed until the gas switch first reads the pressure left
-	// in its regulator. For open circuit dives, link each tank to the gas mix
-	// it was used on, if that is clear from the pressure drops.
+	// For open circuit dives, the begin pressure is the highest reading, not
+	// the first one: a stage with its valve closed until the gas switch first
+	// reads the pressure left in its regulator. And link each tank to the gas
+	// mix it was used on, if that is clear from the pressure drops.
 	unsigned int assigned[NTANKS];
 	unsigned int sidemount = 0;
+	unsigned int oc = divemode == M_OC_TEC || divemode == M_OC_REC || divemode == M_AVELO;
 	for (unsigned int i = 0; i < NTANKS; ++i) {
 		assigned[i] = SHEARWATER_TANK_GAS_NONE;
 		if (tank[i].usage == DC_TANK_USAGE_SIDEMOUNT)
 			sidemount |= 1u << i;
-		for (unsigned int n = 0; n < nsamples; ++n) {
+		for (unsigned int n = 0; n < nsamples && oc; ++n) {
 			if (trace_pressure[n * NTANKS + i] > tank[i].beginpressure)
 				tank[i].beginpressure = trace_pressure[n * NTANKS + i];
 		}
 	}
-	if (divemode != M_FREEDIVE && !shearwater_predator_is_ccr (divemode)) {
+	if (oc) {
+		// At least 10 bar, in units of 2 psi, rounded up.
 		shearwater_tank_gas_assign (trace_gas, trace_pressure, nsamples, NTANKS, ngasmixes,
-			sidemount, (int) (10.0 * BAR / PSI / 2), assigned);
+			sidemount, 73, assigned);
 	}
 	for (unsigned int i = 0; i < NTANKS; ++i)
 		tank[i].gasmix = assigned[i] < NGASMIXES ? gasmap[assigned[i]] : UNDEFINED;

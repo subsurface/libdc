@@ -110,5 +110,33 @@ main (void)
 	failures += check ("one-sided sidemount", &e, 0x3, expected_e);
 	failures += check ("one-sided without sidemount flag", &e, 0, (const unsigned int[NTANKS]) {2, NONE, NONE, NONE});
 
+	// The limits are inclusive: exactly the minimum use, and exactly twice
+	// the use on the next mix, still get a link; one less doesn't.
+	trace_t f = {0};
+	breathe (&f, 0, 30, 1);
+	breathe (&f, 30, 60, 0);
+	reading (&f, 0, 0, 30, 1000, 0);
+	reading (&f, 0, 30, 31, 1000, 0);
+	reading (&f, 0, 31, 60, 930, 0);
+	reading (&f, 1, 0, 2, 1000, 35);
+	reading (&f, 1, 2, 30, 965, 0);
+	reading (&f, 1, 30, 31, 965, 0);
+	reading (&f, 1, 31, 60, 895, 0);
+	reading (&f, 2, 0, 30, 1000, 0);
+	reading (&f, 2, 30, 31, 1000, 0);
+	reading (&f, 2, 31, 60, 931, 0);
+	const unsigned int expected_f[NTANKS] = {0, 0, NONE, NONE};
+	failures += check ("inclusive limits", &f, 0, expected_f);
+
+	// A drop across missing readings, during which the gas mix changed and
+	// changed back, can't be attributed to either mix.
+	trace_t g = {0};
+	breathe (&g, 0, 60, 0);
+	breathe (&g, 20, 40, 1);
+	reading (&g, 0, 0, 10, 1500, 0);
+	reading (&g, 0, 50, 60, 1200, 0);
+	const unsigned int expected_g[NTANKS] = {NONE, NONE, NONE, NONE};
+	failures += check ("gas change during missing readings", &g, 0, expected_g);
+
 	return failures ? 1 : 0;
 }

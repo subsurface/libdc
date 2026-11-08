@@ -47,6 +47,7 @@ shearwater_tank_gas_assign (const unsigned int gas[], const unsigned int pressur
 	unsigned int sidemount, int minuse, unsigned int result[])
 {
 	int use[SHEARWATER_TANK_GAS_MAXTANKS][SHEARWATER_TANK_GAS_MAXGASES] = {{0}};
+	const unsigned int stride = ntanks;
 
 	if (ntanks > SHEARWATER_TANK_GAS_MAXTANKS)
 		ntanks = SHEARWATER_TANK_GAS_MAXTANKS;
@@ -56,21 +57,28 @@ shearwater_tank_gas_assign (const unsigned int gas[], const unsigned int pressur
 	for (unsigned int i = 0; i < ntanks; ++i) {
 		unsigned int highest = 0, start = 0;
 		for (unsigned int n = 0; n < nsamples; ++n) {
-			if (pressure[n * ntanks + i] > highest) {
-				highest = pressure[n * ntanks + i];
+			if (pressure[n * stride + i] > highest) {
+				highest = pressure[n * stride + i];
 				start = n;
 			}
 		}
+		if (!highest)
+			continue;
 
-		unsigned int previous = highest, previous_gas = gas[start];
-		for (unsigned int n = start + 1; n < nsamples && highest; ++n) {
-			unsigned int p = pressure[n * ntanks + i];
+		// A drop between two readings only counts if the same gas mix was
+		// in use throughout, including the samples without a reading.
+		unsigned int previous = highest, previous_gas = gas[start], changed = 0;
+		for (unsigned int n = start + 1; n < nsamples; ++n) {
+			if (gas[n] != previous_gas)
+				changed = 1;
+			unsigned int p = pressure[n * stride + i];
 			if (p == 0)
 				continue;
-			if (gas[n] < ngases && gas[n] == previous_gas)
+			if (!changed && gas[n] < ngases)
 				use[i][gas[n]] += (int) previous - (int) p;
 			previous = p;
 			previous_gas = gas[n];
+			changed = 0;
 		}
 	}
 
