@@ -26,6 +26,7 @@ EXTRA_DIST = \
 	test/run-parse.sh \
 	test/fixtures/manifest.txt \
 	test/fixtures/shearwater_petrel2-0001.bin \
+	test/fixtures/shearwater_perdix2-0001.bin \
 	test/fixtures/hw_ostc5-0001.bin \
 	test/fixtures/garmin_descent_mk1-0001.bin \
 	test/test_descriptor_product_name.c

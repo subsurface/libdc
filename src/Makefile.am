@@ -59,7 +59,7 @@ libdivecomputer_la_SOURCES = \
 	zeagle_n2ition3.h zeagle_n2ition3.c \
 	atomics_cobalt.h atomics_cobalt.c atomics_cobalt_parser.c \
 	shearwater_common.h shearwater_common.c \
-	shearwater_predator.h shearwater_predator.c shearwater_predator_parser.c \
+	shearwater_predator.h shearwater_predator.c shearwater_predator_parser.c shearwater_tank_gas.h \
 	shearwater_petrel.h shearwater_petrel.c \
 	diverite_nitekq.h diverite_nitekq.c diverite_nitekq_parser.c \
 	citizen_aqualand.h citizen_aqualand.c citizen_aqualand_parser.c \

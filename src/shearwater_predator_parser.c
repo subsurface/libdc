@@ -32,6 +32,7 @@
 #include "platform.h"
 #include "array.h"
 #include "field-cache.h"
+#include "shearwater_tank_gas.h"
 
 #define ISINSTANCE(parser)	( \
 	dc_parser_isinstance((parser), &shearwater_predator_parser_vtable) || \
@@ -147,6 +148,7 @@ typedef struct shearwater_predator_tank_t {
 	char name[2];
 	unsigned int battery;
 	dc_tank_usage_t usage;
+	unsigned int gasmix;
 } shearwater_predator_tank_t;
 
 struct shearwater_predator_parser_t {
@@ -320,6 +322,7 @@ shearwater_common_parser_create (dc_parser_t **out, dc_context_t *context, const
 		memset (parser->tank[i].name, 0, sizeof (parser->tank[i].name));
 		parser->tank[i].battery = 0;
 		parser->tank[i].usage = DC_TANK_USAGE_NONE;
+		parser->tank[i].gasmix = UNDEFINED;
 		parser->tankidx[i] = i;
 	}
 	parser->aimode = AI_OFF;
@@ -570,6 +573,21 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	unsigned int sub_mode = SM_OC_REC;
 	unsigned int stack_time_total_s = 0;
 	unsigned int stack_time_remaining_s;
+
+	// AI-generated (Claude)
+	// The gas mix in use and the tank pressures of every sample, used to work
+	// out which gas mix each tank is on once all samples have been seen.
+	unsigned int maxsamples = length > offset ? (length - offset) / parser->samplesize : 0;
+	unsigned int *trace_gas = (unsigned int *) malloc ((maxsamples + 1) * sizeof (unsigned int));
+	unsigned int *trace_pressure = (unsigned int *) calloc ((maxsamples + 1) * NTANKS, sizeof (unsigned int));
+	if (trace_gas == NULL || trace_pressure == NULL) {
+		ERROR (abstract->context, "Failed to allocate memory.");
+		free (trace_gas);
+		free (trace_pressure);
+		return DC_STATUS_NOMEMORY;
+	}
+	unsigned int gas_current = SHEARWATER_TANK_GAS_NONE;
+
 	while (offset + parser->samplesize <= length) {
 		// Ignore empty samples.
 		if (array_isequal (data + offset, parser->samplesize, 0x00)) {
@@ -613,6 +631,8 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 				if (idx >= ngasmixes) {
 					if (idx >= NGASMIXES) {
 						ERROR (abstract->context, "Maximum number of gas mixes reached.");
+						free (trace_gas);
+						free (trace_pressure);
 						return DC_STATUS_NOMEMORY;
 					}
 					gasmix[idx].oxygen = o2;
@@ -622,11 +642,13 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 				}
 
 				gasmix[idx].active = 1;
+				gas_current = idx;
 
 				o2_previous = o2;
 				he_previous = he;
 				dil_previous = ccr;
 			}
+			trace_gas[nsamples - 1] = gas_current;
 
 			// Tank pressure
 			if (logversion >= 7) {
@@ -654,6 +676,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 							}
 							tank[id].endpressure = pressure;
 							tank[id].battery |= battery;
+							trace_pressure[(nsamples - 1) * NTANKS + id] = pressure;
 						}
 					}
 				}
@@ -673,6 +696,8 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 								tank[id].endpressure = pressure;
 							}
 							tank[id].endpressure = pressure;
+							if (nsamples)
+								trace_pressure[(nsamples - 1) * NTANKS + id] = pressure;
 						}
 					}
 				}
@@ -838,6 +863,8 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	for (unsigned int i = 0; i <= 4; ++i) {
 		if (parser->opening[i] == UNDEFINED || parser->closing[i] == UNDEFINED) {
 			ERROR (abstract->context, "Opening or closing record %u not found.", i);
+			free (trace_gas);
+			free (trace_pressure);
 			return DC_STATUS_DATAFORMAT;
 		}
 	}
@@ -916,6 +943,9 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	parser->headersize = headersize;
 	parser->footersize = footersize;
 	parser->ngasmixes = 0;
+	unsigned int gasmap[NGASMIXES];
+	for (unsigned int i = 0; i < NGASMIXES; ++i)
+		gasmap[i] = UNDEFINED;
 	if (divemode != M_FREEDIVE) {
 		for (unsigned int i = 0; i < ngasmixes; ++i) {
 			if (gasmix[i].oxygen == 0 && gasmix[i].helium == 0)
@@ -924,10 +954,37 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 				continue;
 			if (gasmix[i].diluent && !shearwater_predator_is_ccr (divemode))
 				continue;
+			gasmap[i] = parser->ngasmixes;
 			parser->gasmix[parser->ngasmixes] = gasmix[i];
 			parser->ngasmixes++;
 		}
 	}
+
+	// AI-generated (Claude)
+	// The begin pressure is the highest reading, not the first one: a stage
+	// with its valve closed until the gas switch first reads the pressure left
+	// in its regulator. For open circuit dives, link each tank to the gas mix
+	// it was used on, if that is clear from the pressure drops.
+	unsigned int assigned[NTANKS];
+	unsigned int sidemount = 0;
+	for (unsigned int i = 0; i < NTANKS; ++i) {
+		assigned[i] = SHEARWATER_TANK_GAS_NONE;
+		if (tank[i].usage == DC_TANK_USAGE_SIDEMOUNT)
+			sidemount |= 1u << i;
+		for (unsigned int n = 0; n < nsamples; ++n) {
+			if (trace_pressure[n * NTANKS + i] > tank[i].beginpressure)
+				tank[i].beginpressure = trace_pressure[n * NTANKS + i];
+		}
+	}
+	if (divemode != M_FREEDIVE && !shearwater_predator_is_ccr (divemode)) {
+		shearwater_tank_gas_assign (trace_gas, trace_pressure, nsamples, NTANKS, ngasmixes,
+			sidemount, (int) (10.0 * BAR / PSI / 2), assigned);
+	}
+	for (unsigned int i = 0; i < NTANKS; ++i)
+		tank[i].gasmix = assigned[i] < NGASMIXES ? gasmap[assigned[i]] : UNDEFINED;
+	free (trace_gas);
+	free (trace_pressure);
+
 	parser->ntanks = 0;
 	for (unsigned int i = 0; i < NTANKS; ++i) {
 		if (tank[i].active) {
@@ -1090,7 +1147,7 @@ shearwater_predator_parser_get_field (dc_parser_t *abstract, dc_field_type_t typ
 			tank->workpressure = 0.0;
 			tank->beginpressure = parser->tank[flags].beginpressure * 2 * PSI / BAR;
 			tank->endpressure   = parser->tank[flags].endpressure   * 2 * PSI / BAR;
-			tank->gasmix = DC_GASMIX_UNKNOWN;
+			tank->gasmix = parser->tank[flags].gasmix == UNDEFINED ? DC_GASMIX_UNKNOWN : parser->tank[flags].gasmix;
 			tank->usage = parser->tank[flags].usage;
 			break;
 		case DC_FIELD_SALINITY:
