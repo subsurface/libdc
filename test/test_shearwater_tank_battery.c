@@ -38,6 +38,7 @@ typedef struct log_t {
 
 static int failures = 0;
 
+/* Count a failure, and report it, if the condition is false. */
 static void
 check (const char *name, int condition)
 {
@@ -47,6 +48,7 @@ check (const char *name, int condition)
 	}
 }
 
+/* Append an empty 32 byte record of the given type and return it. */
 static unsigned char *
 add_record (log_t *log, unsigned char type)
 {
@@ -56,6 +58,7 @@ add_record (log_t *log, unsigned char type)
 	return record;
 }
 
+/* Store a 16 bit value big endian, as in the Shearwater logs. */
 static void
 put_word (unsigned char *p, unsigned int value)
 {
@@ -94,6 +97,7 @@ build_log (log_t *log, unsigned int logversion, unsigned int aimode,
 		add_record (log, type);
 }
 
+/* Find the Perdix 2 descriptor, or return NULL if it is missing. */
 static dc_descriptor_t *
 perdix2_descriptor (void)
 {
@@ -123,8 +127,7 @@ check_batteries (const char *name, const log_t *log, const char *expected[4])
 	static const char *desc[4] = {
 		"T1 battery", "T2 battery", "T3 battery", "T4 battery",
 	};
-	const char *found[4] = {NULL, NULL, NULL, NULL};
-	char *values[4] = {NULL, NULL, NULL, NULL};
+	char *found[4] = {NULL, NULL, NULL, NULL};
 	unsigned int other = 0;
 	dc_parser_t *parser = NULL;
 	dc_descriptor_t *descriptor = perdix2_descriptor ();
@@ -144,15 +147,15 @@ check_batteries (const char *name, const log_t *log, const char *expected[4])
 		int matched = 0;
 		for (unsigned int t = 0; t < 4; ++t) {
 			if (strcmp (str.desc, desc[t]) == 0) {
-				free (values[t]);
-				values[t] = (char *) str.value;
-				found[t] = values[t];
+				free (found[t]);
+				found[t] = (char *) str.value;
 				matched = 1;
 			}
 		}
 		if (!matched) {
-			if (strstr (str.desc, "battery") && str.desc[0] == 'T')
-				other++; /* e.g. a "T5 battery" for an HP CCR slot */
+			/* An HP CCR slot must not show up as "T5 battery" or "T6 battery". */
+			if (strcmp (str.desc, "T5 battery") == 0 || strcmp (str.desc, "T6 battery") == 0)
+				other++;
 			free ((void *) str.value);
 		}
 	}
@@ -165,18 +168,19 @@ check_batteries (const char *name, const log_t *log, const char *expected[4])
 				found[t] ? found[t] : "(absent)", expected[t] ? expected[t] : "(absent)");
 			failures++;
 		}
-		free (values[t]);
+		free (found[t]);
 	}
 	check ("no battery string beyond T4", other == 0);
 	check ("destroy parser", dc_parser_destroy (parser) == DC_STATUS_SUCCESS);
 }
 
+/* Run each synthetic log through the parser and check its battery strings. */
 int
 main (void)
 {
 	log_t log;
 
-	/* All four transmitters, one of each state; T4 reports in the extended record. */
+	/* T1/T2 in the regular sample record, T3/T4 in the extended one, covering each state. */
 	build_log (&log, 17, 0,
 		WORD (NORMAL, 1000), WORD (CRITICAL, 1000),
 		WORD (WARNING, 1000), WORD (NORMAL, 1000));
