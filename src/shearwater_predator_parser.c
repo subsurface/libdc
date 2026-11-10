@@ -664,7 +664,10 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 				for (unsigned int i = 0; i < 2; ++i) {
 					unsigned int pressure = array_uint16_be (data + offset + pnf + i * 2);
 					unsigned int id = 2 + i;
+					// Same encoding as T1/T2 in the regular sample record:
+					// battery level in the top 4 bits, pressure in the lower 12.
 					if (pressure < 0xFFF0) {
+						unsigned int battery = 1u << (pressure >> 12);
 						pressure &= 0x0FFF;
 						if (pressure) {
 							if (!tank[id].active) {
@@ -673,6 +676,7 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 								tank[id].endpressure = pressure;
 							}
 							tank[id].endpressure = pressure;
+							tank[id].battery |= battery;
 						}
 					}
 				}
@@ -953,8 +957,13 @@ shearwater_predator_parser_cache (shearwater_predator_parser_t *parser)
 	add_deco_model(parser, data);
 	add_battery_type(parser, data);
 	dc_field_add_string_fmt(&parser->cache, "Battery at end", "%.1f V", data[9] / 10.0);
-	add_battery_info(parser, "T1 battery", tank[0].battery);
-	add_battery_info(parser, "T2 battery", tank[1].battery);
+	// Only the four open-circuit transmitters (T1 to T4) report a battery
+	// state. The HP CCR slots (indices 4 and 5) carry no battery level.
+	static const char *battery_desc[] = {
+		"T1 battery", "T2 battery", "T3 battery", "T4 battery",
+	};
+	for (unsigned int i = 0; i < C_ARRAY_SIZE(battery_desc); ++i)
+		add_battery_info(parser, battery_desc[i], tank[i].battery);
 
 	switch (divemode) {
 	case M_CC:
