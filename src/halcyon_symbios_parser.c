@@ -81,6 +81,7 @@ typedef struct halcyon_symbios_gasmix_t {
 	unsigned int id;
 	unsigned int oxygen;
 	unsigned int helium;
+	dc_usage_t usage;
 } halcyon_symbios_gasmix_t;
 
 typedef struct halcyon_symbios_tank_t {
@@ -157,6 +158,7 @@ halcyon_symbios_parser_create (dc_parser_t **out, dc_context_t *context, const u
 	for (unsigned int i = 0; i < NGASMIXES; ++i) {
 		parser->gasmix[i].oxygen = 0;
 		parser->gasmix[i].helium = 0;
+		parser->gasmix[i].usage = DC_USAGE_NONE;
 	}
 	for (unsigned int i = 0; i < NTANKS; ++i) {
 		parser->tank[i].id = 0;
@@ -266,7 +268,7 @@ halcyon_symbios_parser_get_field (dc_parser_t *abstract, dc_field_type_t type, u
 			gasmix->helium = parser->gasmix[flags].helium / 100.0;
 			gasmix->oxygen = parser->gasmix[flags].oxygen / 100.0;
 			gasmix->nitrogen = 1.0 - gasmix->oxygen - gasmix->helium;
-			gasmix->usage = DC_USAGE_NONE;
+			gasmix->usage = parser->gasmix[flags].usage;
 			break;
 		case DC_FIELD_TANK_COUNT:
 			*((unsigned int *) value) = parser->ntanks;
@@ -632,10 +634,29 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 						ERROR (abstract->context, "Maximum number of tanks reached.");
 						return DC_STATUS_NOMEMORY;
 					}
+					// Find or create a gasmix for the CCR O2 supply.
+					// The Symbios does not seem to store the O2 supply
+					// composition in its logs, so 100% is assumed.
+					unsigned int o2_idx = 0;
+					while (o2_idx < ngasmixes &&
+						gasmix[o2_idx].usage != DC_USAGE_OXYGEN) {
+						o2_idx++;
+					}
+					if (o2_idx >= ngasmixes) {
+						if (ngasmixes >= NGASMIXES) {
+							ERROR (abstract->context, "Maximum number of gasmixes reached.");
+							return DC_STATUS_NOMEMORY;
+						}
+						gasmix[ngasmixes].oxygen = 100;
+						gasmix[ngasmixes].helium = 0;
+						gasmix[ngasmixes].usage = DC_USAGE_OXYGEN;
+						o2_idx = ngasmixes;
+						ngasmixes++;
+					}
 					tank[ntanks].id = serial;
 					tank[ntanks].beginpressure = pressure;
 					tank[ntanks].endpressure = pressure;
-					tank[ntanks].gasmix = DC_GASMIX_UNKNOWN;
+					tank[ntanks].gasmix = o2_idx;
 					tank[ntanks].usage = usage;
 					ntanks++;
 				}
@@ -703,6 +724,18 @@ halcyon_symbios_parser_samples_foreach (dc_parser_t *abstract, dc_sample_callbac
 					gasmix[ngasmixes].id = id;
 					gasmix[ngasmixes].oxygen = o2;
 					gasmix[ngasmixes].helium = he;
+					// In CCR mode: slots >= NGAS_SLOTS are diluents;
+					// slots 0-4 are OC bailout gases.
+					if ((divemode == CCR || divemode == CCR_FSP) &&
+						id >= NGAS_SLOTS) {
+						gasmix[ngasmixes].usage = DC_USAGE_DILUENT;
+					}
+					else if (divemode == CCR || divemode == CCR_FSP) {
+						gasmix[ngasmixes].usage = DC_USAGE_OPEN_CIRCUIT;
+					}
+					else {
+						gasmix[ngasmixes].usage = DC_USAGE_NONE;
+					}
 					ngasmixes++;
 				} else {
 					if (gasmix[idx].oxygen != o2 ||
