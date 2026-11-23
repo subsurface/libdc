@@ -58,7 +58,14 @@
 #define SZ_FIRMWARE_FROG    0x01D000        // 116KB
 #define SZ_FIRMWARE_BLOCK    0x1000   //   4KB
 #define SZ_FIRMWARE_BLOCK2   0x0100   //  256B
+#define SZ_OSTC4_FLASH_PAGE  0x0100   //  256B
+#define SZ_OSTC4_FLASH_SECTOR 0x10000 // 64KB
 #define FIRMWARE_AREA      0x3E0000
+
+#define OSTC4_FLASH_PAGE_PROGRAM_DELAY 20 // milliseconds
+#define OSTC4_FLASH_SECTOR_ERASE_DELAY 25 // milliseconds
+#define OSTC4_FLASH_FIRMWARE_SECTORS   16
+#define OSTC4_RTE_UPLOAD_DELAY          (115 * 1000) // milliseconds
 
 #define RB_LOGBOOK_SIZE_COMPACT  16
 #define RB_LOGBOOK_SIZE_FULL     256
@@ -93,6 +100,9 @@
 #define S_INIT     0xAA
 #define INIT       0xBB
 #define EXIT       0xFF
+
+#define FWTYPE_FIRMWARE 0xFF
+#define FWTYPE_RTE      0xFE
 
 #define INVALID    0xFFFFFFFF
 #define UNKNOWN    0x00
@@ -444,8 +454,13 @@ hw_ostc3_transfer (hw_ostc3_device_t *device,
 			return status;
 		}
 
-		// Verify the ready byte.
-		if (answer[0] != ready) {
+		// AI-generated (Claude)
+		// A completed OSTC4/5 RTE upload resets CPU2 and terminates the
+		// service session with 0xFF, rather than a service-ready byte.
+		if (answer[0] == EXIT && cmd == S_UPLOAD && isize >= 5 &&
+			input[4] == FWTYPE_RTE) {
+			device->state = REBOOTING;
+		} else if (answer[0] != ready) {
 			ERROR (abstract->context, "Unexpected ready byte.");
 			return DC_STATUS_PROTOCOL;
 		}
@@ -1429,6 +1444,52 @@ hw_ostc3_firmware_readfile4 (dc_buffer_t *buffer, dc_context_t *context, const c
 	return DC_STATUS_SUCCESS;
 }
 
+
+// AI-generated (Claude)
+static dc_status_t
+hw_ostc3_firmware_validate4 (dc_buffer_t *buffer, dc_context_t *context)
+{
+	const unsigned char *data = dc_buffer_get_data (buffer);
+	unsigned int size = dc_buffer_get_size (buffer);
+	unsigned int offset = 0;
+
+	while (offset < size) {
+		if (size - offset < 20) {
+			ERROR (context, "Incomplete firmware blob.");
+			return DC_STATUS_DATAFORMAT;
+		}
+
+		unsigned int payload = array_uint32_be (data + offset);
+		if (payload > size - offset - 20) {
+			ERROR (context, "Invalid firmware blob length.");
+			return DC_STATUS_DATAFORMAT;
+		}
+
+		unsigned int length = payload + 20;
+		if (data[offset + 4] == FWTYPE_RTE && offset + length != size) {
+			ERROR (context, "The RTE firmware blob must be last.");
+			return DC_STATUS_DATAFORMAT;
+		}
+
+		offset += length;
+	}
+
+	return DC_STATUS_SUCCESS;
+}
+
+
+// AI-generated (GPT-5.6 Terra)
+static const char *
+hw_ostc3_firmware_type_name (unsigned char type)
+{
+	if (type == FWTYPE_FIRMWARE)
+		return "firmware";
+	if (type == FWTYPE_RTE)
+		return "RTE";
+	return "fontpack";
+}
+
+
 static dc_status_t
 hw_ostc3_firmware_erase (hw_ostc3_device_t *device, unsigned int addr, unsigned int size)
 {
@@ -1676,9 +1737,19 @@ hw_ostc3_device_fwupdate4 (dc_device_t *abstract, const char *filename, bool for
 		goto error;
 	}
 
+	// An RTE upload terminates the service session, so it cannot be
+	// followed by another blob in the same update container.
+	status = hw_ostc3_firmware_validate4 (buffer, context);
+	if (status != DC_STATUS_SUCCESS) {
+		goto error;
+	}
+
 	// Enable progress notifications.
 	dc_event_progress_t progress = EVENT_PROGRESS_INITIALIZER;
 	progress.maximum = dc_buffer_get_size (buffer);
+	// Reserve enough progress for two-decimal percentage displays to stay
+	// below 100 percent until the final service-mode ready byte arrives.
+	progress.maximum += progress.maximum / 9999 + 1;
 	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
 	// Cache the pointer and size.
@@ -1686,13 +1757,9 @@ hw_ostc3_device_fwupdate4 (dc_device_t *abstract, const char *filename, bool for
 	unsigned int size = dc_buffer_get_size (buffer);
 
 	unsigned int offset = 0;
-	while (offset + 4 <= size) {
+	while (offset < size) {
 		// Get the length of the firmware blob.
 		unsigned int length = array_uint32_be(data + offset) + 20;
-		if (offset + length > size) {
-			status = DC_STATUS_DATAFORMAT;
-			goto error;
-		}
 
 		// Get the blob type.
 		unsigned char type = data[offset + 4];
@@ -1701,19 +1768,42 @@ hw_ostc3_device_fwupdate4 (dc_device_t *abstract, const char *filename, bool for
 		// After uploading the firmware blob, the device writes the data
 		// to flash memory. Since this takes a significant amount of
 		// time, the ready byte is delayed. Therefore, the standard
-		// timeout is no longer sufficient. The delays are estimated
-		// based on actual measurements of the delay per byte.
+		// timeout is no longer sufficient.
 		unsigned int usecs = length;
-		if (type == 0xFF) {
-			// Firmware
-			usecs *= 50;
-		} else if (type == 0xFE) {
-			// RTE
-			usecs *= 500;
+		if (type == FWTYPE_FIRMWARE) {
+			// Main firmware is staged in external flash. The device writes
+			// the payload plus its four-byte length in 256-byte page-program
+			// commands, and erases the 16 64KB staging sectors when needed.
+			// Account for page programs, rather than applying the old
+			// per-byte estimate, which expires before a full-size upload
+			// has completed.
+			unsigned int payload = length - 20;
+			unsigned int pages = 1 + (payload + 4 + SZ_OSTC4_FLASH_PAGE - 1) /
+				SZ_OSTC4_FLASH_PAGE;
+			usecs = (pages * OSTC4_FLASH_PAGE_PROGRAM_DELAY +
+				OSTC4_FLASH_FIRMWARE_SECTORS * OSTC4_FLASH_SECTOR_ERASE_DELAY) * 1000;
+		} else if (type == FWTYPE_RTE) {
+			// AI-generated (GPT-5.6 Terra)
+			// CPU2 erase and programming take place after all RTE bytes have
+			// been received. Recent images exceeded the old size-derived wait.
+			// Keep the host below the service mode's 120-second idle timeout.
+			usecs = OSTC4_RTE_UPLOAD_DELAY * 1000;
 		} else {
-			// Fonts
-			usecs *= 25;
+			// AI-generated (GPT-5.6 Terra)
+			// Fontpacks are also staged in flash after upload. Wait for the
+			// page programs and the staging sectors they occupy, rather than
+			// applying the former per-byte estimate.
+			unsigned int payload = length - 20;
+			unsigned int pages = 1 + (payload + 4 + SZ_OSTC4_FLASH_PAGE - 1) /
+				SZ_OSTC4_FLASH_PAGE;
+			unsigned int sectors = (payload + 4 + SZ_OSTC4_FLASH_SECTOR - 1) /
+				SZ_OSTC4_FLASH_SECTOR;
+			usecs = (pages * OSTC4_FLASH_PAGE_PROGRAM_DELAY +
+				sectors * OSTC4_FLASH_SECTOR_ERASE_DELAY) * 1000;
 		}
+
+		INFO (context, "OSTC4 update: blob offset=%u type=%s size=%u ready-delay=%u",
+			offset, hw_ostc3_firmware_type_name (type), length, usecs / 1000);
 
 		// Read the firmware version info.
 		unsigned char fwinfo[SZ_FWINFO] = {0};
@@ -1735,7 +1825,12 @@ hw_ostc3_device_fwupdate4 (dc_device_t *abstract, const char *filename, bool for
 			if (status != DC_STATUS_SUCCESS) {
 				goto error;
 			}
+			INFO (context, "OSTC4 update: blob offset=%u type=%s completed",
+				offset, hw_ostc3_firmware_type_name (type));
+
 		} else {
+			INFO (context, "OSTC4 update: blob offset=%u type=%s skipped (version unchanged or unavailable)",
+				offset, hw_ostc3_firmware_type_name (type));
 			// Update and emit a progress event.
 			progress.current += length;
 			device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
@@ -1743,6 +1838,10 @@ hw_ostc3_device_fwupdate4 (dc_device_t *abstract, const char *filename, bool for
 
 		offset += length;
 	}
+
+	// Completing the reserved progress confirms the final service-mode ready byte.
+	progress.current = progress.maximum;
+	device_event_emit (abstract, DC_EVENT_PROGRESS, &progress);
 
 error:
 	dc_buffer_free (buffer);
