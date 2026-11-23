@@ -8,6 +8,27 @@
 
 #define GAS(id, o2, he, enabled) 0x11, 8, id, o2, he, enabled, 0, 0
 #define TRANSMITTER(id, serial) 0x06, 12, id, 0, 0, 0, 0xD2, 0x04, serial, 0, 0, 0
+/* 12-byte ID_PO2_REBREATHER: three PPO2 sensors, then 3 pad bytes,
+ * then pressure (uint16_le, 0.1-bar units), then serial (uint16_le). */
+#define PO2_REBREATHER(ppo2, pressure, serial) \
+	0x0D, 12, (ppo2), (ppo2), (ppo2), 0, 0, 0, \
+	((pressure) & 0xFF), ((pressure) >> 8), \
+	((serial) & 0xFF), ((serial) >> 8)
+
+/* Minimal 64-byte ID_HEADER with divemode at byte offset 13.
+ * time_start is set to 1 so it is not treated as UNDEFINED. */
+#define HEADER(divemode) \
+	0x01, 64, \
+	0x07, 0x0c, 0x00, 0x02, 0x24, 0x0c, 0x01, 0x00, \
+	0x05, 0x00, 0x00, (divemode), 0x00, 0x00, \
+	0x0d, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+/* Divemode values. */
+#define DIVEMODE_OC  0
+#define DIVEMODE_CCR 1
 
 /* dc_descriptor_get_model() value for the "Symbios Handset", see descriptor.c. */
 #define HANDSET_MODEL_SYMBIOS 7
@@ -66,6 +87,14 @@ check_mix (dc_parser_t *parser, unsigned int index, unsigned int oxygen, unsigne
 	check ("mix field", dc_parser_get_field (parser, DC_FIELD_GASMIX, index, &mix) == DC_STATUS_SUCCESS);
 	check ("oxygen fraction", fabs (mix.oxygen - oxygen / 100.0) < 1e-9);
 	check ("helium fraction", fabs (mix.helium - helium / 100.0) < 1e-9);
+}
+
+static void
+check_usage (dc_parser_t *parser, unsigned int index, dc_usage_t expected)
+{
+	dc_gasmix_t mix;
+	check ("mix field for usage", dc_parser_get_field (parser, DC_FIELD_GASMIX, index, &mix) == DC_STATUS_SUCCESS);
+	check ("gas usage", mix.usage == expected);
 }
 
 static void
@@ -164,6 +193,20 @@ main (void)
 	static const unsigned char disabled_only[] = {
 		GAS (0, 21, 0, 0), TRANSMITTER (0, 9)
 	};
+	/* CCR dive: OC bailout (id < NGAS_SLOTS), diluent (id >= NGAS_SLOTS),
+	 * and O2 supply tank; parser synthesizes a 100% O2 gasmix. */
+	static const unsigned char ccr_data[] = {
+		HEADER (DIVEMODE_CCR),
+		GAS (0, 21, 0, 1),
+		GAS (5, 21, 0, 1),
+		PO2_REBREATHER (150, 2000, 42),
+	};
+	/* OC dive: all slots -> DC_USAGE_NONE regardless of id. */
+	static const unsigned char oc_usage_data[] = {
+		HEADER (DIVEMODE_OC),
+		GAS (0, 21, 0, 1),
+		GAS (5, 21, 0, 1),
+	};
 	dc_parser_t *parser = NULL;
 	dc_descriptor_t *descriptor = handset_descriptor ();
 	static const unsigned char short_config[] = {0x11, 7, 0, 21, 0, 1, 0};
@@ -221,6 +264,50 @@ main (void)
 		check ("disabled-only gas count", disabled_only_count == 1);
 		check ("disabled-only tank gasmix", dc_parser_get_field (disabled_only_parser, DC_FIELD_TANK, 0, &disabled_only_tank) == DC_STATUS_SUCCESS && disabled_only_tank.gasmix == 0);
 		dc_parser_destroy (disabled_only_parser);
+	}
+
+	/* CCR: OC bailout, diluent, and synthetic O2 gasmix linked to tank. */
+	{
+		dc_parser_t *ccr_parser = NULL;
+		dc_descriptor_t *ccr_desc = handset_descriptor ();
+		unsigned int ccr_count = 0;
+		dc_gasmix_t o2_mix;
+		dc_tank_t o2_tank;
+		check ("handset descriptor (ccr)", ccr_desc != NULL);
+		if (ccr_desc) {
+			check ("create ccr parser", dc_parser_new2 (&ccr_parser, NULL, ccr_desc, ccr_data, sizeof (ccr_data)) == DC_STATUS_SUCCESS);
+			dc_descriptor_free (ccr_desc);
+		}
+		if (ccr_parser) {
+			check ("parse ccr samples", dc_parser_samples_foreach (ccr_parser, NULL, NULL) == DC_STATUS_SUCCESS);
+			check_usage (ccr_parser, 0, DC_USAGE_OPEN_CIRCUIT);  /* id=0, OC bailout */
+			check_usage (ccr_parser, 1, DC_USAGE_DILUENT);       /* id=5, CCR diluent */
+			check ("ccr gasmix count field", dc_parser_get_field (ccr_parser, DC_FIELD_GASMIX_COUNT, 0, &ccr_count) == DC_STATUS_SUCCESS);
+			check ("ccr gasmix count", ccr_count == 3);
+			check ("o2 gasmix field", dc_parser_get_field (ccr_parser, DC_FIELD_GASMIX, 2, &o2_mix) == DC_STATUS_SUCCESS);
+			check ("o2 gasmix oxygen", o2_mix.oxygen == 1.0);
+			check ("o2 gasmix usage", o2_mix.usage == DC_USAGE_OXYGEN);
+			check ("o2 tank field", dc_parser_get_field (ccr_parser, DC_FIELD_TANK, 0, &o2_tank) == DC_STATUS_SUCCESS);
+			check ("o2 tank gasmix link", o2_tank.gasmix == 2);
+			dc_parser_destroy (ccr_parser);
+		}
+	}
+
+	/* OC: all slots -> DC_USAGE_NONE regardless of id. */
+	{
+		dc_parser_t *oc_parser = NULL;
+		dc_descriptor_t *oc_desc = handset_descriptor ();
+		check ("handset descriptor (oc)", oc_desc != NULL);
+		if (oc_desc) {
+			check ("create oc parser", dc_parser_new2 (&oc_parser, NULL, oc_desc, oc_usage_data, sizeof (oc_usage_data)) == DC_STATUS_SUCCESS);
+			dc_descriptor_free (oc_desc);
+		}
+		if (oc_parser) {
+			check ("parse oc samples", dc_parser_samples_foreach (oc_parser, NULL, NULL) == DC_STATUS_SUCCESS);
+			check_usage (oc_parser, 0, DC_USAGE_NONE);  /* id=0, OC slot */
+			check_usage (oc_parser, 1, DC_USAGE_NONE);  /* id=5, not diluent in OC mode */
+			dc_parser_destroy (oc_parser);
+		}
 	}
 
 	return failures != 0;
